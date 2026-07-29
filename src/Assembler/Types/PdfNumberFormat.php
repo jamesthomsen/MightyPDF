@@ -23,7 +23,8 @@ final class PdfNumberFormat
     public static function format(float $value): string
     {
         if (!is_finite($value)) {
-            throw new \InvalidArgumentException("Cannot format non-finite number in a PDF: $value");
+            $description = is_nan($value) ? 'NAN' : ($value > 0 ? 'INF' : '-INF');
+            throw new \InvalidArgumentException("Cannot format non-finite number in a PDF: $description");
         }
 
         $formatted = number_format($value, 6, '.', '');

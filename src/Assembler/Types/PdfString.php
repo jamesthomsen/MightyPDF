@@ -33,7 +33,12 @@ final class PdfString implements PdfValue
 
     public static function utf16be(string $text): self
     {
-        return new self("\xFE\xFF" . mb_convert_encoding($text, 'UTF-16BE', 'UTF-8'));
+        $encoded = iconv('UTF-8', 'UTF-16BE', $text);
+        if ($encoded === false) {
+            throw new \InvalidArgumentException('Text is not valid UTF-8, cannot convert to UTF-16BE.');
+        }
+
+        return new self("\xFE\xFF" . $encoded);
     }
 
     public function format(): string

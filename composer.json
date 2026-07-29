@@ -5,6 +5,7 @@
     "license": "proprietary",
     "require": {
         "php": "^8.3",
+        "ext-iconv": "*",
         "ext-zlib": "*"
     },
     "require-dev": {
