@@ -1,0 +1,7 @@
+/vendor/
+/.phpunit.result.cache
+.DS_Store
+
+# Unrelated leftover config with hardcoded DB credentials -- not part of MightyPDF.
+# Kept out of git history rather than silently committed. See conversation/memory for context.
+/defaults.php
