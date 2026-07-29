@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Assembler;
 
+use MightyPDF\Assembler\Types\PdfValue;
+
 /**
  * Base class for every PDF object that has (or could have) its own object
  * number: dictionaries, streams, and anything built from them.
@@ -16,15 +18,27 @@ namespace MightyPDF\Assembler;
  * mechanism: subclasses describe their body via content(), and the
  * final render() below is the only place that ever adds the "N 0 obj" /
  * "endobj" wrapper. There is nothing else to override or forget.
+ *
+ * Implements PdfValue so any PdfObject (a Dictionary, say) can also be
+ * used as a plain inline value nested inside another dictionary's
+ * entries -- e.g. a Page's /Resources sub-dictionary, which is never
+ * given its own object number. format() is just an alias for the
+ * "bare value" half of render(). An object used only inline can be
+ * constructed with no object id at all; objectId()/render(true) throw
+ * if one is asked for and never assigned.
  */
-abstract class PdfObject
+abstract class PdfObject implements PdfValue
 {
-    public function __construct(private readonly int $objectId)
+    public function __construct(private readonly ?int $objectId = null)
     {
     }
 
     public function objectId(): int
     {
+        if ($this->objectId === null) {
+            throw new \LogicException('This object has no object id -- it was constructed for use as an inline value only.');
+        }
+
         return $this->objectId;
     }
 
@@ -55,6 +69,11 @@ abstract class PdfObject
             return $content;
         }
 
-        return sprintf("%d 0 obj\n%s\nendobj\n", $this->objectId, trim($content));
+        return sprintf("%d 0 obj\n%s\nendobj\n", $this->objectId(), trim($content));
+    }
+
+    final public function format(): string
+    {
+        return $this->render(false);
     }
 }

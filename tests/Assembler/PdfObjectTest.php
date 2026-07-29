@@ -52,12 +52,50 @@ final class PdfObjectTest extends TestCase
         self::assertSame(42, $this->fakeObject(42, 'x')->objectId());
     }
 
+    public function testFormatIsAnAliasForBareRender(): void
+    {
+        // This is what lets any PdfObject (a Dictionary, say) be nested
+        // as a plain inline value inside another dictionary's entries,
+        // e.g. a Page's /Resources sub-dictionary.
+        $object = $this->fakeObject(1, '<< /Font << /F1 5 0 R >> >>');
+        self::assertSame($object->render(false), $object->format());
+    }
+
+    public function testObjectWithNoIdCanStillBeUsedAsAnInlineValue(): void
+    {
+        $object = $this->fakeInlineObject('<< >>');
+        self::assertSame('<< >>', $object->format());
+    }
+
+    public function testObjectWithNoIdThrowsIfRenderedIndirectly(): void
+    {
+        $object = $this->fakeInlineObject('<< >>');
+
+        $this->expectException(\LogicException::class);
+        $object->render(true);
+    }
+
     private function fakeObject(int $objectId, string $content): PdfObject
     {
         return new class ($objectId, $content) extends PdfObject {
             public function __construct(int $objectId, private readonly string $fakeContent)
             {
                 parent::__construct($objectId);
+            }
+
+            protected function content(): string
+            {
+                return $this->fakeContent;
+            }
+        };
+    }
+
+    private function fakeInlineObject(string $content): PdfObject
+    {
+        return new class ($content) extends PdfObject {
+            public function __construct(private readonly string $fakeContent)
+            {
+                parent::__construct();
             }
 
             protected function content(): string

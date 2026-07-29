@@ -71,4 +71,20 @@ final class DictionaryTest extends TestCase
         self::assertSame($ref, $dict->get('Pages'));
         self::assertNull($dict->get('Missing'));
     }
+
+    public function testCanNestAnIdlessDictionaryAsAnInlineValue(): void
+    {
+        // No object number of its own -- e.g. a Page's /Resources
+        // sub-dictionary, which is never a separate indirect object.
+        $font = new Dictionary();
+        $font->set('F1', new PdfReference(5));
+
+        $resources = new Dictionary();
+        $resources->set('Font', $font);
+
+        $page = new Dictionary(1);
+        $page->set('Resources', $resources);
+
+        self::assertSame('<< /Resources << /Font << /F1 5 0 R >> >> >>', $page->render(false));
+    }
 }
