@@ -1,0 +1,27 @@
+{
+    "name": "jthomsen/mightypdf",
+    "description": "A from-scratch PDF writer for PHP: raw PDF assembly plus a content layer for text, drawing, images, and AcroForm fields.",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.3",
+        "ext-zlib": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "MightyPDF\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "MightyPDF\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
+}
