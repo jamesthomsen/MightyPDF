@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace MightyPDF\Tests\Content;
+namespace MightyPDF\Tests\Assembler\Types;
 
-use MightyPDF\Content\WinAnsiEncoding;
+use MightyPDF\Assembler\Types\WinAnsiEncoding;
 use PHPUnit\Framework\TestCase;
 
 final class WinAnsiEncodingTest extends TestCase

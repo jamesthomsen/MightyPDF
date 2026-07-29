@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MightyPDF\Assembler;
 
+use MightyPDF\Assembler\Form\AcroForm;
 use MightyPDF\Assembler\Types\PdfRectangle;
 
 /**
@@ -26,6 +27,7 @@ final class Document
     private readonly IndirectObjectRegistry $registry;
     private readonly Catalog $catalog;
     private readonly PageTreeNode $pageTree;
+    private ?AcroForm $acroForm = null;
 
     /** @var list<Page> */
     private array $pages = [];
@@ -65,6 +67,25 @@ final class Document
     public function catalog(): Catalog
     {
         return $this->catalog;
+    }
+
+    /**
+     * Created lazily -- most documents have no form fields at all, so
+     * this only allocates and wires an /AcroForm into the Catalog the
+     * first time something actually needs it, and every PageBuilder for
+     * every page in the document shares this same instance (there is
+     * exactly one /AcroForm per document, with every field from every
+     * page listed together in its /Fields array).
+     */
+    public function acroForm(): AcroForm
+    {
+        if ($this->acroForm === null) {
+            $this->acroForm = new AcroForm($this->registry->allocate());
+            $this->registry->register($this->acroForm);
+            $this->catalog->setAcroForm($this->acroForm->objectId());
+        }
+
+        return $this->acroForm;
     }
 
     /** @return list<Page> */

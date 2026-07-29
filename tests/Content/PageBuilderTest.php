@@ -241,6 +241,101 @@ final class PageBuilderTest extends TestCase
         self::assertSame($objCount, $endobjCount);
     }
 
+    public function testAddTextFieldWiresFontIntoAcroFormDrNotPageResources(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->addTextField('FirstName', 72, 700, 200, 20, value: 'Jane');
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/AcroForm', $output);
+        self::assertStringContainsString('/FT /Tx', $output);
+        self::assertStringContainsString('/T (FirstName)', $output);
+        self::assertStringContainsString('/V (Jane)', $output);
+        self::assertStringContainsString('/NeedsAppearances true', $output);
+
+        // The field's /DA references a font resource that must resolve
+        // via AcroForm's /DR, not the page's own /Resources.
+        self::assertStringContainsString('/DR << /Font <<', $output);
+    }
+
+    public function testAddTextFieldAppearsInPageAnnotsAndAcroFormFields(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addTextField('Name', 0, 0, 100, 20);
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/Annots [', $output);
+        self::assertStringContainsString('/Fields [', $output);
+    }
+
+    public function testMultipleFieldsAcrossPagesShareOneAcroForm(): void
+    {
+        $document = new Document();
+        $page1 = $document->newPage();
+        $page2 = $document->newPage();
+
+        (new PageBuilder($document, $page1))->addTextField('A', 0, 0, 50, 20);
+        (new PageBuilder($document, $page2))->addTextField('B', 0, 0, 50, 20);
+
+        $output = $document->save();
+
+        // Exactly one AcroForm object (one /NeedsAppearances declaration),
+        // and its /Fields array lists both pages' fields together.
+        self::assertSame(1, preg_match_all('/\/NeedsAppearances true/', $output));
+        preg_match('/\/Fields \[([^\]]*)\]/', $output, $matches);
+        self::assertSame(2, substr_count($matches[1], ' 0 R'));
+    }
+
+    public function testAddCheckboxUncheckedByDefault(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addCheckbox('Agree', 72, 700, 12);
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/FT /Btn', $output);
+        self::assertStringContainsString('/AS /Off', $output);
+        self::assertStringContainsString('/AP <<', $output);
+    }
+
+    public function testAddCheckboxChecked(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addCheckbox('Agree', 72, 700, 12, checked: true);
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/AS /Yes', $output);
+    }
+
+    public function testResultingPdfWithFormFieldsIsStructurallyValid(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))
+            ->addTextField('Name', 72, 700, 200, 20, value: 'Jane Doe')
+            ->addCheckbox('Agree', 72, 670, 12, checked: true);
+
+        $output = $document->save();
+
+        $objCount = preg_match_all('/\d+ 0 obj/', $output);
+        $endobjCount = preg_match_all('/endobj/', $output);
+        self::assertSame($objCount, $endobjCount);
+
+        preg_match_all('/^(\d{10}) \d{5} n \n/m', $output, $matches);
+        foreach ($matches[1] as $offsetString) {
+            self::assertMatchesRegularExpression('/^\d+ 0 obj/', substr($output, (int) $offsetString, 20));
+        }
+    }
+
     private function decompressedContentStreamBytes(Page $page): string
     {
         $rendered = $page->contentStreams()[0]->render(true);

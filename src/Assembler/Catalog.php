@@ -23,4 +23,9 @@ final class Catalog extends Dictionary
     {
         $this->set('Pages', new PdfReference($pageTreeObjectId));
     }
+
+    public function setAcroForm(int $acroFormObjectId): void
+    {
+        $this->set('AcroForm', new PdfReference($acroFormObjectId));
+    }
 }

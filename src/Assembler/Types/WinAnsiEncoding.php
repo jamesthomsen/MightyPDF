@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
-namespace MightyPDF\Content;
+namespace MightyPDF\Assembler\Types;
 
 /**
- * Encodes a PHP (UTF-8) string into WinAnsiEncoding bytes for use in a
- * PDF content stream's text-showing operators.
+ * Encodes a PHP (UTF-8) string into WinAnsiEncoding bytes for use in PDF
+ * literal strings and content-stream text-showing operators. Lives
+ * alongside PdfNumberFormat as a shared low-level encoding utility used
+ * by both the content layer (drawn text) and form fields (/V, /DA) --
+ * not content-drawing logic itself.
  *
  * WinAnsiEncoding is, for practical purposes, Windows-1252/CP1252 (they
  * differ only in a handful of rarely-used code points), so this defers to
