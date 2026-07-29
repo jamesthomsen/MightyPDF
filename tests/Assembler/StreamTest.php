@@ -47,4 +47,18 @@ final class StreamTest extends TestCase
         preg_match('/\/Length (\d+)/', $stream->render(true), $matches);
         self::assertLessThan(10_000, (int) $matches[1]);
     }
+
+    public function testAppendBytesGrowsTheSameStreamObject(): void
+    {
+        // This is what lets a whole page's worth of drawing calls share
+        // one content stream (and one object id) instead of allocating a
+        // new stream per operation.
+        $stream = new Stream(1, 'first ', compress: false);
+        $stream->appendBytes('second');
+
+        $rendered = $stream->render(true);
+        self::assertStringContainsString('/Length 12', $rendered);
+        self::assertStringContainsString("stream\nfirst second\nendstream", $rendered);
+        self::assertStringStartsWith('1 0 obj', $rendered, 'object id must not change across appends');
+    }
 }
