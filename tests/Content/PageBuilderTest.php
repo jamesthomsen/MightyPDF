@@ -6,6 +6,7 @@ namespace MightyPDF\Tests\Content;
 
 use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\Page;
+use MightyPDF\Content\ContentStream;
 use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\PageBuilder;
 use PHPUnit\Framework\TestCase;
@@ -107,6 +108,77 @@ final class PageBuilderTest extends TestCase
         foreach ($matches[1] as $offsetString) {
             self::assertMatchesRegularExpression('/^\d+ 0 obj/', substr($output, (int) $offsetString, 20));
         }
+    }
+
+    public function testDrawLineAppendsToTheSamePageContentStream(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->drawLine(0, 0, 100, 100, 2.0, 1.0, 0.0, 0.0);
+
+        self::assertCount(1, $page->contentStreams());
+        $bytes = $this->decompressedContentStreamBytes($page);
+        self::assertStringContainsString('2 w', $bytes);
+        self::assertStringContainsString('1 0 0 RG', $bytes);
+        self::assertStringContainsString('0 0 m', $bytes);
+        self::assertStringContainsString('100 100 l', $bytes);
+        self::assertStringContainsString('S', $bytes);
+    }
+
+    public function testFillRectangle(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->fillRectangle(10, 10, 200, 100, 0.0, 1.0, 0.0);
+
+        $bytes = $this->decompressedContentStreamBytes($page);
+        self::assertStringContainsString('0 1 0 rg', $bytes);
+        self::assertStringContainsString('10 10 200 100 re', $bytes);
+        self::assertStringContainsString('f', $bytes);
+    }
+
+    public function testStrokeRectangle(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->strokeRectangle(0, 0, 50, 50);
+
+        $bytes = $this->decompressedContentStreamBytes($page);
+        self::assertStringContainsString('0 0 50 50 re', $bytes);
+        self::assertStringContainsString('S', $bytes);
+    }
+
+    public function testTextAndShapesShareOnePageContentStream(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->drawText(StandardFont::Helvetica, 12.0, 0, 0, 'label')
+            ->drawLine(0, 0, 10, 10)
+            ->fillRectangle(0, 0, 5, 5);
+
+        self::assertCount(1, $page->contentStreams());
+    }
+
+    public function testDrawCustomAppendsRawOperatorsToThePageStream(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $custom = (new ContentStream())->moveTo(1, 1)->lineTo(2, 2)->stroke();
+        $builder->drawCustom($custom);
+
+        $bytes = $this->decompressedContentStreamBytes($page);
+        self::assertStringContainsString('1 1 m', $bytes);
+        self::assertStringContainsString('2 2 l', $bytes);
     }
 
     private function decompressedContentStreamBytes(Page $page): string

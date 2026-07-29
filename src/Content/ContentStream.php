@@ -55,6 +55,87 @@ final class ContentStream
         return $this;
     }
 
+    public function setLineWidth(float $widthPt): static
+    {
+        $this->buffer .= sprintf("%s w\n", self::num($widthPt));
+
+        return $this;
+    }
+
+    public function setStrokeColorRgb(float $r, float $g, float $b): static
+    {
+        $this->buffer .= sprintf("%s %s %s RG\n", self::num($r), self::num($g), self::num($b));
+
+        return $this;
+    }
+
+    public function setFillColorRgb(float $r, float $g, float $b): static
+    {
+        $this->buffer .= sprintf("%s %s %s rg\n", self::num($r), self::num($g), self::num($b));
+
+        return $this;
+    }
+
+    public function moveTo(float $x, float $y): static
+    {
+        $this->buffer .= sprintf("%s %s m\n", self::num($x), self::num($y));
+
+        return $this;
+    }
+
+    public function lineTo(float $x, float $y): static
+    {
+        $this->buffer .= sprintf("%s %s l\n", self::num($x), self::num($y));
+
+        return $this;
+    }
+
+    /** Cubic Bezier curve from the current point, via two control points, to (x3, y3). */
+    public function curveTo(float $x1, float $y1, float $x2, float $y2, float $x3, float $y3): static
+    {
+        $this->buffer .= sprintf(
+            "%s %s %s %s %s %s c\n",
+            self::num($x1), self::num($y1), self::num($x2), self::num($y2), self::num($x3), self::num($y3),
+        );
+
+        return $this;
+    }
+
+    public function rect(float $x, float $y, float $width, float $height): static
+    {
+        $this->buffer .= sprintf("%s %s %s %s re\n", self::num($x), self::num($y), self::num($width), self::num($height));
+
+        return $this;
+    }
+
+    public function closePath(): static
+    {
+        $this->buffer .= "h\n";
+
+        return $this;
+    }
+
+    public function stroke(): static
+    {
+        $this->buffer .= "S\n";
+
+        return $this;
+    }
+
+    public function fill(): static
+    {
+        $this->buffer .= "f\n";
+
+        return $this;
+    }
+
+    public function fillAndStroke(): static
+    {
+        $this->buffer .= "B\n";
+
+        return $this;
+    }
+
     public function bytes(): string
     {
         return $this->buffer;

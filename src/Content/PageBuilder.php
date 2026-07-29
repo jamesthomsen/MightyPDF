@@ -57,6 +57,81 @@ final class PageBuilder
         return $this;
     }
 
+    public function drawLine(
+        float $x1,
+        float $y1,
+        float $x2,
+        float $y2,
+        float $lineWidthPt = 1.0,
+        float $r = 0.0,
+        float $g = 0.0,
+        float $b = 0.0,
+    ): static {
+        $operators = (new ContentStream())
+            ->setLineWidth($lineWidthPt)
+            ->setStrokeColorRgb($r, $g, $b)
+            ->moveTo($x1, $y1)
+            ->lineTo($x2, $y2)
+            ->stroke();
+
+        $this->append($operators->bytes());
+
+        return $this;
+    }
+
+    public function strokeRectangle(
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        float $lineWidthPt = 1.0,
+        float $r = 0.0,
+        float $g = 0.0,
+        float $b = 0.0,
+    ): static {
+        $operators = (new ContentStream())
+            ->setLineWidth($lineWidthPt)
+            ->setStrokeColorRgb($r, $g, $b)
+            ->rect($x, $y, $width, $height)
+            ->stroke();
+
+        $this->append($operators->bytes());
+
+        return $this;
+    }
+
+    public function fillRectangle(
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        float $r = 0.0,
+        float $g = 0.0,
+        float $b = 0.0,
+    ): static {
+        $operators = (new ContentStream())
+            ->setFillColorRgb($r, $g, $b)
+            ->rect($x, $y, $width, $height)
+            ->fill();
+
+        $this->append($operators->bytes());
+
+        return $this;
+    }
+
+    /**
+     * Escape hatch for anything not covered by the convenience methods
+     * above (used by, e.g., SVG rendering to inject an arbitrary path):
+     * appends a caller-built ContentStream's operators to this page's
+     * content stream directly.
+     */
+    public function drawCustom(ContentStream $operators): static
+    {
+        $this->append($operators->bytes());
+
+        return $this;
+    }
+
     private function fontResourceName(StandardFont $font): string
     {
         $key = $font->name;
