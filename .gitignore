@@ -1,5 +1,6 @@
 /vendor/
 /.phpunit.result.cache
+/examples/output/
 .DS_Store
 
 # Unrelated leftover config with hardcoded DB credentials -- not part of MightyPDF.
