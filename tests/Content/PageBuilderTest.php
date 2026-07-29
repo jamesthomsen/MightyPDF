@@ -13,6 +13,8 @@ use PHPUnit\Framework\TestCase;
 
 final class PageBuilderTest extends TestCase
 {
+    private const string FIXTURES = __DIR__ . '/../fixtures/images';
+
     public function testDrawTextRegistersAFontResourceAndContentStream(): void
     {
         $document = new Document();
@@ -179,6 +181,64 @@ final class PageBuilderTest extends TestCase
         $bytes = $this->decompressedContentStreamBytes($page);
         self::assertStringContainsString('1 1 m', $bytes);
         self::assertStringContainsString('2 2 l', $bytes);
+    }
+
+    public function testDrawJpegRegistersAnXObjectResourceAndPlacementOperators(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->drawJpeg(self::FIXTURES . '/sample.jpg', 10, 20, 100, 200);
+
+        $output = $document->save();
+        self::assertStringContainsString('/Filter /DCTDecode', $output);
+        self::assertStringContainsString('/XObject <<', $output);
+
+        $bytes = $this->decompressedContentStreamBytes($page);
+        self::assertStringContainsString('q', $bytes);
+        self::assertStringContainsString('100 0 0 200 10 20 cm', $bytes);
+        self::assertStringContainsString('/Im1 Do', $bytes);
+        self::assertStringContainsString('Q', $bytes);
+    }
+
+    public function testDrawPngAndDrawGifGetDistinctImageResourceNames(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->drawPng(self::FIXTURES . '/sample.png', 0, 0, 10, 10);
+        $builder->drawGif(self::FIXTURES . '/sample.gif', 20, 0, 10, 10);
+
+        $bytes = $this->decompressedContentStreamBytes($page);
+        self::assertStringContainsString('/Im1 Do', $bytes);
+        self::assertStringContainsString('/Im2 Do', $bytes);
+    }
+
+    public function testImagesAndTextShareTheSamePageContentStream(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->drawText(StandardFont::Helvetica, 12.0, 0, 0, 'caption')
+            ->drawJpeg(self::FIXTURES . '/sample.jpg', 0, 20, 50, 50);
+
+        self::assertCount(1, $page->contentStreams());
+    }
+
+    public function testResultingPdfWithImagesIsStructurallyValid(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->drawJpeg(self::FIXTURES . '/sample.jpg', 0, 0, 100, 100);
+
+        $output = $document->save();
+
+        $objCount = preg_match_all('/\d+ 0 obj/', $output);
+        $endobjCount = preg_match_all('/endobj/', $output);
+        self::assertSame($objCount, $endobjCount);
     }
 
     private function decompressedContentStreamBytes(Page $page): string

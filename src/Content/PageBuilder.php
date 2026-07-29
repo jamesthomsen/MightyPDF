@@ -11,6 +11,9 @@ use MightyPDF\Assembler\Stream;
 use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Content\Font\StandardFont;
+use MightyPDF\Content\Image\GifImage;
+use MightyPDF\Content\Image\JpegImage;
+use MightyPDF\Content\Image\PngImage;
 
 /**
  * The content-layer entry point for drawing on a page: text now, shapes
@@ -34,6 +37,7 @@ final class PageBuilder
     /** @var array<string, string> StandardFont case name => resource name (e.g. "F1") */
     private array $fontResourceNames = [];
     private int $nextFontResourceNumber = 1;
+    private int $nextImageResourceNumber = 1;
 
     public function __construct(
         private readonly Document $document,
@@ -127,6 +131,46 @@ final class PageBuilder
      */
     public function drawCustom(ContentStream $operators): static
     {
+        $this->append($operators->bytes());
+
+        return $this;
+    }
+
+    public function drawJpeg(string $path, float $x, float $y, float $width, float $height): static
+    {
+        return $this->placeImage(JpegImage::fromFile($this->document->registry()->allocate(), $path), $x, $y, $width, $height);
+    }
+
+    public function drawPng(string $path, float $x, float $y, float $width, float $height): static
+    {
+        return $this->placeImage(PngImage::fromFile($this->document->registry()->allocate(), $path), $x, $y, $width, $height);
+    }
+
+    public function drawGif(string $path, float $x, float $y, float $width, float $height): static
+    {
+        return $this->placeImage(GifImage::fromFile($this->document->registry()->allocate(), $path), $x, $y, $width, $height);
+    }
+
+    /**
+     * Owns every side effect of "place this already-built image XObject
+     * on this page": registering it with the document, wiring it into
+     * /Resources /XObject, and appending the placement operators. Same
+     * "one method, every side effect" discipline as fontResourceName().
+     */
+    private function placeImage(Stream $image, float $x, float $y, float $width, float $height): static
+    {
+        $this->document->registry()->register($image);
+
+        $resourceName = 'Im' . $this->nextImageResourceNumber++;
+
+        $xObjects = $this->page->resources()->get('XObject');
+        if (!$xObjects instanceof Dictionary) {
+            $xObjects = new Dictionary();
+            $this->page->resources()->set('XObject', $xObjects);
+        }
+        $xObjects->set($resourceName, new PdfReference($image->objectId()));
+
+        $operators = (new ContentStream())->drawImage($resourceName, $x, $y, $width, $height);
         $this->append($operators->bytes());
 
         return $this;

@@ -136,6 +136,54 @@ final class ContentStream
         return $this;
     }
 
+    public function pushGraphicsState(): static
+    {
+        $this->buffer .= "q\n";
+
+        return $this;
+    }
+
+    public function popGraphicsState(): static
+    {
+        $this->buffer .= "Q\n";
+
+        return $this;
+    }
+
+    /** Concatenates a transformation matrix [a b c d e f] onto the CTM. */
+    public function concatMatrix(float $a, float $b, float $c, float $d, float $e, float $f): static
+    {
+        $this->buffer .= sprintf(
+            "%s %s %s %s %s %s cm\n",
+            self::num($a), self::num($b), self::num($c), self::num($d), self::num($e), self::num($f),
+        );
+
+        return $this;
+    }
+
+    /**
+     * Paints an XObject (image or, in principle, a form XObject) at unit
+     * scale under whatever CTM is currently in effect -- callers scale
+     * and position it via concatMatrix() first. Wrapped in its own
+     * q/.../Q by drawImage() below so the placement matrix never leaks
+     * into subsequent operators.
+     */
+    public function paintXObject(string $resourceName): static
+    {
+        $this->buffer .= sprintf("/%s Do\n", $resourceName);
+
+        return $this;
+    }
+
+    /** Places an image (or other unit-square XObject) at (x, y) sized width x height, in points. */
+    public function drawImage(string $resourceName, float $x, float $y, float $width, float $height): static
+    {
+        return $this->pushGraphicsState()
+            ->concatMatrix($width, 0, 0, $height, $x, $y)
+            ->paintXObject($resourceName)
+            ->popGraphicsState();
+    }
+
     public function bytes(): string
     {
         return $this->buffer;
