@@ -122,16 +122,32 @@ final class ContentStream
         return $this;
     }
 
-    public function fill(): static
+    public function fill(bool $evenOdd = false): static
     {
-        $this->buffer .= "f\n";
+        $this->buffer .= ($evenOdd ? "f*\n" : "f\n");
 
         return $this;
     }
 
-    public function fillAndStroke(): static
+    public function fillAndStroke(bool $evenOdd = false): static
     {
-        $this->buffer .= "B\n";
+        $this->buffer .= ($evenOdd ? "B*\n" : "B\n");
+
+        return $this;
+    }
+
+    /** Ends the current path without painting it (e.g. neither fill nor stroke apply). */
+    public function endPathNoOp(): static
+    {
+        $this->buffer .= "n\n";
+
+        return $this;
+    }
+
+    /** Activates a named ExtGState resource (e.g. for /ca, /CA alpha). */
+    public function setExtGState(string $resourceName): static
+    {
+        $this->buffer .= sprintf("/%s gs\n", $resourceName);
 
         return $this;
     }

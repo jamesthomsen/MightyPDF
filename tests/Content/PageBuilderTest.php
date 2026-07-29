@@ -336,6 +336,45 @@ final class PageBuilderTest extends TestCase
         }
     }
 
+    public function testDrawSvgRendersIntoThePageContentStream(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->drawSvg(__DIR__ . '/../fixtures/svg/sample.svg', 100, 100, 200, 200);
+
+        $bytes = $this->decompressedContentStreamBytes($page);
+        self::assertStringContainsString('cm', $bytes);
+        self::assertStringContainsString('re', $bytes);
+        self::assertStringContainsString('1 0 0 rg', $bytes); // red rect
+    }
+
+    public function testDrawSvgAndOtherDrawingShareOnePageContentStream(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->drawText(StandardFont::Helvetica, 12.0, 0, 0, 'caption')
+            ->drawSvg(__DIR__ . '/../fixtures/svg/sample.svg', 0, 0, 100, 100);
+
+        self::assertCount(1, $page->contentStreams());
+    }
+
+    public function testResultingPdfWithSvgIsStructurallyValid(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->drawSvg(__DIR__ . '/../fixtures/svg/sample.svg', 0, 0, 200, 200);
+
+        $output = $document->save();
+
+        $objCount = preg_match_all('/\d+ 0 obj/', $output);
+        $endobjCount = preg_match_all('/endobj/', $output);
+        self::assertSame($objCount, $endobjCount);
+    }
+
     private function decompressedContentStreamBytes(Page $page): string
     {
         $rendered = $page->contentStreams()[0]->render(true);

@@ -11,6 +11,7 @@ use MightyPDF\Assembler\Form\TextField;
 use MightyPDF\Assembler\Page;
 use MightyPDF\Assembler\Stream;
 use MightyPDF\Assembler\Types\PdfName;
+use MightyPDF\Assembler\Types\PdfReal;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfRectangle;
 use MightyPDF\Assembler\Types\WinAnsiEncoding;
@@ -18,6 +19,7 @@ use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\Image\GifImage;
 use MightyPDF\Content\Image\JpegImage;
 use MightyPDF\Content\Image\PngImage;
+use MightyPDF\Content\Svg\SvgDocument;
 
 /**
  * The content-layer entry point for drawing on a page: text now, shapes
@@ -46,6 +48,10 @@ final class PageBuilder
     /** @var array<string, string> StandardFont case name => resource name, for AcroForm /DR /Font */
     private array $formFontResourceNames = [];
     private int $nextFormFontResourceNumber = 1;
+
+    /** @var array<string, string> "fillAlpha:strokeAlpha" => resource name (e.g. "GS1") */
+    private array $extGStateResourceNames = [];
+    private int $nextExtGStateResourceNumber = 1;
 
     public function __construct(
         private readonly Document $document,
@@ -182,6 +188,65 @@ final class PageBuilder
         $this->append($operators->bytes());
 
         return $this;
+    }
+
+    /**
+     * Places an SVG image, scaled/positioned to fill (x, y, width, height)
+     * in points, flipping SVG's top-left/Y-down coordinate convention to
+     * PDF's bottom-left/Y-up one via a single placement matrix -- every
+     * coordinate inside the SVG itself is used exactly as authored, with
+     * no per-shape sign-flipping needed.
+     */
+    public function drawSvg(string $path, float $x, float $y, float $width, float $height): static
+    {
+        $svg = SvgDocument::fromFile($path);
+
+        $scaleX = $width / $svg->viewBoxWidth;
+        $scaleY = $height / $svg->viewBoxHeight;
+
+        $operators = new ContentStream();
+        $operators->pushGraphicsState()->concatMatrix(
+            $scaleX,
+            0,
+            0,
+            -$scaleY,
+            $x - $svg->viewBoxX * $scaleX,
+            $y + $height + $svg->viewBoxY * $scaleY,
+        );
+
+        $svg->render($operators, $this->extGStateResourceName(...));
+
+        $operators->popGraphicsState();
+
+        $this->append($operators->bytes());
+
+        return $this;
+    }
+
+    private function extGStateResourceName(float $fillAlpha, float $strokeAlpha): string
+    {
+        $key = "$fillAlpha:$strokeAlpha";
+        if (isset($this->extGStateResourceNames[$key])) {
+            return $this->extGStateResourceNames[$key];
+        }
+
+        $gsDict = new Dictionary($this->document->registry()->allocate());
+        $gsDict->set('Type', new PdfName('ExtGState'));
+        $gsDict->set('ca', new PdfReal($fillAlpha));
+        $gsDict->set('CA', new PdfReal($strokeAlpha));
+        $this->document->registry()->register($gsDict);
+
+        $resourceName = 'GS' . $this->nextExtGStateResourceNumber++;
+        $this->extGStateResourceNames[$key] = $resourceName;
+
+        $extGStates = $this->page->resources()->get('ExtGState');
+        if (!$extGStates instanceof Dictionary) {
+            $extGStates = new Dictionary();
+            $this->page->resources()->set('ExtGState', $extGStates);
+        }
+        $extGStates->set($resourceName, new PdfReference($gsDict->objectId()));
+
+        return $resourceName;
     }
 
     public function addTextField(
