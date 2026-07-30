@@ -55,6 +55,21 @@ final class ContentStream
         return $this;
     }
 
+    /**
+     * Sets word spacing (extra space added after every ASCII space byte,
+     * 0x20, in subsequent Tj calls) -- part of the graphics state, so it
+     * persists across BT/ET until explicitly changed again. Used for
+     * justified paragraph text; callers that set a non-zero value are
+     * responsible for resetting it back to 0 once they're done, since
+     * nothing here does that automatically.
+     */
+    public function setWordSpacing(float $spacingPt): static
+    {
+        $this->buffer .= sprintf("%s Tw\n", self::num($spacingPt));
+
+        return $this;
+    }
+
     public function setLineWidth(float $widthPt): static
     {
         $this->buffer .= sprintf("%s w\n", self::num($widthPt));

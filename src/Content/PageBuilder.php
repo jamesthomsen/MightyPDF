@@ -22,6 +22,7 @@ use MightyPDF\Content\Image\GifImage;
 use MightyPDF\Content\Image\JpegImage;
 use MightyPDF\Content\Image\PngImage;
 use MightyPDF\Content\Svg\SvgDocument;
+use MightyPDF\Content\Text\TextWrapper;
 
 /**
  * The content-layer entry point for drawing on a page: text now, shapes
@@ -71,6 +72,87 @@ final class PageBuilder
             ->setFont($resourceName, $sizePt)
             ->showTextAt($x, $y, $encoded)
             ->endText();
+
+        $this->append($operators->bytes());
+
+        return $this;
+    }
+
+    /**
+     * Draws word-wrapped text into a (x, y, width, height) box -- (x, y)
+     * is the box's bottom-left corner, matching fillRectangle()/images
+     * elsewhere in this class. $height is required: this method only
+     * draws, it doesn't measure -- callers that want a box auto-sized to
+     * its content should call TextWrapper::wrap() themselves first (same
+     * font/size/width) and size the box from the returned line count,
+     * then pass that height in here. That two-step split is simpler than
+     * a built-in "auto" mode would be, and needs no dry-run/rollback
+     * trick, since MightyPDF is a pure writer with no reader state to
+     * undo (contrast this with TCPDF's startTransaction()/MultiCell()/
+     * rollbackTransaction() measurement dance).
+     *
+     * $align: 'L' (default), 'C', 'R', or 'J' (justified -- every line
+     * except the last gets extra inter-word spacing to fill the box's
+     * width; a line with no spaces to stretch is left as-is).
+     * $valign: 'T' (default), 'M', or 'B' -- vertical placement of the
+     * wrapped text block within the box when it's shorter than $height.
+     */
+    public function drawParagraph(
+        StandardFont $font,
+        float $sizePt,
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        string $text,
+        string $align = 'L',
+        string $valign = 'T',
+        ?float $lineHeightPt = null,
+    ): static {
+        $lineHeightPt ??= $sizePt * 1.15;
+        $metrics = $font->metrics();
+        $lines = TextWrapper::wrap($text, $metrics, $sizePt, $width);
+        $lastIndex = count($lines) - 1;
+
+        // No ascent metric is shipped for the standard-14 fonts (see
+        // FontMetrics), so this uses a standard approximation (~0.8 of
+        // the nominal size) to place the first baseline just inside the
+        // box's top edge -- consistent with how drawText()'s $y is
+        // documented as a baseline, not a box top.
+        $ascent = $sizePt * 0.8;
+        $blockHeight = count($lines) * $lineHeightPt;
+        $topY = match ($valign) {
+            'M' => $y + $height / 2 + min($blockHeight, $height) / 2,
+            'B' => $y + min($blockHeight, $height),
+            default => $y + $height,
+        };
+
+        $resourceName = $this->fontResourceName($font);
+        $operators = new ContentStream();
+        $lineY = $topY - $ascent;
+
+        foreach ($lines as $index => $line) {
+            $lineWidth = $metrics->widthOf($line, $sizePt);
+            $spaceCount = substr_count($line, ' ');
+
+            $wordSpacing = 0.0;
+            $lineX = $x;
+            if ($align === 'C') {
+                $lineX = $x + ($width - $lineWidth) / 2;
+            } elseif ($align === 'R') {
+                $lineX = $x + $width - $lineWidth;
+            } elseif ($align === 'J' && $index !== $lastIndex && $spaceCount > 0 && $lineWidth < $width) {
+                $wordSpacing = ($width - $lineWidth) / $spaceCount;
+            }
+
+            $operators->beginText()
+                ->setFont($resourceName, $sizePt)
+                ->setWordSpacing($wordSpacing)
+                ->showTextAt($lineX, $lineY, $line)
+                ->endText();
+
+            $lineY -= $lineHeightPt;
+        }
 
         $this->append($operators->bytes());
 

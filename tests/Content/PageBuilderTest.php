@@ -49,6 +49,83 @@ final class PageBuilderTest extends TestCase
         self::assertStringNotContainsString('/Encoding /WinAnsiEncoding', $output);
     }
 
+    public function testDrawParagraphWrapsAcrossMultipleLinesInOrder(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        // Courier is a fixed 600/1000 em per character (see StandardFont::metrics()),
+        // i.e. 6pt/char at size 10 -- "Hello World" (11 chars) is 66pt, over the 40pt box.
+        $builder->drawParagraph(StandardFont::Courier, 10.0, 0, 0, 40, 100, 'Hello World Foo');
+
+        $bytes = $this->decompressedContentStreamBytes($page);
+
+        self::assertStringContainsString('(Hello) Tj', $bytes);
+        self::assertStringContainsString('(World) Tj', $bytes);
+        self::assertStringContainsString('(Foo) Tj', $bytes);
+        self::assertTrue(
+            strpos($bytes, '(Hello) Tj') < strpos($bytes, '(World) Tj')
+            && strpos($bytes, '(World) Tj') < strpos($bytes, '(Foo) Tj'),
+            'lines should be drawn top to bottom, in source order',
+        );
+    }
+
+    public function testDrawParagraphRightAlignPositionsTextAgainstTheBoxsRightEdge(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        // "Hi" is 2 * 6 = 12pt wide; in a 40pt-wide box, right-aligned x = 0 + 40 - 12 = 28.
+        $builder->drawParagraph(StandardFont::Courier, 10.0, 0, 0, 40, 100, 'Hi', align: 'R');
+
+        self::assertStringContainsString('1 0 0 1 28 ', $this->decompressedContentStreamBytes($page));
+    }
+
+    public function testDrawParagraphValignTopAndBottomPositionTheBaselineDifferently(): void
+    {
+        $document = new Document();
+        $topPage = $document->newPage();
+        (new PageBuilder($document, $topPage))->drawParagraph(StandardFont::Courier, 10.0, 0, 0, 100, 100, 'Hi', valign: 'T');
+
+        $bottomDocument = new Document();
+        $bottomPage = $bottomDocument->newPage();
+        (new PageBuilder($bottomDocument, $bottomPage))->drawParagraph(StandardFont::Courier, 10.0, 0, 0, 100, 100, 'Hi', valign: 'B');
+
+        // T: baseline = (0 + 100) - ascent(8) = 92. B: baseline = (0 + lineHeight(11.5)) - ascent(8) = 3.5.
+        self::assertStringContainsString('1 0 0 1 0 92 Tm', $this->decompressedContentStreamBytes($topPage));
+        self::assertStringContainsString('1 0 0 1 0 3.5 Tm', $this->decompressedContentStreamBytes($bottomPage));
+    }
+
+    public function testDrawParagraphJustifyAddsWordSpacingToEveryNonLastLineOnly(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        // "Hi you" (6 chars = 36pt) fits a 42pt box; "Hi you now" (10 chars = 60pt) doesn't,
+        // so this wraps to ["Hi you", "now"]. Line 1 has one space and 6pt of slack to fill.
+        $builder->drawParagraph(StandardFont::Courier, 10.0, 0, 0, 42, 100, 'Hi you now', align: 'J');
+
+        $bytes = $this->decompressedContentStreamBytes($page);
+
+        self::assertStringContainsString('6 Tw', $bytes);
+        // Every line -- justified or not -- explicitly sets Tw (0 for the ragged last line),
+        // so word spacing never leaks from one line into the next.
+        self::assertSame(2, substr_count($bytes, ' Tw'));
+    }
+
+    public function testDrawParagraphOnEmptyBoxTextfits(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->drawParagraph(StandardFont::Courier, 10.0, 0, 0, 100, 20, '');
+
+        $objCount = preg_match_all('/\d+ 0 obj/', $document->save());
+        self::assertGreaterThan(0, $objCount);
+    }
+
     public function testReusingTheSameFontReusesTheSameResourceName(): void
     {
         $document = new Document();
