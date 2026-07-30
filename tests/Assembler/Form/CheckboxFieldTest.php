@@ -34,4 +34,16 @@ final class CheckboxFieldTest extends TestCase
         self::assertStringContainsString('/V /Yes', $rendered);
         self::assertStringContainsString('/AS /Yes', $rendered);
     }
+
+    public function testCustomExportValueReplacesYes(): void
+    {
+        $on = new Stream(2, '', compress: false);
+        $off = new Stream(3, '', compress: false);
+        $field = new CheckboxField(1, 'Term1', new PdfRectangle(0, 0, 12, 12), true, $on, $off, exportValue: 'Q1');
+        $rendered = $field->render(false);
+
+        self::assertStringContainsString('/V /Q1', $rendered);
+        self::assertStringContainsString('/AS /Q1', $rendered);
+        self::assertStringContainsString('/AP << /N << /Q1 2 0 R /Off 3 0 R >> >>', $rendered);
+    }
 }

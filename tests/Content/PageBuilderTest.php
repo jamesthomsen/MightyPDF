@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MightyPDF\Tests\Content;
 
 use MightyPDF\Assembler\Document;
+use MightyPDF\Assembler\Form\TextField;
 use MightyPDF\Assembler\Page;
 use MightyPDF\Content\ContentStream;
 use MightyPDF\Content\Font\StandardFont;
@@ -314,6 +315,38 @@ final class PageBuilderTest extends TestCase
         $output = $document->save();
 
         self::assertStringContainsString('/AS /Yes', $output);
+    }
+
+    public function testAddCheckboxWithCustomExportValue(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addCheckbox('Term1', 72, 700, 12, checked: true, exportValue: 'Q1');
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/AS /Q1', $output);
+    }
+
+    public function testAddTextFieldWithAlignMultilineAndReadonly(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addTextField(
+            'Notes',
+            72,
+            700,
+            200,
+            60,
+            align: TextField::ALIGN_CENTER,
+            multiline: true,
+            readonly: true,
+        );
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/Q 1', $output);
+        self::assertStringContainsString('/Ff 4097', $output);
     }
 
     public function testAddRadioGroupCreatesParentFieldWithRadioFlagAndKids(): void

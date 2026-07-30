@@ -29,15 +29,16 @@ final class CheckboxField extends FormField
         bool $checked,
         Stream $onAppearance,
         Stream $offAppearance,
+        string $exportValue = 'Yes',
     ) {
         parent::__construct($objectId, $name, $rect);
 
-        $state = $checked ? 'Yes' : 'Off';
+        $state = $checked ? $exportValue : 'Off';
         $this->set('V', new PdfName($state));
         $this->set('AS', new PdfName($state));
 
         $states = new Dictionary();
-        $states->set('Yes', new PdfReference($onAppearance->objectId()));
+        $states->set($exportValue, new PdfReference($onAppearance->objectId()));
         $states->set('Off', new PdfReference($offAppearance->objectId()));
 
         $appearance = new Dictionary();

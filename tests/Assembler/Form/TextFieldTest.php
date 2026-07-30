@@ -49,4 +49,41 @@ final class TextFieldTest extends TestCase
 
         self::assertStringContainsString("/V (caf\xE9)", $rendered);
     }
+
+    public function testOmitsQAndFfByDefault(): void
+    {
+        $field = new TextField(1, 'Name', new PdfRectangle(0, 0, 100, 20), 'F1', 10.0);
+        $rendered = $field->render(false);
+
+        self::assertStringNotContainsString('/Q', $rendered);
+        self::assertStringNotContainsString('/Ff', $rendered);
+    }
+
+    public function testAlignSetsQuadding(): void
+    {
+        $field = new TextField(1, 'Name', new PdfRectangle(0, 0, 100, 20), 'F1', 10.0, align: TextField::ALIGN_RIGHT);
+
+        self::assertStringContainsString('/Q 2', $field->render(false));
+    }
+
+    public function testMultilineSetsMultilineFlag(): void
+    {
+        $field = new TextField(1, 'Name', new PdfRectangle(0, 0, 100, 20), 'F1', 10.0, multiline: true);
+
+        self::assertStringContainsString('/Ff 4096', $field->render(false));
+    }
+
+    public function testReadonlySetsReadonlyFlag(): void
+    {
+        $field = new TextField(1, 'Name', new PdfRectangle(0, 0, 100, 20), 'F1', 10.0, readonly: true);
+
+        self::assertStringContainsString('/Ff 1', $field->render(false));
+    }
+
+    public function testMultilineAndReadonlyFlagsCombine(): void
+    {
+        $field = new TextField(1, 'Name', new PdfRectangle(0, 0, 100, 20), 'F1', 10.0, multiline: true, readonly: true);
+
+        self::assertStringContainsString('/Ff 4097', $field->render(false));
+    }
 }

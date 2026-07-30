@@ -261,6 +261,9 @@ final class PageBuilder
         StandardFont $font = StandardFont::Helvetica,
         float $fontSizePt = 10.0,
         ?int $maxLength = null,
+        ?int $align = null,
+        bool $multiline = false,
+        bool $readonly = false,
     ): static {
         $resourceName = $this->formFontResourceName($font);
 
@@ -272,6 +275,9 @@ final class PageBuilder
             $fontSizePt,
             $value,
             $maxLength,
+            $align,
+            $multiline,
+            $readonly,
         );
 
         $this->registerField($field);
@@ -279,8 +285,14 @@ final class PageBuilder
         return $this;
     }
 
-    public function addCheckbox(string $name, float $x, float $y, float $size, bool $checked = false): static
-    {
+    public function addCheckbox(
+        string $name,
+        float $x,
+        float $y,
+        float $size,
+        bool $checked = false,
+        string $exportValue = 'Yes',
+    ): static {
         $onAppearance = $this->buildCheckboxAppearance($size, checked: true);
         $offAppearance = $this->buildCheckboxAppearance($size, checked: false);
         $this->document->registry()->register($onAppearance);
@@ -293,6 +305,7 @@ final class PageBuilder
             $checked,
             $onAppearance,
             $offAppearance,
+            $exportValue,
         );
 
         $this->registerField($field);
