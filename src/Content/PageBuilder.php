@@ -63,13 +63,23 @@ final class PageBuilder
     ) {
     }
 
-    public function drawText(StandardFont $font, float $sizePt, float $x, float $y, string $text): static
+    /**
+     * $r/$g/$b (0.0-1.0, default black) are set explicitly on every call
+     * rather than left to whatever the page's shared content stream last
+     * had in effect -- fillRectangle()/fillRect() etc. also set fill
+     * color, and every drawing call on a page shares one continuous
+     * content stream (see the class doc comment), so an implicit "use
+     * whatever color was last set" default would make text color depend
+     * on unrelated drawing order elsewhere on the page.
+     */
+    public function drawText(StandardFont $font, float $sizePt, float $x, float $y, string $text, float $r = 0.0, float $g = 0.0, float $b = 0.0): static
     {
         $resourceName = $this->fontResourceName($font);
         $encoded = WinAnsiEncoding::encode($text);
 
         $operators = new ContentStream();
-        $operators->beginText()
+        $operators->setFillColorRgb($r, $g, $b)
+            ->beginText()
             ->setFont($resourceName, $sizePt)
             ->showTextAt($x, $y, $encoded)
             ->endText();
@@ -97,6 +107,8 @@ final class PageBuilder
      * width; a line with no spaces to stretch is left as-is).
      * $valign: 'T' (default), 'M', or 'B' -- vertical placement of the
      * wrapped text block within the box when it's shorter than $height.
+     * $r/$g/$b: see drawText()'s doc comment -- set explicitly per line
+     * for the same reason.
      */
     public function drawParagraph(
         StandardFont $font,
@@ -109,6 +121,9 @@ final class PageBuilder
         string $align = 'L',
         string $valign = 'T',
         ?float $lineHeightPt = null,
+        float $r = 0.0,
+        float $g = 0.0,
+        float $b = 0.0,
     ): static {
         $lineHeightPt ??= $sizePt * 1.15;
         $metrics = $font->metrics();
@@ -146,7 +161,8 @@ final class PageBuilder
                 $wordSpacing = ($width - $lineWidth) / $spaceCount;
             }
 
-            $operators->beginText()
+            $operators->setFillColorRgb($r, $g, $b)
+                ->beginText()
                 ->setFont($resourceName, $sizePt)
                 ->setWordSpacing($wordSpacing)
                 ->showTextAt($lineX, $lineY, $line)

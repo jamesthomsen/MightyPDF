@@ -49,6 +49,41 @@ final class PageBuilderTest extends TestCase
         self::assertStringNotContainsString('/Encoding /WinAnsiEncoding', $output);
     }
 
+    public function testDrawTextDefaultsToExplicitBlackFillColor(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->drawText(StandardFont::Helvetica, 12.0, 0, 0, 'x');
+
+        self::assertStringContainsString('0 0 0 rg', $this->decompressedContentStreamBytes($page));
+    }
+
+    public function testDrawTextSetsCustomFillColor(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->drawText(StandardFont::Helvetica, 12.0, 0, 0, 'x', r: 1.0, g: 1.0, b: 1.0);
+
+        self::assertStringContainsString('1 1 1 rg', $this->decompressedContentStreamBytes($page));
+    }
+
+    public function testDrawTextColorDoesNotLeakFromAPriorFillRectangleCall(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        // A prior fill (e.g. a colored bar behind the text) sets the
+        // shared content stream's fill color -- drawText() must set its
+        // own regardless, immediately before its BT, rather than
+        // silently inheriting whatever a previous, unrelated call left
+        // in effect.
+        $builder->fillRectangle(0, 0, 10, 10, r: 0.2, g: 0.2, b: 0.2);
+        $builder->drawText(StandardFont::Helvetica, 12.0, 0, 0, 'label');
+
+        self::assertStringContainsString("0 0 0 rg\nBT\n", $this->decompressedContentStreamBytes($page));
+    }
+
     public function testDrawParagraphWrapsAcrossMultipleLinesInOrder(): void
     {
         $document = new Document();
@@ -124,6 +159,18 @@ final class PageBuilderTest extends TestCase
 
         $objCount = preg_match_all('/\d+ 0 obj/', $document->save());
         self::assertGreaterThan(0, $objCount);
+    }
+
+    public function testDrawParagraphSetsCustomFillColorPerLineRegardlessOfPriorState(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->fillRectangle(0, 0, 10, 10, r: 0.2, g: 0.2, b: 0.2);
+        $builder->drawParagraph(StandardFont::Courier, 10.0, 0, 0, 100, 20, 'hi', r: 1.0, g: 1.0, b: 1.0);
+
+        self::assertStringContainsString("1 1 1 rg\nBT\n", $this->decompressedContentStreamBytes($page));
     }
 
     public function testReusingTheSameFontReusesTheSameResourceName(): void
