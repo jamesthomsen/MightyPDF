@@ -234,6 +234,44 @@ final class PageBuilderTest extends TestCase
         self::assertStringContainsString('S', $bytes);
     }
 
+    public function testDrawBarcodeFillsExactlyTheBarElementsAndSpansTheFullWidth(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->drawBarcode('A', 0, 0, 100, 20);
+
+        $bytes = $this->decompressedContentStreamBytes($page);
+
+        // 'A' framed as *A* is 3 characters * 9 elements = 27, of which
+        // ceil(9/2)=5 are bars per character -> 15 filled rectangles total.
+        self::assertSame(15, substr_count($bytes, ' re'));
+        self::assertSame(15, substr_count($bytes, 'f'));
+        self::assertStringContainsString('0 0 0 rg', $bytes);
+
+        // The last bar's right edge should reach (very close to) the
+        // requested width -- confirms the module width was scaled to fit,
+        // not left at some fixed unrelated size.
+        preg_match_all('/([\d.]+) 0 ([\d.]+) 20 re/', $bytes, $matches);
+        $rightEdges = array_map(
+            static fn (string $x, string $w): float => (float) $x + (float) $w,
+            $matches[1],
+            $matches[2],
+        );
+        self::assertEqualsWithDelta(100.0, max($rightEdges), 0.01);
+    }
+
+    public function testDrawBarcodeRejectsUnknownSymbology(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $builder->drawBarcode('A', 0, 0, 100, 20, symbology: 'qr');
+    }
+
     public function testTextAndShapesShareOnePageContentStream(): void
     {
         $document = new Document();

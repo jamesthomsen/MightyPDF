@@ -17,6 +17,7 @@ use MightyPDF\Assembler\Types\PdfReal;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfRectangle;
 use MightyPDF\Assembler\Types\WinAnsiEncoding;
+use MightyPDF\Content\Barcode\Code39;
 use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\Image\GifImage;
 use MightyPDF\Content\Image\JpegImage;
@@ -215,6 +216,52 @@ final class PageBuilder
             ->setFillColorRgb($r, $g, $b)
             ->rect($x, $y, $width, $height)
             ->fill();
+
+        $this->append($operators->bytes());
+
+        return $this;
+    }
+
+    /**
+     * Draws a 1D barcode into a (x, y, width, height) box -- (x, y) is the
+     * bottom-left corner, matching fillRectangle()/images elsewhere in
+     * this class. Only the bars are drawn; a human-readable caption (if
+     * wanted) is the caller's job via drawText()/drawParagraph() below
+     * the barcode, same as every other composite element in this class
+     * stays a single-responsibility primitive.
+     *
+     * Bar width is uniform-narrow-element-scaled to exactly fill $width
+     * (Code39::elements() reports the barcode's width in abstract
+     * "module" units; this divides $width by the total module count to
+     * get the actual point width of one narrow module).
+     */
+    public function drawBarcode(
+        string $value,
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        string $symbology = 'code39',
+    ): static {
+        if ($symbology !== 'code39') {
+            throw new \InvalidArgumentException("Unsupported barcode symbology '$symbology'.");
+        }
+
+        $elements = Code39::elements($value);
+        $totalModules = array_sum(array_column($elements, 'widthModules'));
+        $moduleWidthPt = $width / $totalModules;
+
+        $operators = new ContentStream();
+        $cursor = $x;
+        foreach ($elements as $element) {
+            $elementWidthPt = $element['widthModules'] * $moduleWidthPt;
+            if ($element['isBar']) {
+                $operators->setFillColorRgb(0, 0, 0)
+                    ->rect($cursor, $y, $elementWidthPt, $height)
+                    ->fill();
+            }
+            $cursor += $elementWidthPt;
+        }
 
         $this->append($operators->bytes());
 
