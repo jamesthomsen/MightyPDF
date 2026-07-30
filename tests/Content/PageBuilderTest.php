@@ -316,6 +316,65 @@ final class PageBuilderTest extends TestCase
         self::assertStringContainsString('/AS /Yes', $output);
     }
 
+    public function testAddRadioGroupCreatesParentFieldWithRadioFlagAndKids(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addRadioGroup('Color', [
+            ['exportValue' => 'Red', 'x' => 72, 'y' => 700, 'size' => 10],
+            ['exportValue' => 'Blue', 'x' => 100, 'y' => 700, 'size' => 10],
+        ], checkedExportValue: 'Blue');
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/FT /Btn', $output);
+        self::assertStringContainsString('/Ff 32768', $output);
+        self::assertStringContainsString('/V /Blue', $output);
+        self::assertStringContainsString('/Subtype /Widget', $output);
+        self::assertStringContainsString('/AS /Blue', $output);
+        self::assertStringContainsString('/AS /Off', $output);
+    }
+
+    public function testAddRadioGroupKidsAreOnPageAnnotsAndOnlyParentIsAnAcroFormField(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addRadioGroup('Color', [
+            ['exportValue' => 'Red', 'x' => 72, 'y' => 700, 'size' => 10],
+            ['exportValue' => 'Blue', 'x' => 100, 'y' => 700, 'size' => 10],
+        ]);
+
+        $output = $document->save();
+
+        preg_match('/\/Annots \[([^\]]*)\]/', $output, $annots);
+        self::assertSame(2, substr_count($annots[1], ' 0 R'), 'both radio widgets should be page annotations');
+
+        preg_match('/\/Fields \[([^\]]*)\]/', $output, $fields);
+        self::assertSame(1, substr_count($fields[1], ' 0 R'), 'only the parent field should be listed in AcroForm /Fields');
+    }
+
+    public function testAddRadioGroupIsStructurallyValid(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addRadioGroup('Color', [
+            ['exportValue' => 'Red', 'x' => 72, 'y' => 700, 'size' => 10],
+            ['exportValue' => 'Blue', 'x' => 100, 'y' => 700, 'size' => 10],
+            ['exportValue' => 'Green', 'x' => 128, 'y' => 700, 'size' => 10],
+        ], checkedExportValue: 'Green');
+
+        $output = $document->save();
+
+        $objCount = preg_match_all('/\d+ 0 obj/', $output);
+        $endobjCount = preg_match_all('/endobj/', $output);
+        self::assertSame($objCount, $endobjCount);
+
+        preg_match_all('/^(\d{10}) \d{5} n \n/m', $output, $matches);
+        foreach ($matches[1] as $offsetString) {
+            self::assertMatchesRegularExpression('/^\d+ 0 obj/', substr($output, (int) $offsetString, 20));
+        }
+    }
+
     public function testResultingPdfWithFormFieldsIsStructurallyValid(): void
     {
         $document = new Document();

@@ -7,6 +7,8 @@ namespace MightyPDF\Content;
 use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\Form\CheckboxField;
+use MightyPDF\Assembler\Form\RadioButtonWidget;
+use MightyPDF\Assembler\Form\RadioGroupField;
 use MightyPDF\Assembler\Form\TextField;
 use MightyPDF\Assembler\Page;
 use MightyPDF\Assembler\Stream;
@@ -309,6 +311,74 @@ final class PageBuilder
                 ->lineTo($size * 0.4, $size * 0.2)
                 ->lineTo($size * 0.8, $size * 0.8)
                 ->stroke();
+        }
+
+        $stream = new Stream($this->document->registry()->allocate(), $operators->bytes(), compress: false);
+        $stream->set('Type', new PdfName('XObject'));
+        $stream->set('Subtype', new PdfName('Form'));
+        $stream->set('BBox', new PdfRectangle(0, 0, $size, $size));
+
+        return $stream;
+    }
+
+    /**
+     * A group of mutually-exclusive radio buttons sharing one field name.
+     * Unlike addCheckbox(), the parent RadioGroupField is never itself a
+     * page annotation -- only its per-option RadioButtonWidget kids are,
+     * so registerField() (which assumes a single widget IS the field)
+     * doesn't apply here; this method does the equivalent wiring itself.
+     *
+     * @param list<array{exportValue: string, x: float, y: float, size: float}> $options
+     */
+    public function addRadioGroup(string $name, array $options, ?string $checkedExportValue = null): static
+    {
+        $group = new RadioGroupField($this->document->registry()->allocate(), $name, $checkedExportValue);
+        $this->document->registry()->register($group);
+
+        foreach ($options as $option) {
+            $onAppearance = $this->buildRadioAppearance($option['size'], filled: true);
+            $offAppearance = $this->buildRadioAppearance($option['size'], filled: false);
+            $this->document->registry()->register($onAppearance);
+            $this->document->registry()->register($offAppearance);
+
+            $widget = new RadioButtonWidget(
+                $this->document->registry()->allocate(),
+                $group->objectId(),
+                new PdfRectangle($option['x'], $option['y'], $option['x'] + $option['size'], $option['y'] + $option['size']),
+                $option['exportValue'],
+                $checkedExportValue !== null && $checkedExportValue === $option['exportValue'],
+                $onAppearance,
+                $offAppearance,
+            );
+            $this->document->registry()->register($widget);
+
+            $group->addKid($widget->objectId());
+            $this->page->addAnnotation($widget->objectId());
+        }
+
+        $this->document->acroForm()->addField($group->objectId());
+
+        return $this;
+    }
+
+    /** A filled dot for "on"; "off" is intentionally blank, matching buildCheckboxAppearance(). */
+    private function buildRadioAppearance(float $size, bool $filled): Stream
+    {
+        $operators = new ContentStream();
+        if ($filled) {
+            $cx = $size / 2;
+            $cy = $size / 2;
+            $radius = $size * 0.25;
+            $k = $radius * 0.5523; // bezier control-point offset for a circle approximation
+
+            $operators->setFillColorRgb(0, 0, 0)
+                ->moveTo($cx + $radius, $cy)
+                ->curveTo($cx + $radius, $cy + $k, $cx + $k, $cy + $radius, $cx, $cy + $radius)
+                ->curveTo($cx - $k, $cy + $radius, $cx - $radius, $cy + $k, $cx - $radius, $cy)
+                ->curveTo($cx - $radius, $cy - $k, $cx - $k, $cy - $radius, $cx, $cy - $radius)
+                ->curveTo($cx + $k, $cy - $radius, $cx + $radius, $cy - $k, $cx + $radius, $cy)
+                ->closePath()
+                ->fill();
         }
 
         $stream = new Stream($this->document->registry()->allocate(), $operators->bytes(), compress: false);
