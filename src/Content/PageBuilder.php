@@ -33,10 +33,14 @@ use MightyPDF\Content\Text\TextWrapper;
  * per call) -- plus the bookkeeping needed to reference supporting
  * resources (fonts, later images) from the page's /Resources dictionary.
  *
- * A single method (fontResourceName()) owns every side effect of "start
- * using this font on this page": allocating and registering the Font
- * dictionary, and wiring it into /Resources /Font. Same discipline as
- * IndirectObjectRegistry centralizing xref bookkeeping -- scattering
+ * Two methods split the side effects of "start using this font here":
+ * fontObject() owns allocating/registering/caching the one shared Font
+ * dictionary per document, and fontResourceName() owns naming it in this
+ * page's /Resources /Font. They are separate because the object is
+ * document-scoped while the name is page-scoped -- conflating the two is
+ * what let form fields on different pages collide in the shared AcroForm
+ * /DR (fixed by moving that naming onto AcroForm itself). Same discipline
+ * as IndirectObjectRegistry centralizing xref bookkeeping -- scattering
  * these steps across call sites is exactly what produced the 2012 bugs
  * this project is rebuilding away from.
  */
@@ -48,10 +52,6 @@ final class PageBuilder
     private array $fontResourceNames = [];
     private int $nextFontResourceNumber = 1;
     private int $nextImageResourceNumber = 1;
-
-    /** @var array<string, string> StandardFont case name => resource name, for AcroForm /DR /Font */
-    private array $formFontResourceNames = [];
-    private int $nextFormFontResourceNumber = 1;
 
     /** @var array<string, string> "fillAlpha:strokeAlpha" => resource name (e.g. "GS1") */
     private array $extGStateResourceNames = [];
@@ -595,32 +595,56 @@ final class PageBuilder
         $this->document->acroForm()->addField($field->objectId());
     }
 
+    /**
+     * Resource name for $font in this page's own /Resources /Font. The
+     * name is page-local (each page has its own /Resources, so /F1 on
+     * two pages is unambiguous), but the font *object* it points at is
+     * shared document-wide via fontObject().
+     */
     private function fontResourceName(StandardFont $font): string
     {
-        return $this->wireFontIntoResources(
-            $font,
-            $this->page->resources(),
-            $this->fontResourceNames,
-            $this->nextFontResourceNumber,
-        );
+        $key = $font->name;
+        if (isset($this->fontResourceNames[$key])) {
+            return $this->fontResourceNames[$key];
+        }
+
+        $resourceName = 'F' . $this->nextFontResourceNumber++;
+        $this->fontResourceNames[$key] = $resourceName;
+
+        $resources = $this->page->resources();
+        $fonts = $resources->get('Font');
+        if (!$fonts instanceof Dictionary) {
+            $fonts = new Dictionary();
+            $resources->set('Font', $fonts);
+        }
+        $fonts->set($resourceName, new PdfReference($this->fontObject($font)->objectId()));
+
+        return $resourceName;
     }
 
+    /**
+     * Unlike page /Resources, the AcroForm's /DR is one dictionary shared
+     * by every page, so AcroForm owns both the naming and the dedupe --
+     * see AcroForm::fontResourceName().
+     */
     private function formFontResourceName(StandardFont $font): string
     {
-        return $this->wireFontIntoResources(
-            $font,
-            $this->document->acroForm()->defaultResources(),
-            $this->formFontResourceNames,
-            $this->nextFormFontResourceNumber,
-        );
+        return $this->document->acroForm()->fontResourceName($font->name, $this->fontObject($font));
     }
 
-    /** @param array<string, string> $cache */
-    private function wireFontIntoResources(StandardFont $font, Dictionary $targetResources, array &$cache, int &$nextNumber): string
+    /**
+     * The one /Type /Font object for $font in this document, allocated on
+     * first use and reused by every later page and by the AcroForm /DR.
+     * Standard-14 fonts carry no embedded font program or /Widths, so the
+     * dictionary is byte-identical per case -- the case name is a
+     * complete cache key.
+     */
+    private function fontObject(StandardFont $font): Dictionary
     {
         $key = $font->name;
-        if (isset($cache[$key])) {
-            return $cache[$key];
+        $cached = $this->document->cachedFont($key);
+        if ($cached !== null) {
+            return $cached;
         }
 
         $fontDict = new Dictionary($this->document->registry()->allocate());
@@ -631,18 +655,9 @@ final class PageBuilder
             $fontDict->set('Encoding', new PdfName('WinAnsiEncoding'));
         }
         $this->document->registry()->register($fontDict);
+        $this->document->cacheFont($key, $fontDict);
 
-        $resourceName = 'F' . $nextNumber++;
-        $cache[$key] = $resourceName;
-
-        $fonts = $targetResources->get('Font');
-        if (!$fonts instanceof Dictionary) {
-            $fonts = new Dictionary();
-            $targetResources->set('Font', $fonts);
-        }
-        $fonts->set($resourceName, new PdfReference($fontDict->objectId()));
-
-        return $resourceName;
+        return $fontDict;
     }
 
     private function append(string $bytes): void

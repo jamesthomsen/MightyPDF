@@ -45,6 +45,21 @@ final class Document
      */
     private array $imageCache = [];
 
+    /**
+     * Font key (a plain string, e.g. a StandardFont case name) =>
+     * already-registered /Type /Font dictionary. Same reasoning as
+     * $imageCache: the font object is referenced by id from every page
+     * that uses it, so it belongs to the document rather than to the
+     * per-page PageBuilder that happened to need it first.
+     *
+     * Keyed by string, never by a Content-layer type -- Assembler must
+     * not depend on Content (see AcroForm/WinAnsiEncoding living here
+     * for the same reason).
+     *
+     * @var array<string, Dictionary>
+     */
+    private array $fontCache = [];
+
     public function __construct()
     {
         $this->registry = new IndirectObjectRegistry();
@@ -85,6 +100,16 @@ final class Document
     public function cacheImage(string $contentHash, Stream $image): void
     {
         $this->imageCache[$contentHash] = $image;
+    }
+
+    public function cachedFont(string $fontKey): ?Dictionary
+    {
+        return $this->fontCache[$fontKey] ?? null;
+    }
+
+    public function cacheFont(string $fontKey, Dictionary $font): void
+    {
+        $this->fontCache[$fontKey] = $font;
     }
 
     public function catalog(): Catalog

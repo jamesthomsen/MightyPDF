@@ -504,6 +504,104 @@ final class PageBuilderTest extends TestCase
         self::assertSame(2, substr_count($matches[1], ' 0 R'));
     }
 
+    /**
+     * Regression: /DR is one document-wide dictionary, so form-font
+     * resource names must be allocated document-wide too. When the
+     * naming lived on the per-page PageBuilder the counter restarted
+     * each page, so page 2's font was also named /F1 and overwrote
+     * page 1's /DR entry -- leaving page 1's field rendering in page
+     * 2's font.
+     */
+    public function testFormFieldsOnDifferentPagesGetDistinctDrFontNames(): void
+    {
+        $document = new Document();
+        $page1 = $document->newPage();
+        $page2 = $document->newPage();
+
+        (new PageBuilder($document, $page1))
+            ->addTextField('A', 0, 0, 50, 20, font: StandardFont::Helvetica);
+        (new PageBuilder($document, $page2))
+            ->addTextField('B', 0, 0, 50, 20, font: StandardFont::Courier);
+
+        $output = $document->save();
+
+        preg_match('/\/DR << \/Font << ([^>]*) >>/', $output, $dr);
+        preg_match_all('/\/(F\d+) (\d+) 0 R/', $dr[1], $entries, PREG_SET_ORDER);
+
+        // Two different fonts must occupy two different /DR slots...
+        self::assertCount(2, $entries);
+        self::assertSame(['F1', 'F2'], [$entries[0][1], $entries[1][1]]);
+
+        // ...pointing at genuinely different font objects...
+        self::assertNotSame($entries[0][2], $entries[1][2]);
+
+        // ...and each field's /DA must name its own slot.
+        preg_match_all('/\/DA \((\/F\d+) [^)]*\)/', $output, $das);
+        self::assertSame(['/F1', '/F2'], $das[1]);
+
+        // The /DR slots resolve to the fonts actually asked for.
+        self::assertMatchesRegularExpression(
+            '/' . $entries[0][2] . ' 0 obj\s*<< [^>]*\/BaseFont \/Helvetica/',
+            $output,
+        );
+        self::assertMatchesRegularExpression(
+            '/' . $entries[1][2] . ' 0 obj\s*<< [^>]*\/BaseFont \/Courier/',
+            $output,
+        );
+    }
+
+    public function testSameFormFontAcrossPagesReusesOneDrSlot(): void
+    {
+        $document = new Document();
+
+        foreach (range(1, 3) as $i) {
+            (new PageBuilder($document, $document->newPage()))
+                ->addTextField("field$i", 0, 0, 50, 20, font: StandardFont::Helvetica);
+        }
+
+        $output = $document->save();
+
+        preg_match('/\/DR << \/Font << ([^>]*) >>/', $output, $dr);
+        self::assertSame(1, substr_count($dr[1], ' 0 R'));
+        self::assertSame(3, substr_count($output, '/DA (/F1 '));
+    }
+
+    public function testRepeatedFontAcrossPagesReusesOneFontObject(): void
+    {
+        $document = new Document();
+
+        foreach (range(1, 4) as $i) {
+            (new PageBuilder($document, $document->newPage()))
+                ->drawText(StandardFont::Helvetica, 12.0, 72.0, 700.0, "page $i")
+                ->drawText(StandardFont::TimesRoman, 12.0, 72.0, 680.0, "also page $i");
+        }
+
+        $output = $document->save();
+
+        // Two fonts used on four pages => two font objects, not eight.
+        self::assertSame(2, substr_count($output, '/Type /Font'));
+        self::assertSame(1, substr_count($output, '/BaseFont /Helvetica'));
+        self::assertSame(1, substr_count($output, '/BaseFont /Times-Roman'));
+
+        // Every page still names both fonts in its own /Resources.
+        self::assertSame(4, substr_count($output, '/Font << /F1 '));
+    }
+
+    public function testDistinctFontsAreNotDeduplicated(): void
+    {
+        $document = new Document();
+        $builder = new PageBuilder($document, $document->newPage());
+
+        $builder->drawText(StandardFont::Helvetica, 12.0, 72.0, 700.0, 'a')
+            ->drawText(StandardFont::HelveticaBold, 12.0, 72.0, 680.0, 'b');
+
+        $output = $document->save();
+
+        self::assertSame(2, substr_count($output, '/Type /Font'));
+        self::assertStringContainsString('/BaseFont /Helvetica ', $output);
+        self::assertStringContainsString('/BaseFont /Helvetica-Bold', $output);
+    }
+
     public function testAddCheckboxUncheckedByDefault(): void
     {
         $document = new Document();

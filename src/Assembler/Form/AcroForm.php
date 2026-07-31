@@ -27,6 +27,19 @@ final class AcroForm extends Dictionary
     /** @var list<int> */
     private array $fieldObjectIds = [];
 
+    /**
+     * Font key => /DR resource name (e.g. "F1"). Both this map and the
+     * counter below live here rather than on the per-page PageBuilder
+     * because /DR is a single document-wide dictionary: a per-page cache
+     * restarts numbering on every page, so page 2's first form font is
+     * named /F1 again and silently overwrites page 1's /DR /Font /F1
+     * entry -- leaving page 1's field pointing at page 2's font.
+     *
+     * @var array<string, string>
+     */
+    private array $fontResourceNames = [];
+    private int $nextFontResourceNumber = 1;
+
     public function __construct(int $objectId)
     {
         parent::__construct($objectId);
@@ -47,6 +60,32 @@ final class AcroForm extends Dictionary
     public function defaultResources(): Dictionary
     {
         return $this->defaultResources;
+    }
+
+    /**
+     * Resource name to use in a field's /DA for $fontDict, registering it
+     * in /DR /Font on first use. $fontKey is a plain string (Assembler
+     * must not depend on Content), and $fontDict is expected to be the
+     * document-wide shared font object for that key, so repeat calls
+     * across pages return the same name pointing at the same object.
+     */
+    public function fontResourceName(string $fontKey, Dictionary $fontDict): string
+    {
+        if (isset($this->fontResourceNames[$fontKey])) {
+            return $this->fontResourceNames[$fontKey];
+        }
+
+        $resourceName = 'F' . $this->nextFontResourceNumber++;
+        $this->fontResourceNames[$fontKey] = $resourceName;
+
+        $fonts = $this->defaultResources->get('Font');
+        if (!$fonts instanceof Dictionary) {
+            $fonts = new Dictionary();
+            $this->defaultResources->set('Font', $fonts);
+        }
+        $fonts->set($resourceName, new PdfReference($fontDict->objectId()));
+
+        return $resourceName;
     }
 
     private function syncFields(): void
