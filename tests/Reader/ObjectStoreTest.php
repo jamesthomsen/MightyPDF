@@ -11,6 +11,7 @@ use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\PageBuilder;
+use MightyPDF\Crypt\DecryptionException;
 use MightyPDF\Reader\ObjectStore;
 use MightyPDF\Reader\ParseException;
 use PHPUnit\Framework\TestCase;
@@ -96,11 +97,11 @@ final class ObjectStoreTest extends TestCase
         self::assertNull((new ObjectStore(self::writtenDocument('x')))->get(9999));
     }
 
-    public function testRefusesAnEncryptedFile(): void
+    public function testRefusesAFileWhoseEncryptDictionaryIsMissing(): void
     {
-        // Every string and stream in an encrypted file is ciphertext, so
-        // reading on would yield a document full of binary noise and a
-        // form fill that is silently wrong. Refusing is the safe answer.
+        // Reading on would decrypt nothing and yield a document full of
+        // binary noise -- field names matching nothing, content streams
+        // drawing nothing -- which is far worse than not opening it.
         $body = "%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n";
         $offset = strlen($body);
 
@@ -109,10 +110,15 @@ final class ObjectStoreTest extends TestCase
             . "trailer\n<< /Size 2 /Root 1 0 R /Encrypt 5 0 R >>\n"
             . "startxref\n{$offset}\n%%EOF\n";
 
-        $this->expectException(ParseException::class);
-        $this->expectExceptionMessage('encrypted');
+        $this->expectException(DecryptionException::class);
+        $this->expectExceptionMessage('/Encrypt dictionary is missing');
 
         new ObjectStore($pdf);
+    }
+
+    public function testAnUnencryptedFileNeedsNoPassword(): void
+    {
+        self::assertFalse((new ObjectStore(self::writtenDocument('x')))->isEncrypted());
     }
 
     public function testSurvivesAReferenceCycle(): void

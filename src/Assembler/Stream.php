@@ -29,6 +29,15 @@ final class Stream extends Dictionary
         parent::__construct($objectId, $generation);
         $this->rawBytes = $bytes;
         $this->compress = $compress;
+
+        if ($compress) {
+            // Declared up front rather than at render time so that
+            // entries() always describes the bytes encodedBytes() will
+            // produce. Anything copying this stream -- the encryption
+            // layer, say -- would otherwise read a dictionary that does
+            // not yet mention the compression it is about to inherit.
+            $this->set('Filter', new PdfName('FlateDecode'));
+        }
     }
 
     /**
@@ -62,17 +71,34 @@ final class Stream extends Dictionary
         return $this->rawBytes;
     }
 
+    /**
+     * The bytes as they will appear between "stream" and "endstream":
+     * compressed if this stream compresses, and already in final form if
+     * it does not.
+     *
+     * Distinct from rawBytes() because anything that has to act on a
+     * stream's *encoded* form -- encryption sits outside the filter chain,
+     * not inside it -- needs the bytes after compression rather than
+     * before, and must not have to reimplement the encoding to get them.
+     */
+    public function encodedBytes(): string
+    {
+        if (!$this->compress) {
+            return $this->rawBytes;
+        }
+
+        $bytes = gzcompress($this->rawBytes);
+
+        if ($bytes === false) {
+            throw new \RuntimeException('Failed to compress stream data.');
+        }
+
+        return $bytes;
+    }
+
     protected function content(): string
     {
-        if ($this->compress) {
-            $bytes = gzcompress($this->rawBytes);
-            if ($bytes === false) {
-                throw new \RuntimeException('Failed to compress stream data.');
-            }
-            $this->set('Filter', new PdfName('FlateDecode'));
-        } else {
-            $bytes = $this->rawBytes;
-        }
+        $bytes = $this->encodedBytes();
 
         $this->set('Length', new PdfInteger(strlen($bytes)));
 

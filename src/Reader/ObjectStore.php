@@ -6,10 +6,14 @@ namespace MightyPDF\Reader;
 
 use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\Stream;
+use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfValue;
+use MightyPDF\Crypt\CryptTransform;
+use MightyPDF\Crypt\DecryptionException;
+use MightyPDF\Crypt\StandardSecurityHandler;
 use MightyPDF\Reader\Filter\StreamDecoder;
 
 /**
@@ -61,7 +65,17 @@ final class ObjectStore
      */
     private array $objectStreams = [];
 
-    public function __construct(string $bytes)
+    private ?StandardSecurityHandler $security = null;
+
+    /**
+     * The /Encrypt dictionary's own object number. It describes how to
+     * decrypt everything else and is therefore itself left in the clear;
+     * decrypting it would turn the one thing that must stay readable into
+     * noise.
+     */
+    private ?int $encryptObjectId = null;
+
+    public function __construct(string $bytes, string $password = '')
     {
         $this->lexer = new Lexer($bytes);
         $this->xref = XrefTable::read($this->lexer);
@@ -72,19 +86,10 @@ final class ObjectStore
             fn (PdfReference $reference): ?int => $this->resolveLength($reference),
         );
 
-        if ($this->xref->trailer()->get('Encrypt') !== null) {
-            // Refusing outright, rather than reading on. In an encrypted
-            // file every string and stream is ciphertext, so parsing
-            // "succeeds" and yields a document full of binary noise --
-            // field names that match nothing, content streams that draw
-            // nothing. Filling a form in such a file would produce a
-            // plausible-looking PDF that is silently wrong, which is far
-            // worse than not opening it.
-            throw new ParseException('This PDF is encrypted; decryption is not implemented yet.');
-        }
+        $this->unlock($password);
     }
 
-    public static function fromFile(string $path): self
+    public static function fromFile(string $path, string $password = ''): self
     {
         $bytes = @file_get_contents($path);
 
@@ -92,7 +97,58 @@ final class ObjectStore
             throw new ParseException("Failed to read PDF from $path.");
         }
 
-        return new self($bytes);
+        return new self($bytes, $password);
+    }
+
+    /**
+     * Sets up decryption, if the document has any.
+     *
+     * Order matters here. The /Encrypt dictionary is itself an object in
+     * the file, and it is the one object that is never enciphered -- so it
+     * has to be read *before* the handler exists, which is exactly what
+     * happens: with $security still null, loading it decrypts nothing. Its
+     * object number is then remembered so that a later, ordinary lookup of
+     * it does not try to decrypt it a second time.
+     */
+    private function unlock(string $password): void
+    {
+        $encrypt = $this->xref->trailer()->get('Encrypt');
+
+        if ($encrypt === null) {
+            return;
+        }
+
+        if ($encrypt instanceof PdfReference) {
+            $this->encryptObjectId = $encrypt->objectId();
+        }
+
+        $dictionary = $this->resolveDictionary($encrypt);
+
+        if ($dictionary === null) {
+            throw new DecryptionException('This PDF says it is encrypted but its /Encrypt dictionary is missing.');
+        }
+
+        $id = $this->xref->trailer()->get('ID');
+
+        $this->security = StandardSecurityHandler::open(
+            $dictionary,
+            $id instanceof PdfArray ? $id : null,
+            $password,
+        );
+
+        // Anything read while working that out was read undecrypted.
+        $this->cache = [];
+        $this->objectStreams = [];
+    }
+
+    public function isEncrypted(): bool
+    {
+        return $this->security !== null;
+    }
+
+    public function security(): ?StandardSecurityHandler
+    {
+        return $this->security;
     }
 
     public function trailer(): Dictionary
@@ -225,7 +281,44 @@ final class ObjectStore
         // check a stale offset that happens to land on some *other*
         // object would return that object's contents under the requested
         // id -- corruption that no later stage could detect.
-        return $parsed->objectId === $objectId ? $parsed->value : null;
+        if ($parsed->objectId !== $objectId) {
+            return null;
+        }
+
+        return $this->decrypt($parsed->value, $objectId, $parsed->generation);
+    }
+
+    /**
+     * Deciphers one indirect object, if the document is encrypted.
+     *
+     * Done here, at the point of parsing, because the key depends on the
+     * object's own number and generation (see
+     * StandardSecurityHandler::objectKey()) -- a string carried away and
+     * decrypted later has lost the only thing that identifies its key.
+     *
+     * Members of an object stream deliberately do not pass through here:
+     * the container was decrypted as a whole, and its contents are
+     * plaintext by the time they are parsed. Decrypting them again would
+     * be applying a key to data that was never enciphered with it.
+     */
+    private function decrypt(PdfValue $value, int $objectId, int $generation): PdfValue
+    {
+        $security = $this->security;
+
+        if ($security === null || $objectId === $this->encryptObjectId) {
+            return $value;
+        }
+
+        if ($value instanceof Dictionary
+            && CryptTransform::isNeverEncrypted($value, $security->encryptsMetadata())) {
+            return $value;
+        }
+
+        return CryptTransform::apply(
+            $value,
+            static fn (string $bytes): string => $security->decryptString($bytes, $objectId, $generation),
+            static fn (string $bytes): string => $security->decryptStream($bytes, $objectId, $generation),
+        );
     }
 
     private function resolveLength(PdfReference $reference): ?int

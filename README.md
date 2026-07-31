@@ -4,7 +4,7 @@ A from-scratch PDF library for PHP: raw PDF assembly plus a content layer
 for text, drawing, images, SVG, and AcroForm fields — and a reader that
 can open an existing PDF and edit it in place.
 
-Requires **PHP 8.3+**, `ext-iconv`, and `ext-zlib`.
+Requires **PHP 8.3+**, `ext-iconv`, `ext-openssl`, and `ext-zlib`.
 
 ## Installation
 
@@ -277,9 +277,28 @@ cross-reference tables and PDF 1.5+ cross-reference streams (with object
 streams and `/Predictor`) are supported, and an update is written in
 whichever format the source file uses.
 
-**Encrypted PDFs are refused**, rather than opened into binary noise.
-Decryption isn't implemented yet, and many everyday forms are encrypted
-with an empty password.
+**Encrypted PDFs open normally.** Most encrypted PDFs have an owner
+password and *no* user password, so they open in any viewer without a
+prompt — and are undecodable to a reader that hasn't implemented
+decryption. Those need nothing from you:
+
+```php
+$editor = PdfEditor::open('statement.pdf');
+```
+
+For one that really is password-protected, pass the password — either the
+user or the owner one will do:
+
+```php
+$editor = PdfEditor::open('statement.pdf', 'hunter2');
+```
+
+RC4 (40–128 bit) and AES (128 and 256 bit) are supported, covering
+revisions 2 through 6 of the standard security handler. **An encrypted
+document stays encrypted**: whatever you add or change is re-enciphered
+with the file's own key, so the update is readable in the same way the
+rest of the file is. There's no way here to encrypt a document that
+wasn't already encrypted, or to strip encryption from one that was.
 
 ## Filling in an existing form
 
@@ -337,7 +356,6 @@ would look correct in every tool except the one most people use.
 
 ## Known limitations
 
-- **No encryption support** — encrypted PDFs cannot be opened.
 - **Text field appearances are not generated** — filled text relies on
   `/NeedsAppearances` (see above).
 - **No page-overlay helper** — `PageBuilder` does not target a parsed

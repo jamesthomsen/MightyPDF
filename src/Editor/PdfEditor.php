@@ -10,6 +10,7 @@ use MightyPDF\Assembler\Trailer;
 use MightyPDF\Assembler\Types\PdfValue;
 use MightyPDF\Assembler\Xref;
 use MightyPDF\Assembler\XrefStream;
+use MightyPDF\Crypt\CryptTransform;
 use MightyPDF\Reader\ObjectStore;
 use MightyPDF\Reader\ParseException;
 
@@ -53,14 +54,20 @@ final class PdfEditor
      */
     private array $changed = [];
 
-    private function __construct(string $bytes)
+    private function __construct(string $bytes, string $password)
     {
         $this->originalBytes = $bytes;
-        $this->store = new ObjectStore($bytes);
+        $this->store = new ObjectStore($bytes, $password);
         $this->nextObjectId = $this->store->xref()->nextFreeObjectId();
     }
 
-    public static function open(string $path): self
+    /**
+     * @param string $password only needed for a document that does not
+     *        open with an empty one -- which most encrypted PDFs do, the
+     *        usual arrangement being an owner password with no user
+     *        password at all.
+     */
+    public static function open(string $path, string $password = ''): self
     {
         $bytes = @file_get_contents($path);
 
@@ -68,12 +75,12 @@ final class PdfEditor
             throw new ParseException("Failed to read PDF from $path.");
         }
 
-        return new self($bytes);
+        return new self($bytes, $password);
     }
 
-    public static function fromBytes(string $bytes): self
+    public static function fromBytes(string $bytes, string $password = ''): self
     {
-        return new self($bytes);
+        return new self($bytes, $password);
     }
 
     public function store(): ObjectStore
@@ -151,7 +158,7 @@ final class PdfEditor
             // recorded by every earlier section stays true and this one
             // only has to describe what this update added.
             $xref->addEntry($objectId, strlen($out), $object->generation());
-            $out .= $object->render(true);
+            $out .= $this->forWriting($object)->render(true);
         }
 
         // The update's cross-reference section has to be in the same
@@ -193,6 +200,47 @@ final class PdfEditor
         return $out
             . XrefStream::build($xrefStreamId, $xref, $trailer)->render(true)
             . "startxref\n{$startXref}\n%%EOF\n";
+    }
+
+    /**
+     * Re-enciphers an object on its way out, if the document is encrypted.
+     *
+     * An encrypted document stays encrypted. Writing plaintext strings
+     * into one would not produce a "partly decrypted" file, it would
+     * produce a broken one: a reader decrypts everything the /Encrypt
+     * dictionary says is encrypted, so plaintext appended to it comes back
+     * out as noise. The alternative -- stripping the encryption -- would
+     * mean rewriting every object in the file, which the whole incremental
+     * design exists to avoid, and would silently hand out a document whose
+     * protection someone was relying on.
+     *
+     * The result is a copy: the caller keeps holding the plaintext object
+     * it edited, and save() stays repeatable rather than enciphering the
+     * live document a little more each time it is called.
+     */
+    private function forWriting(PdfObject $object): PdfObject
+    {
+        $security = $this->store->security();
+
+        if ($security === null) {
+            return $object;
+        }
+
+        if ($object instanceof Dictionary
+            && CryptTransform::isNeverEncrypted($object, $security->encryptsMetadata())) {
+            return $object;
+        }
+
+        $objectId = $object->objectId();
+        $generation = $object->generation();
+
+        $encrypted = CryptTransform::apply(
+            $object,
+            static fn (string $bytes): string => $security->encryptString($bytes, $objectId, $generation),
+            static fn (string $bytes): string => $security->encryptStream($bytes, $objectId, $generation),
+        );
+
+        return $encrypted instanceof PdfObject ? $encrypted : $object;
     }
 
     private function updateTrailer(int $size): Trailer
