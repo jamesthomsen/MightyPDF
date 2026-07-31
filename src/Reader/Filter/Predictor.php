@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MightyPDF\Reader\Filter;
 
+use MightyPDF\Png\ScanlineFilter;
 use MightyPDF\Reader\ParseException;
 
 /**
@@ -17,12 +18,11 @@ use MightyPDF\Reader\ParseException;
  * the cross-reference table of a modern PDF at all, and therefore cannot
  * open one.
  *
- * The PNG predictors here are the same algorithm as
- * PngImage::unfilterPass(), but generalised: that one assumes whole bytes
- * per pixel (which is why it excludes sub-byte bit depths), whereas
- * /Predictor is specified in terms of /Colors, /BitsPerComponent and
- * /Columns and has to handle a row whose pixels do not land on byte
- * boundaries.
+ * The per-row arithmetic is PNG's own, and is shared with the PNG image
+ * decoder as ScanlineFilter. What is specific to /Predictor is the
+ * framing: the row geometry comes from /Colors, /BitsPerComponent and
+ * /Columns (so a row's pixels need not land on byte boundaries), and a
+ * short final row is padded rather than rejected.
  */
 final class Predictor
 {
@@ -63,25 +63,8 @@ final class Predictor
             $row = str_pad(substr($data, $offset, $rowLength), $rowLength, "\x00");
             $offset += $rowLength;
 
-            $reconstructed = '';
-
-            for ($i = 0; $i < $rowLength; ++$i) {
-                $raw = ord($row[$i]);
-                $left = $i >= $bytesPerPixel ? ord($reconstructed[$i - $bytesPerPixel]) : 0;
-                $up = ord($previous[$i]);
-                $upLeft = $i >= $bytesPerPixel ? ord($previous[$i - $bytesPerPixel]) : 0;
-
-                $value = match ($filterType) {
-                    0 => $raw,
-                    1 => $raw + $left,
-                    2 => $raw + $up,
-                    3 => $raw + intdiv($left + $up, 2),
-                    4 => $raw + self::paeth($left, $up, $upLeft),
-                    default => throw new ParseException("Unknown PNG predictor filter type $filterType."),
-                };
-
-                $reconstructed .= chr($value & 0xFF);
-            }
+            $reconstructed = ScanlineFilter::reconstructRow($filterType, $row, $previous, $bytesPerPixel)
+                ?? throw new ParseException("Unknown PNG predictor filter type $filterType.");
 
             $out .= $reconstructed;
             $previous = $reconstructed;
@@ -136,19 +119,5 @@ final class Predictor
     private static function rowLength(DecodeParms $parms): int
     {
         return intdiv($parms->colors * $parms->bitsPerComponent * $parms->columns + 7, 8);
-    }
-
-    private static function paeth(int $a, int $b, int $c): int
-    {
-        $p = $a + $b - $c;
-        $pa = abs($p - $a);
-        $pb = abs($p - $b);
-        $pc = abs($p - $c);
-
-        if ($pa <= $pb && $pa <= $pc) {
-            return $a;
-        }
-
-        return $pb <= $pc ? $b : $c;
     }
 }
