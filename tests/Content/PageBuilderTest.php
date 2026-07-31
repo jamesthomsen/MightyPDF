@@ -391,6 +391,55 @@ final class PageBuilderTest extends TestCase
         self::assertCount(1, $page->contentStreams());
     }
 
+    public function testRepeatedImageAcrossPagesReusesOneXObject(): void
+    {
+        $document = new Document();
+        $page1 = $document->newPage();
+        $page2 = $document->newPage();
+
+        (new PageBuilder($document, $page1))->drawJpeg(self::FIXTURES . '/sample.jpg', 0, 0, 100, 100);
+        (new PageBuilder($document, $page2))->drawJpeg(self::FIXTURES . '/sample.jpg', 0, 0, 100, 100);
+
+        $output = $document->save();
+
+        self::assertSame(
+            1,
+            substr_count($output, '/Filter /DCTDecode'),
+            'the same JPEG bytes drawn on two different pages should embed only one Image XObject',
+        );
+    }
+
+    public function testRepeatedImageOnTheSamePageReusesOneXObject(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->drawPng(self::FIXTURES . '/sample.png', 0, 0, 10, 10);
+        $builder->drawPng(self::FIXTURES . '/sample.png', 20, 0, 10, 10);
+
+        $output = $document->save();
+        $bytes = $this->decompressedContentStreamBytes($page);
+
+        // Two distinct resource names on the page, both pointing at the same underlying object.
+        self::assertStringContainsString('/Im1 Do', $bytes);
+        self::assertStringContainsString('/Im2 Do', $bytes);
+        self::assertSame(1, substr_count($output, '/Subtype /Image'));
+    }
+
+    public function testDistinctImagesAreNotDeduplicated(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $builder = new PageBuilder($document, $page);
+
+        $builder->drawJpeg(self::FIXTURES . '/sample.jpg', 0, 0, 10, 10);
+        $builder->drawPng(self::FIXTURES . '/sample.png', 20, 0, 10, 10);
+
+        $output = $document->save();
+        self::assertSame(2, substr_count($output, '/Subtype /Image'));
+    }
+
     public function testResultingPdfWithImagesIsStructurallyValid(): void
     {
         $document = new Document();

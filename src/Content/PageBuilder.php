@@ -299,29 +299,64 @@ final class PageBuilder
 
     public function drawJpeg(string $path, float $x, float $y, float $width, float $height): static
     {
-        return $this->placeImage(JpegImage::fromFile($this->document->registry()->allocate(), $path), $x, $y, $width, $height);
+        $image = $this->loadImage($path, fn (string $bytes) => JpegImage::fromBytes($this->document->registry()->allocate(), $bytes));
+
+        return $this->placeImage($image, $x, $y, $width, $height);
     }
 
     public function drawPng(string $path, float $x, float $y, float $width, float $height): static
     {
-        return $this->placeImage(PngImage::fromFile($this->document->registry(), $path), $x, $y, $width, $height);
+        $image = $this->loadImage($path, fn (string $bytes) => PngImage::fromBytes($this->document->registry(), $bytes));
+
+        return $this->placeImage($image, $x, $y, $width, $height);
     }
 
     public function drawGif(string $path, float $x, float $y, float $width, float $height): static
     {
-        return $this->placeImage(GifImage::fromFile($this->document->registry()->allocate(), $path), $x, $y, $width, $height);
+        $image = $this->loadImage($path, fn (string $bytes) => GifImage::fromBytes($this->document->registry()->allocate(), $bytes));
+
+        return $this->placeImage($image, $x, $y, $width, $height);
+    }
+
+    /**
+     * Reads $path once and hashes its bytes to dedupe against the
+     * document-wide image cache (see Document::cachedImage()) -- the same
+     * image embedded on multiple pages (e.g. a logo/letterhead) is
+     * decoded and registered exactly once, and every later draw call just
+     * reuses the same XObject stream. $build only runs, and only
+     * allocates/registers a new object, on a cache miss.
+     */
+    private function loadImage(string $path, \Closure $build): Stream
+    {
+        $bytes = file_get_contents($path);
+        if ($bytes === false) {
+            throw new \RuntimeException("Unable to read image file: $path");
+        }
+
+        $contentHash = hash('xxh128', $bytes);
+
+        $cached = $this->document->cachedImage($contentHash);
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $image = $build($bytes);
+        $this->document->registry()->register($image);
+        $this->document->cacheImage($contentHash, $image);
+
+        return $image;
     }
 
     /**
      * Owns every side effect of "place this already-built image XObject
-     * on this page": registering it with the document, wiring it into
-     * /Resources /XObject, and appending the placement operators. Same
-     * "one method, every side effect" discipline as fontResourceName().
+     * on this page": wiring it into /Resources /XObject and appending the
+     * placement operators. Same "one method, every side effect"
+     * discipline as fontResourceName(). Registration with the document is
+     * loadImage()'s responsibility, not this method's, since a cache hit
+     * must not re-register an object that's already registered.
      */
     private function placeImage(Stream $image, float $x, float $y, float $width, float $height): static
     {
-        $this->document->registry()->register($image);
-
         $resourceName = 'Im' . $this->nextImageResourceNumber++;
 
         $xObjects = $this->page->resources()->get('XObject');

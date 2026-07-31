@@ -32,6 +32,19 @@ final class Document
     /** @var list<Page> */
     private array $pages = [];
 
+    /**
+     * Content-hash => already-registered image XObject stream, so that
+     * embedding the same image bytes (e.g. a logo repeated across pages)
+     * reuses one XObject instead of re-decoding and re-embedding it once
+     * per draw call. Keyed by hash rather than file path, since two
+     * different paths can hold identical bytes. Lives on Document (not
+     * PageBuilder) because the cached Stream is referenced by id from
+     * every page that draws it, not just the page that first did.
+     *
+     * @var array<string, Stream>
+     */
+    private array $imageCache = [];
+
     public function __construct()
     {
         $this->registry = new IndirectObjectRegistry();
@@ -62,6 +75,16 @@ final class Document
     public function registry(): IndirectObjectRegistry
     {
         return $this->registry;
+    }
+
+    public function cachedImage(string $contentHash): ?Stream
+    {
+        return $this->imageCache[$contentHash] ?? null;
+    }
+
+    public function cacheImage(string $contentHash, Stream $image): void
+    {
+        $this->imageCache[$contentHash] = $image;
     }
 
     public function catalog(): Catalog
