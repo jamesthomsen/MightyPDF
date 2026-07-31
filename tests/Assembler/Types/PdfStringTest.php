@@ -45,4 +45,34 @@ final class PdfStringTest extends TestCase
         $formatted = PdfString::utf16be('A')->format();
         self::assertSame('(' . "\xFE\xFF" . "\x00A" . ')', $formatted);
     }
+
+    public function testTextKeepsAsciiAsAPlainLiteral(): void
+    {
+        self::assertSame('(FirstName)', PdfString::text('FirstName')->format());
+        self::assertSame('()', PdfString::text('')->format());
+    }
+
+    public function testTextPromotesNonAsciiToUtf16be(): void
+    {
+        self::assertSame(
+            '(' . "\xFE\xFF" . "\x00c\x00a\x00f\x00\xE9" . ')',
+            PdfString::text('café')->format(),
+        );
+    }
+
+    /**
+     * U+2810 encodes as 0x28 0x10 in UTF-16BE, and 0x28 is "(" -- so the
+     * byte-level escaping has to fire inside a code unit and still
+     * round-trip, or the string terminates early and corrupts the file.
+     */
+    public function testTextEscapesDelimiterBytesInsideUtf16beCodeUnits(): void
+    {
+        $formatted = PdfString::text("\u{2810}")->format();
+
+        self::assertSame('(' . "\xFE\xFF" . '\\(' . "\x10" . ')', $formatted);
+
+        // Unescaping byte-for-byte gets the original code unit back.
+        $inner = substr($formatted, 1, -1);
+        self::assertSame("\xFE\xFF\x28\x10", str_replace('\\(', '(', $inner));
+    }
 }

@@ -36,7 +36,7 @@ final class RadioGroupField extends Dictionary
         parent::__construct($objectId);
 
         $this->set('FT', new PdfName('Btn'));
-        $this->set('T', PdfString::latin1($name));
+        $this->set('T', PdfString::text($name));
         $this->set('Ff', new PdfInteger(self::FLAG_RADIO));
         $this->set('V', new PdfName($checkedExportValue ?? 'Off'));
         $this->syncKids();

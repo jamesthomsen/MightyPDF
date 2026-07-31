@@ -42,12 +42,50 @@ final class TextFieldTest extends TestCase
         self::assertStringContainsString('/MaxLen 40', $rendered);
     }
 
-    public function testValueIsWinAnsiEncoded(): void
+    /**
+     * A field value is data the caller reads back out, not glyphs this
+     * library renders, so it goes out as UTF-16BE rather than being
+     * squeezed into a single-byte encoding. It used to be WinAnsi-encoded,
+     * which turned anything outside CP1252 into literal "?" characters.
+     */
+    public function testNonAsciiValueIsUtf16be(): void
     {
         $field = new TextField(1, 'Name', new PdfRectangle(0, 0, 100, 20), 'F1', 10.0, value: 'café');
         $rendered = $field->render(false);
 
-        self::assertStringContainsString("/V (caf\xE9)", $rendered);
+        self::assertStringContainsString("/V (\xFE\xFF\x00c\x00a\x00f\x00\xE9)", $rendered);
+    }
+
+    public function testCyrillicValueSurvivesInsteadOfBecomingQuestionMarks(): void
+    {
+        $field = new TextField(1, 'Name', new PdfRectangle(0, 0, 100, 20), 'F1', 10.0, value: 'Иванов');
+        $rendered = $field->render(false);
+
+        self::assertStringNotContainsString('??????', $rendered);
+        self::assertStringContainsString("/V (\xFE\xFF" . iconv('UTF-8', 'UTF-16BE', 'Иванов') . ')', $rendered);
+    }
+
+    /**
+     * /T is the key form-filling code looks a field up by, and it used to
+     * be emitted as raw UTF-8 bytes inside a Latin-1 string -- so "Prénom"
+     * reached readers as "PrÃ©nom".
+     */
+    public function testNonAsciiFieldNameIsUtf16be(): void
+    {
+        $field = new TextField(1, 'Prénom', new PdfRectangle(0, 0, 100, 20), 'F1', 10.0);
+        $rendered = $field->render(false);
+
+        self::assertStringNotContainsString("/T (Pr\xC3\xA9nom)", $rendered);
+        self::assertStringContainsString("/T (\xFE\xFF" . iconv('UTF-8', 'UTF-16BE', 'Prénom') . ')', $rendered);
+    }
+
+    public function testAsciiNameAndValueStayPlainLiterals(): void
+    {
+        $field = new TextField(1, 'FirstName', new PdfRectangle(0, 0, 100, 20), 'F1', 10.0, value: 'Jane Doe');
+        $rendered = $field->render(false);
+
+        self::assertStringContainsString('/T (FirstName)', $rendered);
+        self::assertStringContainsString('/V (Jane Doe)', $rendered);
     }
 
     public function testOmitsQAndFfByDefault(): void

@@ -31,6 +31,35 @@ final class PdfString implements PdfValue
         return new self($text);
     }
 
+    /**
+     * The right choice for any string whose content comes from the caller
+     * rather than from this library: field names, field values, document
+     * metadata -- i.e. PDF's "text string" type (§7.9.2.2), which is
+     * defined as *either* PDFDocEncoding or UTF-16BE-with-BOM, chosen per
+     * string.
+     *
+     * Pure ASCII goes out as-is, since it is identical in both encodings
+     * and stays readable in the raw file. Anything else goes out as
+     * UTF-16BE, which represents all of Unicode losslessly. Squeezing
+     * these into a single-byte encoding instead is silent data loss: a
+     * Cyrillic field value transliterates to "??????", and a name written
+     * as raw UTF-8 bytes in a Latin-1 string reads back as mojibake --
+     * which matters most for /T, since that is the key form-filling code
+     * looks a field up by.
+     *
+     * Escaping stays correct either way: escape() works on bytes, and
+     * every escape it emits is byte-reversible, so a UTF-16BE code unit
+     * that happens to contain 0x28 ("(") round-trips intact.
+     */
+    public static function text(string $text): self
+    {
+        if (preg_match('/^[\x20-\x7E\t\r\n]*$/', $text) === 1) {
+            return new self($text);
+        }
+
+        return self::utf16be($text);
+    }
+
     public static function utf16be(string $text): self
     {
         $encoded = iconv('UTF-8', 'UTF-16BE', $text);

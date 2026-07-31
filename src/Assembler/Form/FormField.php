@@ -31,7 +31,7 @@ abstract class FormField extends Dictionary
         $this->set('Type', new PdfName('Annot'));
         $this->set('Subtype', new PdfName('Widget'));
         $this->set('FT', new PdfName($this->fieldType()));
-        $this->set('T', PdfString::latin1($name));
+        $this->set('T', PdfString::text($name));
         $this->set('Rect', $rect);
         $this->set('F', new PdfInteger(self::FLAG_PRINT));
     }
