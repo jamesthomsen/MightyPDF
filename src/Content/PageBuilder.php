@@ -478,9 +478,10 @@ final class PageBuilder
         float $size,
         bool $checked = false,
         string $exportValue = 'Yes',
+        MarkStyle $mark = MarkStyle::Check,
     ): static {
-        $onAppearance = $this->buildCheckboxAppearance($size, checked: true);
-        $offAppearance = $this->buildCheckboxAppearance($size, checked: false);
+        $onAppearance = $this->buildMarkAppearance($size, $mark);
+        $offAppearance = $this->buildMarkAppearance($size, null);
         $this->document->registry()->register($onAppearance);
         $this->document->registry()->register($offAppearance);
 
@@ -499,18 +500,16 @@ final class PageBuilder
         return $this;
     }
 
-    /** A simple checkmark for "on"; "off" is intentionally blank (an empty box). */
-    private function buildCheckboxAppearance(float $size, bool $checked): Stream
+    /**
+     * The appearance stream for one state of a button widget: $mark's
+     * glyph for "on", or null for "off", which is intentionally blank (an
+     * empty box). Shared by checkboxes and radio options -- the two
+     * differ only in which MarkStyle they default to.
+     */
+    private function buildMarkAppearance(float $size, ?MarkStyle $mark): Stream
     {
         $operators = new ContentStream();
-        if ($checked) {
-            $operators->setLineWidth(max(1.0, $size * 0.15))
-                ->setStrokeColorRgb(0, 0, 0)
-                ->moveTo($size * 0.2, $size * 0.5)
-                ->lineTo($size * 0.4, $size * 0.2)
-                ->lineTo($size * 0.8, $size * 0.8)
-                ->stroke();
-        }
+        $mark?->draw($operators, $size);
 
         $stream = new Stream($this->document->registry()->allocate(), $operators->bytes(), compress: false);
         $stream->set('Type', new PdfName('XObject'));
@@ -529,14 +528,14 @@ final class PageBuilder
      *
      * @param list<array{exportValue: string, x: float, y: float, size: float}> $options
      */
-    public function addRadioGroup(string $name, array $options, ?string $checkedExportValue = null): static
+    public function addRadioGroup(string $name, array $options, ?string $checkedExportValue = null, MarkStyle $mark = MarkStyle::Dot): static
     {
         $group = new RadioGroupField($this->document->registry()->allocate(), $name, $checkedExportValue);
         $this->document->registry()->register($group);
 
         foreach ($options as $option) {
-            $onAppearance = $this->buildRadioAppearance($option['size'], filled: true);
-            $offAppearance = $this->buildRadioAppearance($option['size'], filled: false);
+            $onAppearance = $this->buildMarkAppearance($option['size'], $mark);
+            $offAppearance = $this->buildMarkAppearance($option['size'], null);
             $this->document->registry()->register($onAppearance);
             $this->document->registry()->register($offAppearance);
 
@@ -558,34 +557,6 @@ final class PageBuilder
         $this->document->acroForm()->addField($group->objectId());
 
         return $this;
-    }
-
-    /** A filled dot for "on"; "off" is intentionally blank, matching buildCheckboxAppearance(). */
-    private function buildRadioAppearance(float $size, bool $filled): Stream
-    {
-        $operators = new ContentStream();
-        if ($filled) {
-            $cx = $size / 2;
-            $cy = $size / 2;
-            $radius = $size * 0.25;
-            $k = $radius * 0.5523; // bezier control-point offset for a circle approximation
-
-            $operators->setFillColorRgb(0, 0, 0)
-                ->moveTo($cx + $radius, $cy)
-                ->curveTo($cx + $radius, $cy + $k, $cx + $k, $cy + $radius, $cx, $cy + $radius)
-                ->curveTo($cx - $k, $cy + $radius, $cx - $radius, $cy + $k, $cx - $radius, $cy)
-                ->curveTo($cx - $radius, $cy - $k, $cx - $k, $cy - $radius, $cx, $cy - $radius)
-                ->curveTo($cx + $k, $cy - $radius, $cx + $radius, $cy - $k, $cx + $radius, $cy)
-                ->closePath()
-                ->fill();
-        }
-
-        $stream = new Stream($this->document->registry()->allocate(), $operators->bytes(), compress: false);
-        $stream->set('Type', new PdfName('XObject'));
-        $stream->set('Subtype', new PdfName('Form'));
-        $stream->set('BBox', new PdfRectangle(0, 0, $size, $size));
-
-        return $stream;
     }
 
     /**
