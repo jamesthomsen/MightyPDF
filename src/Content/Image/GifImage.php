@@ -109,6 +109,10 @@ final class GifImage
         $imgPacked = ord($bytes[$pos + 8]);
         $pos += 9;
 
+        if ($width <= 0 || $height <= 0) {
+            throw new \InvalidArgumentException("GIF image descriptor has invalid dimensions: {$width}x{$height}.");
+        }
+
         $hasLocalColorTable = ($imgPacked & 0x80) !== 0;
         $interlaced = ($imgPacked & 0x40) !== 0;
         $localColorTableSize = 2 << ($imgPacked & 0x07);

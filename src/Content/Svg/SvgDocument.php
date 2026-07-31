@@ -48,7 +48,11 @@ final class SvgDocument
     public static function fromString(string $svg): self
     {
         $previousSetting = libxml_use_internal_errors(true);
-        $root = simplexml_load_string($svg);
+        // LIBXML_NONET: this parses untrusted SVG uploads, so external
+        // entity/DTD resolution must never touch the network or
+        // filesystem, regardless of libxml's own default for the PHP
+        // build this runs under.
+        $root = simplexml_load_string($svg, options: LIBXML_NONET);
         libxml_use_internal_errors($previousSetting);
 
         if ($root === false) {

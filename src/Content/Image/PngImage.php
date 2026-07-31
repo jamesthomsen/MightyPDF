@@ -70,6 +70,16 @@ final class PngImage
     private const string SIGNATURE = "\x89PNG\r\n\x1a\n";
 
     /**
+     * Guards decodePixels()/unfilterPass() (which allocate buffers
+     * proportional to width * height) against a crafted PNG whose IHDR
+     * declares dimensions far larger than its actual (tiny) IDAT payload
+     * could ever hold -- without this, such a file forces a multi-gigabyte
+     * allocation before the truncated-data check in unfilterPass() ever
+     * runs. 100 megapixels is far beyond any realistic embedded image.
+     */
+    private const int MAX_PIXELS = 100_000_000;
+
+    /**
      * Adam7 interlacing (PNG spec §8.2): seven passes over the image,
      * each picking out a disjoint subset of pixels. Each entry is
      * [startX, startY, stepX, stepY] -- pass N contains the pixel at
@@ -121,6 +131,10 @@ final class PngImage
 
         if (!in_array($interlace, [0, 1], true)) {
             throw new \RuntimeException("Unknown PNG interlace method: $interlace.");
+        }
+
+        if ($width <= 0 || $height <= 0 || $width * $height > self::MAX_PIXELS) {
+            throw new \InvalidArgumentException("PNG dimensions out of range: {$width}x{$height}.");
         }
 
         $idat = implode('', $chunks['IDAT'] ?? []);
@@ -441,6 +455,10 @@ final class PngImage
 
         while ($pos + 8 <= $length) {
             $chunkLength = self::readUint32($bytes, $pos);
+            if ($chunkLength > $length - $pos - 8) {
+                throw new \InvalidArgumentException('PNG chunk length exceeds the remaining file data.');
+            }
+
             $type = substr($bytes, $pos + 4, 4);
             $data = substr($bytes, $pos + 8, $chunkLength);
 
