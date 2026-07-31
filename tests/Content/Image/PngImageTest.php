@@ -218,4 +218,60 @@ final class PngImageTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         PngImage::fromBytes(new IndirectObjectRegistry(), 'not a png');
     }
+
+    public function testRejectsTruncatedIhdrChunk(): void
+    {
+        $png = "\x89PNG\r\n\x1a\n" . self::chunk('IHDR', pack('NN', 1, 1));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('IHDR chunk is truncated');
+        PngImage::fromBytes(new IndirectObjectRegistry(), $png);
+    }
+
+    /**
+     * Declared dimensions drive a str_repeat() of the whole pixel buffer
+     * before any IDAT is examined, so the cap has to be in bytes, not
+     * pixels: 9999x10000 is under the 100-megapixel limit but is 762MB at
+     * 16-bit RGBA. Memory exhaustion is a fatal error, not a catchable
+     * exception, so this must be rejected up front.
+     */
+    public function testRejectsDimensionsThatWouldExceedTheDecodedByteLimit(): void
+    {
+        $ihdr = pack('NN', 9999, 10000) . chr(16) . chr(6) . chr(0) . chr(0) . chr(1);
+        $png = "\x89PNG\r\n\x1a\n"
+            . self::chunk('IHDR', $ihdr)
+            . self::chunk('IDAT', gzcompress(str_repeat("\x00", 64)));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('over the');
+        PngImage::fromBytes(new IndirectObjectRegistry(), $png);
+    }
+
+    /**
+     * A 1x1 image whose IDAT inflates to hundreds of megabytes: declared
+     * dimensions say nothing about how much data the zlib stream holds,
+     * so the inflate itself needs an explicit ceiling.
+     */
+    public function testRejectsIdatThatInflatesFarBeyondTheDeclaredDimensions(): void
+    {
+        $deflate = deflate_init(ZLIB_ENCODING_DEFLATE);
+        $chunkOfZeros = str_repeat("\x00", 1024 * 1024);
+        $idat = '';
+        for ($i = 0; $i < 64; $i++) {
+            $idat .= deflate_add($deflate, $chunkOfZeros, ZLIB_NO_FLUSH);
+        }
+        $idat .= deflate_add($deflate, '', ZLIB_FINISH);
+
+        $ihdr = pack('NN', 1, 1) . chr(8) . chr(6) . chr(0) . chr(0) . chr(0);
+        $png = "\x89PNG\r\n\x1a\n" . self::chunk('IHDR', $ihdr) . self::chunk('IDAT', $idat);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Failed to inflate PNG IDAT data');
+        PngImage::fromBytes(new IndirectObjectRegistry(), $png);
+    }
+
+    private static function chunk(string $type, string $data): string
+    {
+        return pack('N', strlen($data)) . $type . $data . pack('N', crc32($type . $data));
+    }
 }

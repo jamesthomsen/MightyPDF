@@ -299,21 +299,21 @@ final class PageBuilder
 
     public function drawJpeg(string $path, float $x, float $y, float $width, float $height): static
     {
-        $image = $this->loadImage($path, fn (string $bytes) => JpegImage::fromBytes($this->document->registry()->allocate(), $bytes));
+        $image = $this->loadImage($path, 'jpeg', fn (string $bytes) => JpegImage::fromBytes($this->document->registry(), $bytes));
 
         return $this->placeImage($image, $x, $y, $width, $height);
     }
 
     public function drawPng(string $path, float $x, float $y, float $width, float $height): static
     {
-        $image = $this->loadImage($path, fn (string $bytes) => PngImage::fromBytes($this->document->registry(), $bytes));
+        $image = $this->loadImage($path, 'png', fn (string $bytes) => PngImage::fromBytes($this->document->registry(), $bytes));
 
         return $this->placeImage($image, $x, $y, $width, $height);
     }
 
     public function drawGif(string $path, float $x, float $y, float $width, float $height): static
     {
-        $image = $this->loadImage($path, fn (string $bytes) => GifImage::fromBytes($this->document->registry()->allocate(), $bytes));
+        $image = $this->loadImage($path, 'gif', fn (string $bytes) => GifImage::fromBytes($this->document->registry(), $bytes));
 
         return $this->placeImage($image, $x, $y, $width, $height);
     }
@@ -325,15 +325,21 @@ final class PageBuilder
      * decoded and registered exactly once, and every later draw call just
      * reuses the same XObject stream. $build only runs, and only
      * allocates/registers a new object, on a cache miss.
+     *
+     * $format is part of the cache key so that a hit still implies the
+     * caller asked for the format the bytes were actually decoded as --
+     * otherwise drawPng() on a file already embedded via drawGif() would
+     * short-circuit to the cached XObject and never check the PNG
+     * signature, silently accepting a call that should have been rejected.
      */
-    private function loadImage(string $path, \Closure $build): Stream
+    private function loadImage(string $path, string $format, \Closure $build): Stream
     {
         $bytes = file_get_contents($path);
         if ($bytes === false) {
             throw new \RuntimeException("Unable to read image file: $path");
         }
 
-        $contentHash = hash('xxh128', $bytes);
+        $contentHash = $format . ':' . hash('xxh128', $bytes);
 
         $cached = $this->document->cachedImage($contentHash);
         if ($cached !== null) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Image;
 
+use MightyPDF\Assembler\IndirectObjectRegistry;
 use MightyPDF\Assembler\Stream;
 use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
@@ -22,21 +23,28 @@ final class JpegImage
     {
     }
 
-    public static function fromFile(int $objectId, string $path): Stream
+    public static function fromFile(IndirectObjectRegistry $registry, string $path): Stream
     {
         $bytes = file_get_contents($path);
         if ($bytes === false) {
             throw new \RuntimeException("Unable to read JPEG file: $path");
         }
 
-        return self::fromBytes($objectId, $bytes);
+        return self::fromBytes($registry, $bytes);
     }
 
-    public static function fromBytes(int $objectId, string $bytes): Stream
+    /**
+     * Takes the registry rather than a pre-allocated object id so that an
+     * id is only consumed once the file is known to be parseable: a
+     * rejected image must not strand an allocated-but-unregistered id,
+     * which would later surface as an unrelated "xref has a gap" failure
+     * when the whole document is saved.
+     */
+    public static function fromBytes(IndirectObjectRegistry $registry, string $bytes): Stream
     {
         [$width, $height, $components] = self::readHeader($bytes);
 
-        $stream = new Stream($objectId, $bytes, compress: false);
+        $stream = new Stream($registry->allocate(), $bytes, compress: false);
         $stream->set('Type', new PdfName('XObject'));
         $stream->set('Subtype', new PdfName('Image'));
         $stream->set('Width', new PdfInteger($width));

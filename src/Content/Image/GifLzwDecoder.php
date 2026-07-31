@@ -13,11 +13,28 @@ namespace MightyPDF\Content\Image;
  */
 final class GifLzwDecoder
 {
+    /**
+     * Codes are at most 12 bits wide, so 4095 is the last one a decoder
+     * can ever read -- entries added beyond it are unreachable by
+     * construction. A well-formed encoder emits a clear code before
+     * reaching this point; one that never does would otherwise grow the
+     * dictionary (and every string in it) without bound.
+     */
+    private const int MAX_CODE = 4095;
+
     private function __construct()
     {
     }
 
-    public static function decode(string $data, int $minCodeSize): string
+    /**
+     * $maxOutputBytes bounds the decoded output, and is required rather
+     * than defaulting to "unbounded" so no call site can accidentally opt
+     * out: callers always know the expected size from the image
+     * descriptor (width * height indices). LZW expands by ~2400x on
+     * crafted input, and unlike a malformed-input exception, memory
+     * exhaustion is a fatal error the caller cannot catch.
+     */
+    public static function decode(string $data, int $minCodeSize, int $maxOutputBytes): string
     {
         $clearCode = 1 << $minCodeSize;
         $endCode = $clearCode + 1;
@@ -80,13 +97,23 @@ final class GifLzwDecoder
             }
 
             $output .= $entry;
-            $dictionary[$nextCode] = $prevEntry . $entry[0];
-            ++$nextCode;
-            $prevEntry = $entry;
-
-            if ($nextCode === (1 << $codeSize) && $codeSize < 12) {
-                ++$codeSize;
+            if (strlen($output) > $maxOutputBytes) {
+                throw new \RuntimeException('GIF LZW data decodes to more pixels than the image declares.');
             }
+
+            // Codes above MAX_CODE can never be read back, so once the
+            // dictionary is full it simply stops growing (the spec's
+            // behaviour) rather than accumulating dead entries forever.
+            if ($nextCode <= self::MAX_CODE) {
+                $dictionary[$nextCode] = $prevEntry . $entry[0];
+                ++$nextCode;
+
+                if ($nextCode === (1 << $codeSize) && $codeSize < 12) {
+                    ++$codeSize;
+                }
+            }
+
+            $prevEntry = $entry;
         }
 
         return $output;

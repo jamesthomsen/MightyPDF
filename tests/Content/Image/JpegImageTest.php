@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MightyPDF\Tests\Content\Image;
 
+use MightyPDF\Assembler\IndirectObjectRegistry;
 use MightyPDF\Content\Image\JpegImage;
 use PHPUnit\Framework\TestCase;
 
@@ -13,7 +14,7 @@ final class JpegImageTest extends TestCase
 
     public function testReadsCorrectWidthHeightAndColorSpace(): void
     {
-        $rendered = JpegImage::fromFile(1, self::FIXTURE)->render(true);
+        $rendered = JpegImage::fromFile(new IndirectObjectRegistry(), self::FIXTURE)->render(true);
 
         self::assertStringContainsString('/Width 4', $rendered);
         self::assertStringContainsString('/Height 4', $rendered);
@@ -29,7 +30,7 @@ final class JpegImageTest extends TestCase
         $originalBytes = file_get_contents(self::FIXTURE);
         self::assertIsString($originalBytes);
 
-        $rendered = JpegImage::fromFile(1, self::FIXTURE)->render(true);
+        $rendered = JpegImage::fromFile(new IndirectObjectRegistry(), self::FIXTURE)->render(true);
 
         preg_match('/stream\n(.*?)\nendstream/s', $rendered, $matches);
         self::assertSame($originalBytes, $matches[1]);
@@ -38,13 +39,13 @@ final class JpegImageTest extends TestCase
     public function testRejectsDataWithNoSoiMarker(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        JpegImage::fromBytes(1, 'not a jpeg');
+        JpegImage::fromBytes(new IndirectObjectRegistry(), 'not a jpeg');
     }
 
     public function testRejectsDataWithNoSofMarker(): void
     {
         // Valid SOI + immediate EOI, but no frame header at all.
         $this->expectException(\InvalidArgumentException::class);
-        JpegImage::fromBytes(1, "\xFF\xD8\xFF\xD9");
+        JpegImage::fromBytes(new IndirectObjectRegistry(), "\xFF\xD8\xFF\xD9");
     }
 }

@@ -474,6 +474,52 @@ final class PageBuilderTest extends TestCase
         self::assertStringContainsString('/DR << /Font <<', $output);
     }
 
+    /**
+     * A rejected image used to consume an object id it never registered,
+     * so anything allocated afterwards left that id stranded mid-range and
+     * every later save() died with "Xref has a gap" -- an error naming
+     * nothing to do with the image the caller already handled.
+     */
+    public function testRejectedImageDoesNotBreakTheRestOfTheDocument(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'mightypdf-bad-image');
+        file_put_contents($path, 'this is not a JPEG at all');
+
+        $document = new Document();
+        $builder = new PageBuilder($document, $document->newPage());
+        $builder->drawText(StandardFont::Helvetica, 12.0, 50.0, 700.0, 'Report');
+
+        try {
+            $builder->drawJpeg($path, 0.0, 0.0, 100.0, 100.0);
+            self::fail('Expected the malformed JPEG to be rejected.');
+        } catch (\InvalidArgumentException) {
+            // Expected -- the caller handles it and keeps building.
+        } finally {
+            unlink($path);
+        }
+
+        // Allocates a later object id, which is what strands the leaked one.
+        $builder->addTextField('email', 50.0, 600.0, 200.0, 20.0);
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/T (email)', $output);
+        self::assertStringContainsString('%%EOF', $output);
+    }
+
+    public function testDrawingTheSameFileAsADifferentFormatStillValidatesIt(): void
+    {
+        $document = new Document();
+        $builder = new PageBuilder($document, $document->newPage());
+
+        $builder->drawGif(self::FIXTURES . '/sample.gif', 0.0, 0.0, 50.0, 50.0);
+
+        // A cache hit must not stand in for the format check: this file is
+        // a GIF, so asking for it as a PNG has to be rejected.
+        $this->expectException(\InvalidArgumentException::class);
+        $builder->drawPng(self::FIXTURES . '/sample.gif', 0.0, 60.0, 50.0, 50.0);
+    }
+
     public function testAddTextFieldAppearsInPageAnnotsAndAcroFormFields(): void
     {
         $document = new Document();

@@ -80,6 +80,17 @@ final class PngImage
     private const int MAX_PIXELS = 100_000_000;
 
     /**
+     * MAX_PIXELS alone is not a memory bound: the decoded buffer is
+     * width * height * bytes-per-pixel, and bytes-per-pixel reaches 8 for
+     * 16-bit RGBA -- so a 69-byte file declaring 9999x10000 asks for a
+     * 762MB allocation before a single byte of IDAT is examined. This caps
+     * what the decoding paths (alpha and interlaced) may allocate. The
+     * verbatim-relay path is unaffected, since it never builds a pixel
+     * buffer at all and so stays governed by MAX_PIXELS only.
+     */
+    private const int MAX_DECODED_BYTES = 128 * 1024 * 1024;
+
+    /**
      * Adam7 interlacing (PNG spec §8.2): seven passes over the image,
      * each picking out a disjoint subset of pixels. Each entry is
      * [startX, startY, stepX, stepY] -- pass N contains the pixel at
@@ -123,6 +134,10 @@ final class PngImage
         }
 
         $ihdr = $chunks['IHDR'][0];
+        if (strlen($ihdr) < 13) {
+            throw new \InvalidArgumentException('PNG IHDR chunk is truncated.');
+        }
+
         $width = self::readUint32($ihdr, 0);
         $height = self::readUint32($ihdr, 4);
         $bitDepth = ord($ihdr[8]);
@@ -154,15 +169,19 @@ final class PngImage
             return self::buildDeinterlacedImage($registry, $chunks, $idat, $width, $height, $bitDepth, $colorType);
         }
 
-        $objectId = $registry->allocate();
-
         $colors = match ($colorType) {
             0 => 1, // grayscale
             2 => 3, // truecolor
             3 => 1, // indexed
         };
 
-        $stream = new Stream($objectId, $idat, compress: false);
+        // Resolved before allocating, because an indexed PNG with no PLTE
+        // chunk throws here -- and an id consumed by a rejected image is
+        // never registered, leaving a gap that fails the whole document at
+        // save() time.
+        $colorSpace = self::colorSpaceFor($colorType, $chunks);
+
+        $stream = new Stream($registry->allocate(), $idat, compress: false);
         $stream->set('Type', new PdfName('XObject'));
         $stream->set('Subtype', new PdfName('Image'));
         $stream->set('Width', new PdfInteger($width));
@@ -177,7 +196,7 @@ final class PngImage
         $decodeParms->set('Columns', new PdfInteger($width));
         $stream->set('DecodeParms', $decodeParms);
 
-        $stream->set('ColorSpace', self::colorSpaceFor($colorType, $chunks));
+        $stream->set('ColorSpace', $colorSpace);
 
         return $stream;
     }
@@ -206,13 +225,12 @@ final class PngImage
         $bytesPerSample = intdiv($bitDepth, 8);
         $channels = $colorType === 6 ? 4 : 2; // truecolor+alpha vs grayscale+alpha
         $colorChannels = $channels - 1;
+        $bpp = $channels * $bytesPerSample;
 
-        $raw = @gzuncompress($idat);
-        if ($raw === false) {
-            throw new \RuntimeException('Failed to inflate PNG IDAT data.');
-        }
+        self::guardDecodedSize($width, $height, $bpp);
+        $raw = self::inflate($idat, $width, $height, $bpp, $interlaced);
 
-        $decoded = self::decodePixels($raw, $width, $height, $channels * $bytesPerSample, $interlaced);
+        $decoded = self::decodePixels($raw, $width, $height, $bpp, $interlaced);
         [$colorBytes, $alphaBytes] = self::splitColorAndAlpha($decoded, $width, $height, $colorChannels, $bytesPerSample);
 
         $objectId = $registry->allocate();
@@ -267,25 +285,73 @@ final class PngImage
             2 => 3, // truecolor
             3 => 1, // indexed
         };
+        $bpp = $colors * $bytesPerSample;
 
-        $raw = @gzuncompress($idat);
-        if ($raw === false) {
-            throw new \RuntimeException('Failed to inflate PNG IDAT data.');
-        }
+        self::guardDecodedSize($width, $height, $bpp);
+        $raw = self::inflate($idat, $width, $height, $bpp, true);
 
-        $decoded = self::decodePixels($raw, $width, $height, $colors * $bytesPerSample, true);
+        $decoded = self::decodePixels($raw, $width, $height, $bpp, true);
+        $colorSpace = self::colorSpaceFor($colorType, $chunks);
 
-        $objectId = $registry->allocate();
-
-        $stream = new Stream($objectId, $decoded, compress: true);
+        $stream = new Stream($registry->allocate(), $decoded, compress: true);
         $stream->set('Type', new PdfName('XObject'));
         $stream->set('Subtype', new PdfName('Image'));
         $stream->set('Width', new PdfInteger($width));
         $stream->set('Height', new PdfInteger($height));
         $stream->set('BitsPerComponent', new PdfInteger($bitDepth));
-        $stream->set('ColorSpace', self::colorSpaceFor($colorType, $chunks));
+        $stream->set('ColorSpace', $colorSpace);
 
         return $stream;
+    }
+
+    /**
+     * Rejects images whose decoded pixel buffer would exceed
+     * MAX_DECODED_BYTES *before* anything allocates it -- decodePixels()
+     * otherwise str_repeat()s the full buffer up front, so oversized
+     * declared dimensions exhaust memory (an uncatchable fatal) rather
+     * than raising the truncated-data exception further down.
+     */
+    private static function guardDecodedSize(int $width, int $height, int $bpp): void
+    {
+        if ($width * $height * $bpp > self::MAX_DECODED_BYTES) {
+            throw new \InvalidArgumentException(sprintf(
+                'PNG decodes to %d bytes of pixel data, over the %d-byte limit.',
+                $width * $height * $bpp,
+                self::MAX_DECODED_BYTES,
+            ));
+        }
+    }
+
+    /**
+     * Inflates IDAT with an explicit ceiling. gzuncompress() with no
+     * max_length happily expands a small crafted IDAT to gigabytes --
+     * declared dimensions say nothing about how much data the stream
+     * actually holds, so the ceiling comes from how many bytes a
+     * well-formed image of these dimensions *should* inflate to
+     * (scanlines plus their leading filter byte, per Adam7 pass when
+     * interlaced).
+     */
+    private static function inflate(string $idat, int $width, int $height, int $bpp, bool $interlaced): string
+    {
+        $expected = 0;
+        if (!$interlaced) {
+            $expected = $height * (1 + $width * $bpp);
+        } else {
+            foreach (self::ADAM7_PASSES as [$startX, $startY, $stepX, $stepY]) {
+                [$passWidth, $passHeight] = self::adam7PassDimensions($width, $height, $startX, $startY, $stepX, $stepY);
+                if ($passWidth === 0 || $passHeight === 0) {
+                    continue;
+                }
+                $expected += $passHeight * (1 + $passWidth * $bpp);
+            }
+        }
+
+        $raw = @gzuncompress($idat, $expected);
+        if ($raw === false) {
+            throw new \RuntimeException('Failed to inflate PNG IDAT data.');
+        }
+
+        return $raw;
     }
 
     private static function colorSpaceFor(int $colorType, array $chunks): PdfValue
