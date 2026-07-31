@@ -51,7 +51,14 @@ class Dictionary extends PdfObject
 
         $parts = [];
         foreach ($this->entries as $name => $value) {
-            $parts[] = (new PdfName($name))->format() . ' ' . $value->format();
+            // (string) is not redundant: PHP silently converts an integer-like
+            // array key ("1", "42") to a real int on the way in, so a key that
+            // set() accepted as a string comes back out of the array as an int
+            // and PdfName's own string type declaration rejects it. Keys like
+            // that are ordinary in practice -- a checkbox or radio button whose
+            // export value is a number keys its /AP /N appearance dictionary by
+            // that value -- and /1 is a perfectly legal PDF name.
+            $parts[] = (new PdfName((string) $name))->format() . ' ' . $value->format();
         }
 
         return '<< ' . implode(' ', $parts) . ' >>';

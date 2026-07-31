@@ -72,6 +72,22 @@ final class DictionaryTest extends TestCase
         self::assertNull($dict->get('Missing'));
     }
 
+    public function testRendersKeysThatPhpCoercedToIntegerArrayKeys(): void
+    {
+        // "1" goes into the entries array and comes back out as int 1 --
+        // PHP's own array-key coercion, not anything this class does. Before
+        // this was handled, rendering such a dictionary threw a TypeError
+        // from PdfName's string type declaration, which in practice meant a
+        // checkbox or radio button whose export value was a number (its
+        // /AP /N appearance dictionary is keyed by that value) took down the
+        // whole document at save() time.
+        $states = new Dictionary();
+        $states->set('1', new PdfReference(5));
+        $states->set('Off', new PdfReference(6));
+
+        self::assertSame('<< /1 5 0 R /Off 6 0 R >>', $states->render(false));
+    }
+
     public function testCanNestAnIdlessDictionaryAsAnInlineValue(): void
     {
         // No object number of its own -- e.g. a Page's /Resources
