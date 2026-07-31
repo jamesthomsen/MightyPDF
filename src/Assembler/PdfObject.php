@@ -54,6 +54,20 @@ abstract class PdfObject implements PdfValue
         return $this->objectId;
     }
 
+    /**
+     * Whether this object has a number of its own, i.e. whether it is a
+     * top-level object rather than a value nested inside one.
+     *
+     * Matters when editing a file this library did not write: only an
+     * indirect object can be rewritten by an incremental update, and
+     * whether, say, a document's /AcroForm is indirect or written inline
+     * in the catalog is a choice the original writer made.
+     */
+    public function hasObjectId(): bool
+    {
+        return $this->objectId !== null;
+    }
+
     public function generation(): int
     {
         return $this->generation;

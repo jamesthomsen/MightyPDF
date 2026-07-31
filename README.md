@@ -281,15 +281,68 @@ whichever format the source file uses.
 Decryption isn't implemented yet, and many everyday forms are encrypted
 with an empty password.
 
-Form filling and drawing onto an existing page are not yet wrapped in a
-high-level API — you can do both through the object model above, but
-`PageBuilder` does not target a parsed page yet.
+## Filling in an existing form
+
+```php
+use MightyPDF\Editor\PdfEditor;
+use MightyPDF\Editor\Form\FormFiller;
+
+$editor = PdfEditor::open('application.pdf');
+$filler = new FormFiller($editor);
+
+$filler->fill([
+    'applicant.first_name' => 'Zoë',
+    'applicant.email'      => 'zoe@example.com',
+    'subscribe'            => true,
+    'plan'                 => 'pro',
+]);
+
+$editor->saveToFile('application-filled.pdf');
+```
+
+Discover what a form contains before filling it:
+
+```php
+$filler->names();            // ['applicant.first_name', 'subscribe', 'plan', ...]
+$filler->values();           // current values, keyed the same way
+$filler->field('plan')->onStates;  // ['basic', 'pro', 'team']
+```
+
+Field names are **hierarchical** — a field's real name is its own `/T`
+joined to every ancestor's with dots, so what looks like `first_name` in
+a viewer may be `applicant.first_name` in the file. Ask for a name that
+isn't there and the exception names the closest match.
+
+Checkbox and radio states are **whatever the form's author chose**.
+`/Yes` is a convention, not a rule, so `onStates` tells you what this
+particular document calls "ticked". Passing `true` works when there's
+exactly one state to choose; a radio group needs the export value.
+
+Every failure is loud — an unknown field, a state the widget has no
+appearance for, a value longer than `/MaxLen`. All of those would
+otherwise produce a PDF that opens perfectly and is wrong in the one
+place anyone looks.
+
+**Appearances** are left to the reader via `/NeedsAppearances`, and any
+appearance stream describing the *old* value is removed. Readers that
+honour `/NeedsAppearances` (Acrobat, poppler, Ghostscript) render the new
+value correctly; one that ignores it shows an empty field rather than
+confidently showing the previous value. Checkboxes and radio buttons keep
+their own appearance streams and are switched with `/AS`, so they render
+correctly everywhere.
+
+XFA forms are refused unless you pass `allowXfa: true` — Acrobat may
+honour the XFA description instead of the AcroForm fields, so the fill
+would look correct in every tool except the one most people use.
 
 ## Known limitations
 
 - **No encryption support** — encrypted PDFs cannot be opened.
-- **Editing is low-level** — no form-filling or page-overlay helpers
-  yet (see above).
+- **Text field appearances are not generated** — filled text relies on
+  `/NeedsAppearances` (see above).
+- **No page-overlay helper** — `PageBuilder` does not target a parsed
+  page yet, so drawing onto an existing page means going through the
+  object model by hand.
 - **Text**: standard 14 fonts only, WinAnsi/CP1252 repertoire (no custom
   font embedding, no full Unicode).
 - **SVG**: see the "not supported" list above.

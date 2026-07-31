@@ -86,6 +86,53 @@ final class PdfString implements PdfValue
         return new self("\xFE\xFF" . $encoded);
     }
 
+    /** The bytes as stored, with no interpretation. */
+    public function bytes(): string
+    {
+        return $this->bytes;
+    }
+
+    public function toUtf8(): string
+    {
+        return self::decode($this->bytes);
+    }
+
+    /**
+     * Reads a PDF "text string" (§7.9.2.2) back as UTF-8 -- the inverse of
+     * text(), and the only way to get a form field's name or value back
+     * out of a file as usable text.
+     *
+     * The encoding is self-describing only in the UTF-16BE case, via its
+     * byte-order mark. Everything else is nominally PDFDocEncoding, which
+     * agrees with Latin-1 across the printable range; but files written by
+     * tools that simply emitted UTF-8 and hoped are common enough that
+     * already-valid UTF-8 is passed through rather than being mangled a
+     * second time by a Latin-1 conversion that would turn "café" into
+     * "cafÃ©".
+     */
+    public static function decode(string $bytes): string
+    {
+        if (str_starts_with($bytes, "\xFE\xFF")) {
+            $utf8 = iconv('UTF-16BE', 'UTF-8', substr($bytes, 2));
+
+            return $utf8 === false ? '' : $utf8;
+        }
+
+        // Not in the spec, but written by tools that conflated "text
+        // string" with "UTF-8 string".
+        if (str_starts_with($bytes, "\xEF\xBB\xBF")) {
+            return substr($bytes, 3);
+        }
+
+        if (preg_match('//u', $bytes) === 1) {
+            return $bytes;
+        }
+
+        $utf8 = iconv('ISO-8859-1', 'UTF-8', $bytes);
+
+        return $utf8 === false ? $bytes : $utf8;
+    }
+
     public function format(): string
     {
         return '(' . self::escape($this->bytes) . ')';
