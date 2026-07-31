@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(vendor/bin/phpunit *)",
+      "mcp__Claude_Browser__read_page",
+      "mcp__Claude_Browser__get_page_text",
+      "Bash(pdftoppm *)",
+      "Bash(pdfinfo *)",
+      "mcp__Claude_Browser__read_network_requests",
+      "mcp__Claude_Browser__read_console_messages",
+      "Bash(command -v*)",
+      "Bash(systemctl is-active *)",
+      "Bash(apt-cache policy *)",
+      "Bash(systemctl is-enabled *)",
+      "Bash(dpkg -l*)",
+      "Bash(php -l *)",
+      "Bash(php -m*)",
+      "Bash(composer --version)",
+      "Bash(php -v)",
+      "Bash(pdftotext *)",
+      "mcp__Claude_Browser__tabs_context",
+      "Bash(namei *)",
+      "Bash(node --check *)"
+    ]
+  }
+}
