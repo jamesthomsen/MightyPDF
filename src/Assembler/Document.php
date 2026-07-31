@@ -146,7 +146,7 @@ final class Document
     {
         $result = $this->registry->writeAll(self::HEADER);
 
-        $trailer = new Trailer(
+        $trailer = Trailer::forNewDocument(
             size: $result->xref->highestObjectId() + 1,
             rootObjectId: $this->catalog->objectId(),
         );

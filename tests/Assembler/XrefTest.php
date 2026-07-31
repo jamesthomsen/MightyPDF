@@ -63,4 +63,54 @@ final class XrefTest extends TestCase
 
         self::assertSame([5 => 500], $xref->entries());
     }
+
+    public function testUpdateSectionGroupsConsecutiveIdsIntoSubsections(): void
+    {
+        // An update lists only what changed, so gaps are not merely
+        // tolerated here -- they are the point.
+        $xref = new Xref();
+        $xref->addEntry(12, 1200);
+        $xref->addEntry(13, 1300);
+        $xref->addEntry(40, 4000);
+
+        self::assertSame(
+            "xref\n"
+            . "0 1\n0000000000 65535 f \n"
+            . "12 2\n0000001200 00000 n \n0000001300 00000 n \n"
+            . "40 1\n0000004000 00000 n \n",
+            $xref->buildUpdateSection(),
+        );
+    }
+
+    public function testUpdateSectionSortsRegardlessOfInsertionOrder(): void
+    {
+        $xref = new Xref();
+        $xref->addEntry(9, 900);
+        $xref->addEntry(7, 700);
+        $xref->addEntry(8, 800);
+
+        self::assertStringContainsString("7 3\n", $xref->buildUpdateSection());
+    }
+
+    public function testUpdateSectionRecordsNonZeroGenerations(): void
+    {
+        $xref = new Xref();
+        $xref->addEntry(5, 500, 3);
+
+        self::assertStringContainsString('0000000500 00003 n ', $xref->buildUpdateSection());
+    }
+
+    public function testEveryEntryLineIsExactlyTwentyBytes(): void
+    {
+        // Readers are allowed to seek to "start of table + 20 * n", so an
+        // entry one byte short silently misaligns every entry after it.
+        $xref = new Xref();
+        $xref->addEntry(1, 1234567890, 65535);
+
+        foreach (explode("\n", trim($xref->buildUpdateSection(), "\n")) as $line) {
+            if (preg_match('/^\d{10} \d{5} [nf]/', $line) === 1) {
+                self::assertSame(19, strlen($line), "entry line without its newline: \"$line\"");
+            }
+        }
+    }
 }

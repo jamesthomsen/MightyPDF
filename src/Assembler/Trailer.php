@@ -12,8 +12,11 @@ use MightyPDF\Assembler\Types\PdfReference;
  * The trailer dictionary (ISO 32000-2 §7.5.5), "trailer\n<< ... >>".
  *
  * Per spec the trailer is never itself an indirect object, so this does
- * not extend PdfObject/Dictionary -- it renders its own small, fixed set
- * of entries directly.
+ * not extend PdfObject/Dictionary -- but it does hold a Dictionary and
+ * render through it, so there is exactly one piece of code in the library
+ * that knows how a trailer's bytes are shaped. The two named constructors
+ * are the two situations that produce one; both end up in the same
+ * build().
  *
  * $size must always be derived from the same Xref that was actually
  * written (Xref::highestObjectId() + 1), never hand-copied by a caller:
@@ -23,28 +26,64 @@ use MightyPDF\Assembler\Types\PdfReference;
  */
 final class Trailer
 {
-    public function __construct(
-        private readonly int $size,
-        private readonly int $rootObjectId,
-        private readonly ?int $infoObjectId = null,
-        private readonly ?PdfArray $id = null,
-    ) {
+    private function __construct(private readonly Dictionary $entries)
+    {
+    }
+
+    public static function forNewDocument(
+        int $size,
+        int $rootObjectId,
+        ?int $infoObjectId = null,
+        ?PdfArray $id = null,
+    ): self {
+        $entries = new Dictionary();
+        $entries->set('Size', new PdfInteger($size));
+        $entries->set('Root', new PdfReference($rootObjectId));
+
+        if ($infoObjectId !== null) {
+            $entries->set('Info', new PdfReference($infoObjectId));
+        }
+
+        if ($id !== null) {
+            $entries->set('ID', $id);
+        }
+
+        return new self($entries);
+    }
+
+    /**
+     * The trailer for an incremental update.
+     *
+     * Built by copying the previous trailer wholesale and overriding only
+     * /Size and /Prev, rather than by naming the keys worth keeping. An
+     * update trailer must repeat /Root, and must repeat /ID unchanged or
+     * every signature and every reader-side identity check on the file
+     * breaks -- but it must also carry keys this library has never heard
+     * of, since the document is one it did not write. Copying and then
+     * overriding is the only version of this that cannot quietly drop
+     * something.
+     *
+     * /Prev is the byte offset of the cross-reference section this update
+     * supersedes -- the one the file's *previous* startxref pointed at,
+     * which is what chains the sections together for a reader walking
+     * backwards.
+     */
+    public static function forUpdate(Dictionary $previousTrailer, int $size, int $previousXrefOffset): self
+    {
+        $entries = new Dictionary();
+
+        foreach ($previousTrailer->entries() as $key => $value) {
+            $entries->set((string) $key, $value);
+        }
+
+        $entries->set('Size', new PdfInteger($size));
+        $entries->set('Prev', new PdfInteger($previousXrefOffset));
+
+        return new self($entries);
     }
 
     public function build(): string
     {
-        $entries = [];
-        $entries[] = '/Size ' . (new PdfInteger($this->size))->format();
-        $entries[] = '/Root ' . (new PdfReference($this->rootObjectId))->format();
-
-        if ($this->infoObjectId !== null) {
-            $entries[] = '/Info ' . (new PdfReference($this->infoObjectId))->format();
-        }
-
-        if ($this->id !== null) {
-            $entries[] = '/ID ' . $this->id->format();
-        }
-
-        return "trailer\n<< " . implode(' ', $entries) . " >>\n";
+        return "trailer\n" . $this->entries->format() . "\n";
     }
 }

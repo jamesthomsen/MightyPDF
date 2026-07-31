@@ -13,14 +13,14 @@ final class TrailerTest extends TestCase
 {
     public function testBuildsMinimalTrailer(): void
     {
-        $trailer = new Trailer(size: 4, rootObjectId: 1);
+        $trailer = Trailer::forNewDocument(size: 4, rootObjectId: 1);
 
         self::assertSame("trailer\n<< /Size 4 /Root 1 0 R >>\n", $trailer->build());
     }
 
     public function testIncludesInfoWhenProvided(): void
     {
-        $trailer = new Trailer(size: 4, rootObjectId: 1, infoObjectId: 7);
+        $trailer = Trailer::forNewDocument(size: 4, rootObjectId: 1, infoObjectId: 7);
 
         self::assertSame("trailer\n<< /Size 4 /Root 1 0 R /Info 7 0 R >>\n", $trailer->build());
     }
@@ -28,7 +28,7 @@ final class TrailerTest extends TestCase
     public function testIncludesIdWhenProvided(): void
     {
         $id = new PdfArray(new PdfHexString('abc'), new PdfHexString('abc'));
-        $trailer = new Trailer(size: 4, rootObjectId: 1, id: $id);
+        $trailer = Trailer::forNewDocument(size: 4, rootObjectId: 1, id: $id);
 
         self::assertSame(
             "trailer\n<< /Size 4 /Root 1 0 R /ID [<616263> <616263>] >>\n",

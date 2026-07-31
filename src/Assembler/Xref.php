@@ -14,21 +14,38 @@ namespace MightyPDF\Assembler;
  * this class only renders whatever it's told, keyed explicitly by object
  * id rather than implicit array position.
  *
- * Phase 1 always registers object ids contiguously starting at 1 (see
- * IndirectObjectRegistry::allocate()), so this renders a single
- * subsection covering 0..max(objectId) and throws if a gap is found
- * instead of silently emitting a malformed table. Representing freed
- * objects/gaps from an edited source file (real free-list chaining) is a
- * phase-2 concern, not attempted here.
+ * There are two ways to render, because the two situations have opposite
+ * rules about gaps:
+ *
+ * - build() writes the whole document's table. Object ids are allocated
+ *   contiguously from 1 (see IndirectObjectRegistry::allocate()), so a gap
+ *   here means an id was allocated and then never registered -- a bug.
+ *   It throws rather than silently emitting a malformed table.
+ * - buildUpdateSection() writes the table for an incremental update, which
+ *   lists only the objects that changed. There gaps are not merely
+ *   allowed, they are the entire point, and the ids get grouped into
+ *   contiguous subsections.
  */
 final class Xref
 {
+    private const string FREE_LIST_HEAD = "0000000000 65535 f \n";
+
     /** @var array<int, int> objectId => byte offset */
     private array $entries = [];
 
-    public function addEntry(int $objectId, int $byteOffset): void
+    /**
+     * objectId => generation, held apart from $entries so that entries()
+     * keeps its "offset by object id" shape. Only ever non-zero for an
+     * object rewritten from an existing file (see PdfObject::generation()).
+     *
+     * @var array<int, int>
+     */
+    private array $generations = [];
+
+    public function addEntry(int $objectId, int $byteOffset, int $generation = 0): void
     {
         $this->entries[$objectId] = $byteOffset;
+        $this->generations[$objectId] = $generation;
     }
 
     /** @return array<int, int> objectId => byte offset */
@@ -49,16 +66,76 @@ final class Xref
 
         $out = "xref\n";
         $out .= sprintf("0 %d\n", $highest + 1);
-        $out .= "0000000000 65535 f \n";
+        $out .= self::FREE_LIST_HEAD;
 
         for ($id = 1; $id <= $highest; ++$id) {
             if (!isset($this->entries[$id])) {
                 throw new \LogicException("Xref has a gap at object id $id -- phase 1 requires contiguous object ids starting at 1.");
             }
 
-            $out .= sprintf("%010d 00000 n \n", $this->entries[$id]);
+            $out .= $this->entryLine($id);
         }
 
         return $out;
+    }
+
+    /**
+     * The cross-reference section for an incremental update: only the
+     * objects this update rewrote, grouped into runs of consecutive ids
+     * ("12 2\n<entry>\n<entry>\n"), preceded by the "0 1" free-list head
+     * that update sections conventionally repeat.
+     *
+     * Every offset recorded here is an offset into the *whole* output
+     * file, original bytes included. That is what makes an incremental
+     * update safe: appending never moves an existing object, so every
+     * offset in every earlier section stays valid and this section only
+     * has to describe what moved in.
+     */
+    public function buildUpdateSection(): string
+    {
+        $ids = array_keys($this->entries);
+        sort($ids);
+
+        $out = "xref\n0 1\n" . self::FREE_LIST_HEAD;
+
+        $run = [];
+
+        foreach ($ids as $id) {
+            if ($run !== [] && $id !== $run[count($run) - 1] + 1) {
+                $out .= $this->subsection($run);
+                $run = [];
+            }
+
+            $run[] = $id;
+        }
+
+        if ($run !== []) {
+            $out .= $this->subsection($run);
+        }
+
+        return $out;
+    }
+
+    /** @param non-empty-list<int> $run consecutive object ids */
+    private function subsection(array $run): string
+    {
+        $out = sprintf("%d %d\n", $run[0], count($run));
+
+        foreach ($run as $id) {
+            $out .= $this->entryLine($id);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Exactly 20 bytes, including the trailing space before the newline
+     * (ISO 32000-2 §7.5.4). The padding is not cosmetic: readers are
+     * permitted to seek directly to "start of table + 20 * n", so an
+     * entry one byte short silently misaligns every entry after it.
+     */
+    private function entryLine(int $objectId): string
+    {
+        return sprintf("%010d %05d n \n", $this->entries[$objectId], $this->generations[$objectId] ?? 0);
     }
 }
