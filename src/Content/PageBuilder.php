@@ -304,7 +304,7 @@ final class PageBuilder
 
     public function drawPng(string $path, float $x, float $y, float $width, float $height): static
     {
-        return $this->placeImage(PngImage::fromFile($this->document->registry()->allocate(), $path), $x, $y, $width, $height);
+        return $this->placeImage(PngImage::fromFile($this->document->registry(), $path), $x, $y, $width, $height);
     }
 
     public function drawGif(string $path, float $x, float $y, float $width, float $height): static
