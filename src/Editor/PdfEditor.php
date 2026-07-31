@@ -7,6 +7,7 @@ namespace MightyPDF\Editor;
 use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\PdfObject;
 use MightyPDF\Assembler\Trailer;
+use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfValue;
 use MightyPDF\Assembler\Xref;
 use MightyPDF\Assembler\XrefStream;
@@ -38,6 +39,9 @@ use MightyPDF\Reader\ParseException;
  */
 final class PdfEditor
 {
+    /** A reference chain longer than this is a cycle, not a document. */
+    private const int MAX_REFERENCE_DEPTH = 32;
+
     private readonly ObjectStore $store;
     private readonly string $originalBytes;
 
@@ -93,19 +97,42 @@ final class PdfEditor
         return $this->store->catalog();
     }
 
+    /**
+     * Pending objects shadow the file's own.
+     *
+     * An editor's view of the document has to include what it has been
+     * told so far: an object registered a moment ago exists as far as the
+     * caller is concerned, but it is not in the file yet and the store
+     * knows nothing about it. Without this, following a reference to
+     * something just added -- reading back the appearance stream a form
+     * fill created, say -- simply returns null.
+     */
     public function get(int $objectId): ?PdfValue
     {
-        return $this->store->get($objectId);
+        return $this->changed[$objectId] ?? $this->store->get($objectId);
     }
 
     public function resolve(?PdfValue $value): ?PdfValue
     {
-        return $this->store->resolve($value);
+        // Deliberately not delegating to the store: its resolve() would
+        // follow references through its own get(), which cannot see
+        // anything this editor has added.
+        for ($depth = 0; $value instanceof PdfReference; ++$depth) {
+            if ($depth >= self::MAX_REFERENCE_DEPTH) {
+                return null;
+            }
+
+            $value = $this->get($value->objectId());
+        }
+
+        return $value;
     }
 
     public function resolveDictionary(?PdfValue $value): ?Dictionary
     {
-        return $this->store->resolveDictionary($value);
+        $resolved = $this->resolve($value);
+
+        return $resolved instanceof Dictionary ? $resolved : null;
     }
 
     /**

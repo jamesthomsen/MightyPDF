@@ -342,13 +342,23 @@ appearance for, a value longer than `/MaxLen`. All of those would
 otherwise produce a PDF that opens perfectly and is wrong in the one
 place anyone looks.
 
-**Appearances** are left to the reader via `/NeedsAppearances`, and any
-appearance stream describing the *old* value is removed. Readers that
-honour `/NeedsAppearances` (Acrobat, poppler, Ghostscript) render the new
-value correctly; one that ignores it shows an empty field rather than
-confidently showing the previous value. Checkboxes and radio buttons keep
-their own appearance streams and are switched with `/AS`, so they render
-correctly everywhere.
+**Filled values are drawn**, not just stored. Each text and choice field
+gets a freshly generated appearance stream, so a filled form looks filled
+in even in a reader that ignores `/NeedsAppearances`. The field's own
+`/DA` is replayed verbatim — colour and all — and alignment (`/Q`),
+multiline wrapping, comb fields and auto-sizing (`0 Tf`) are all handled.
+Checkboxes and radio buttons keep their existing appearance streams and
+are switched with `/AS`.
+
+Where a form doesn't say enough to draw with — no `/DA`, or a font whose
+widths aren't in the file — the stale stream is removed and
+`/NeedsAppearances` set instead, so a good reader still renders it and a
+poor one shows an empty box rather than the previous value.
+
+The drawing is only a picture of the value. `/V` keeps the text exactly
+as you gave it, in full Unicode; the appearance transliterates whatever
+the form's font can't represent, so `values()` round-trips losslessly
+even when the rendering can't.
 
 XFA forms are refused unless you pass `allowXfa: true` — Acrobat may
 honour the XFA description instead of the AcroForm fields, so the fill
@@ -356,8 +366,6 @@ would look correct in every tool except the one most people use.
 
 ## Known limitations
 
-- **Text field appearances are not generated** — filled text relies on
-  `/NeedsAppearances` (see above).
 - **No page-overlay helper** — `PageBuilder` does not target a parsed
   page yet, so drawing onto an existing page means going through the
   object model by hand.

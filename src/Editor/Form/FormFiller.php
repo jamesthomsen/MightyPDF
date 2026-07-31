@@ -11,6 +11,7 @@ use MightyPDF\Assembler\Types\PdfBoolean;
 use MightyPDF\Assembler\Types\PdfHexString;
 use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
+use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfString;
 use MightyPDF\Assembler\Types\PdfValue;
 use MightyPDF\Editor\PdfEditor;
@@ -36,11 +37,12 @@ use MightyPDF\Editor\PdfEditor;
  * agrees the box is ticked, and it renders unticked to every human who
  * opens it.
  *
- * For text and choice fields the visible result is left to the reader,
- * via /NeedsAppearances -- and any stale /AP is removed, because a reader
- * that ignores /NeedsAppearances would otherwise faithfully render the
- * appearance stream for the *previous* value. An empty box is a visible
- * problem; a box confidently showing the wrong name is not.
+ * For text and choice fields the new value is also *drawn*, into a fresh
+ * appearance stream (see TextAppearanceBuilder), so that a filled form
+ * looks filled in even to a reader that ignores /NeedsAppearances. Where
+ * the form does not say enough to draw with, the stale stream is removed
+ * and /NeedsAppearances set instead: an empty box is a visible problem,
+ * whereas a box still confidently showing the previous value is not.
  */
 final class FormFiller
 {
@@ -48,6 +50,8 @@ final class FormFiller
 
     /** @var array<string, Field>|null built lazily, then reused */
     private ?array $fields = null;
+
+    private ?TextAppearanceBuilder $appearances = null;
 
     /**
      * @param bool $allowXfa see isXfaForm() -- filling an XFA form's
@@ -148,12 +152,12 @@ final class FormFiller
                 "\"$name\" has no usable /FT, so its type is unknown and it cannot be filled.",
             ),
         };
-
-        $this->requireAppearanceRegeneration();
     }
 
     private function setTextValue(Field $field, string|bool|int|float|null $value): void
     {
+        $text = '';
+
         if ($value === null) {
             $field->dictionary->set('V', null);
         } else {
@@ -172,7 +176,7 @@ final class FormFiller
             $field->dictionary->set('V', PdfString::text($text));
         }
 
-        $this->discardStaleAppearances($field);
+        $this->refreshAppearances($field, $text);
         $this->markChanged($field->dictionary);
     }
 
@@ -236,7 +240,7 @@ final class FormFiller
         if ($value === null) {
             $field->dictionary->set('V', null);
             $field->dictionary->set('I', null);
-            $this->discardStaleAppearances($field);
+            $this->refreshAppearances($field, '');
             $this->markChanged($field->dictionary);
 
             return;
@@ -262,29 +266,45 @@ final class FormFiller
         // list at all.
         $field->dictionary->set('I', $index === false ? null : new PdfArray(new PdfInteger($index)));
 
-        $this->discardStaleAppearances($field);
+        $this->refreshAppearances($field, $text);
         $this->markChanged($field->dictionary);
     }
 
     /**
-     * Removes the appearance streams describing the *old* value.
+     * Replaces each widget's appearance stream with one showing the new
+     * value.
      *
-     * /NeedsAppearances asks the reader to rebuild them, but not every
-     * reader honours it, and one that does not will render the stale
-     * stream perfectly happily. Between a field that looks empty and a
-     * field that confidently shows the previous value, only the first is
-     * a problem anyone will notice.
+     * Drawing it here rather than leaving it to /NeedsAppearances is what
+     * makes a filled form look filled in to a reader that ignores the
+     * flag. Where the form does not say enough to draw with -- no /DA, or
+     * a font whose widths are nowhere in the file -- the stale stream is
+     * removed and the flag set instead: an empty box is a visible problem,
+     * whereas a box still confidently showing the previous value is not.
      */
-    private function discardStaleAppearances(Field $field): void
+    private function refreshAppearances(Field $field, string $text): void
     {
         foreach ($field->widgets as $widget) {
-            if ($widget->get('AP') === null) {
+            $appearance = $this->appearances()->build($field, $widget, $text);
+
+            if ($appearance === null) {
+                if ($widget->get('AP') !== null) {
+                    $widget->set('AP', null);
+                    $this->markChanged($widget);
+                }
+
+                $this->requireAppearanceRegeneration();
+
                 continue;
             }
 
-            $widget->set('AP', null);
+            $widget->set('AP', (new Dictionary())->set('N', new PdfReference($appearance->objectId())));
             $this->markChanged($widget);
         }
+    }
+
+    private function appearances(): TextAppearanceBuilder
+    {
+        return $this->appearances ??= new TextAppearanceBuilder($this->editor);
     }
 
     private function requireAppearanceRegeneration(): void
