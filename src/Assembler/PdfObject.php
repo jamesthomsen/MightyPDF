@@ -29,8 +29,20 @@ use MightyPDF\Assembler\Types\PdfValue;
  */
 abstract class PdfObject implements PdfValue
 {
-    public function __construct(private readonly ?int $objectId = null)
-    {
+    /**
+     * $generation is always 0 for objects this library creates, and stays
+     * a defaulted parameter for exactly that reason -- nothing in the
+     * writer ever passes it. It exists because an object *read back out of
+     * an existing file* may carry a non-zero generation, and rewriting
+     * such an object in an incremental update has to reuse the number it
+     * already had: the generation is part of an object's identity, so
+     * "5 3 obj" rewritten as "5 0 obj" no longer answers the "5 3 R"
+     * references pointing at it.
+     */
+    public function __construct(
+        private readonly ?int $objectId = null,
+        private readonly int $generation = 0,
+    ) {
     }
 
     public function objectId(): int
@@ -40,6 +52,11 @@ abstract class PdfObject implements PdfValue
         }
 
         return $this->objectId;
+    }
+
+    public function generation(): int
+    {
+        return $this->generation;
     }
 
     /**
@@ -69,7 +86,7 @@ abstract class PdfObject implements PdfValue
             return $content;
         }
 
-        return sprintf("%d 0 obj\n%s\nendobj\n", $this->objectId(), trim($content));
+        return sprintf("%d %d obj\n%s\nendobj\n", $this->objectId(), $this->generation, trim($content));
     }
 
     final public function format(): string

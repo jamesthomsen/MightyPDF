@@ -32,6 +32,22 @@ final class PdfString implements PdfValue
     }
 
     /**
+     * Wraps bytes that are already in their final on-the-wire form, with
+     * no encoding decision of any kind -- for strings read back out of an
+     * existing PDF (see MightyPDF\Reader\ObjectParser).
+     *
+     * Byte-identical to latin1() and deliberately separate from it: a
+     * string parsed out of a file may be PDFDocEncoding *or* UTF-16BE, and
+     * which one is a property of those bytes, not something the reader
+     * gets to choose. Calling latin1() there would read as an assertion
+     * about the encoding that the reader is in no position to make.
+     */
+    public static function raw(string $bytes): self
+    {
+        return new self($bytes);
+    }
+
+    /**
      * The right choice for any string whose content comes from the caller
      * rather than from this library: field names, field values, document
      * metadata -- i.e. PDF's "text string" type (§7.9.2.2), which is

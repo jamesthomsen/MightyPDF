@@ -24,9 +24,9 @@ final class Stream extends Dictionary
     private string $rawBytes;
     private readonly bool $compress;
 
-    public function __construct(int $objectId, string $bytes, bool $compress = true)
+    public function __construct(int $objectId, string $bytes, bool $compress = true, int $generation = 0)
     {
-        parent::__construct($objectId);
+        parent::__construct($objectId, $generation);
         $this->rawBytes = $bytes;
         $this->compress = $compress;
     }
@@ -42,6 +42,24 @@ final class Stream extends Dictionary
     public function appendBytes(string $bytes): void
     {
         $this->rawBytes .= $bytes;
+    }
+
+    /**
+     * The bytes exactly as this object holds them -- which is *not* always
+     * the same thing as the bytes that will be written. The pair
+     * (rawBytes, $compress) is the real state: with compression on these
+     * are plain bytes that content() will deflate on the way out; with it
+     * off they are already in final form, and content() emits them
+     * untouched.
+     *
+     * That second case is how a stream read back out of an existing file
+     * is represented (see MightyPDF\Reader\ObjectParser), so for a parsed
+     * stream this returns the stored, still-encoded bytes -- whatever the
+     * dictionary's /Filter says they are -- not decoded content.
+     */
+    public function rawBytes(): string
+    {
+        return $this->rawBytes;
     }
 
     protected function content(): string
