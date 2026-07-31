@@ -82,6 +82,21 @@ final class Trailer
         return new self($entries);
     }
 
+    /**
+     * The trailer's entries as a dictionary.
+     *
+     * For a cross-reference stream, which has no separate trailer at all
+     * and must carry these keys in its own stream dictionary instead
+     * (see XrefStream). Exposed rather than duplicated so that the rule
+     * about which keys carry forward into an update and which get
+     * overridden lives in forUpdate() alone, whichever section format
+     * ends up being written.
+     */
+    public function entries(): Dictionary
+    {
+        return $this->entries;
+    }
+
     public function build(): string
     {
         return "trailer\n" . $this->entries->format() . "\n";

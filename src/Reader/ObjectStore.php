@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace MightyPDF\Reader;
 
 use MightyPDF\Assembler\Dictionary;
+use MightyPDF\Assembler\Stream;
 use MightyPDF\Assembler\Types\PdfInteger;
+use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfValue;
+use MightyPDF\Reader\Filter\StreamDecoder;
 
 /**
  * Random access to the objects of an existing PDF, by object number.
@@ -38,6 +41,7 @@ final class ObjectStore
     private readonly XrefTable $xref;
     private readonly ObjectScanner $scanner;
     private readonly ObjectParser $parser;
+    private readonly StreamDecoder $decoder;
 
     /** @var array<int, PdfValue|null> parsed objects, including proven-absent ones */
     private array $cache = [];
@@ -45,11 +49,24 @@ final class ObjectStore
     /** @var array<int, true> */
     private array $loading = [];
 
+    /**
+     * Object stream id => its members, already decoded and located. An
+     * object stream holds many objects in one compressed blob, so reading
+     * a second object out of one that has already been opened must not
+     * decompress it again -- which, for a file where every page and every
+     * font is compressed together, is the difference between one inflate
+     * and hundreds.
+     *
+     * @var array<int, array<int, PdfValue>>
+     */
+    private array $objectStreams = [];
+
     public function __construct(string $bytes)
     {
         $this->lexer = new Lexer($bytes);
         $this->xref = XrefTable::read($this->lexer);
         $this->scanner = new ObjectScanner($bytes);
+        $this->decoder = new StreamDecoder(fn (?PdfValue $value): ?PdfValue => $this->resolve($value));
         $this->parser = new ObjectParser(
             $this->lexer,
             fn (PdfReference $reference): ?int => $this->resolveLength($reference),
@@ -151,12 +168,33 @@ final class ObjectStore
         return $resolved instanceof Dictionary ? $resolved : null;
     }
 
+    /**
+     * A stream's actual content, with its /Filter chain undone.
+     *
+     * Throws for a stream this reader cannot decode -- an image, most
+     * likely. Returning the encoded bytes instead would hand back JPEG
+     * data labelled as decoded content and let the caller's
+     * misunderstanding travel; use rawBytes() when the encoded form is
+     * what is genuinely wanted.
+     */
+    public function decodedStream(Stream $stream): string
+    {
+        return $this->decoder->decode($stream);
+    }
+
+    public function canDecode(Stream $stream): bool
+    {
+        return $this->decoder->canDecode($stream);
+    }
+
     private function load(int $objectId): ?PdfValue
     {
         $entry = $this->xref->entry($objectId);
 
         if ($entry !== null) {
-            $value = $this->parseAt($entry->offset, $objectId);
+            $value = $entry->isCompressed()
+                ? $this->loadFromObjectStream($entry)
+                : $this->parseAt($entry->offset, $objectId);
 
             if ($value !== null) {
                 return $value;
@@ -195,5 +233,103 @@ final class ObjectStore
         $value = $this->resolve($reference);
 
         return $value instanceof PdfInteger ? $value->value() : null;
+    }
+
+    private function loadFromObjectStream(XrefEntry $entry): ?PdfValue
+    {
+        $container = $entry->containerObjectId;
+
+        if ($container === null) {
+            return null;
+        }
+
+        $members = $this->objectStreams[$container] ??= $this->readObjectStream($container);
+
+        // Looked up by object id rather than by the entry's index. The
+        // index is a claim the cross-reference table makes about the
+        // object stream's internal ordering, and if the two disagree the
+        // id is the one that cannot be misinterpreted.
+        return $members[$entry->objectId] ?? null;
+    }
+
+    /**
+     * Decodes an object stream (/Type /ObjStm) and parses every object in
+     * it at once.
+     *
+     * All of them, not just the one asked for, because the expensive part
+     * is inflating the container -- once that is paid, its members are a
+     * few hundred bytes of parsing each, and a file that compresses its
+     * whole page tree into one stream would otherwise pay the inflate
+     * again for every page.
+     *
+     * @return array<int, PdfValue>
+     */
+    private function readObjectStream(int $containerObjectId): array
+    {
+        $container = $this->get($containerObjectId);
+
+        if (!$container instanceof Stream) {
+            return [];
+        }
+
+        $type = $container->get('Type');
+
+        if (!$type instanceof PdfName || $type->value() !== 'ObjStm') {
+            return [];
+        }
+
+        $count = $this->resolve($container->get('N'));
+        $first = $this->resolve($container->get('First'));
+
+        if (!$count instanceof PdfInteger || !$first instanceof PdfInteger) {
+            return [];
+        }
+
+        try {
+            $data = $this->decodedStream($container);
+        } catch (ParseException) {
+            return [];
+        }
+
+        // The stream begins with /N pairs of integers -- object number and
+        // where that object starts, relative to /First. Both the header
+        // and the objects live in the decoded bytes, so one lexer serves
+        // for both.
+        $lexer = new Lexer($data);
+        $parser = new ObjectParser($lexer);
+
+        $positions = [];
+
+        for ($i = 0; $i < $count->value(); ++$i) {
+            $objectId = $lexer->nextToken();
+            $offset = $lexer->nextToken();
+
+            if ($objectId === null || $offset === null
+                || $objectId->type !== TokenType::Number || $offset->type !== TokenType::Number) {
+                break;
+            }
+
+            $positions[(int) $objectId->value] = $first->value() + (int) $offset->value;
+        }
+
+        $members = [];
+
+        foreach ($positions as $objectId => $position) {
+            if ($position < 0 || $position >= strlen($data)) {
+                continue;
+            }
+
+            try {
+                // parseValueAt(), not parseIndirectObjectAt(): a member of
+                // an object stream is stored bare, with no "N G obj"
+                // wrapper -- that header is exactly the overhead this
+                // format exists to remove. Generation is always 0 here.
+                $members[$objectId] = $parser->parseValueAt($position, $objectId);
+            } catch (ParseException) {
+                // One damaged member should not cost the whole container.
+            }
+        }
+
+        return $members;
     }
 }

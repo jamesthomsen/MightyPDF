@@ -1,8 +1,8 @@
 # MightyPDF
 
-A from-scratch PDF writer for PHP: raw PDF assembly plus a content layer
-for text, drawing, images, SVG, and AcroForm fields. There is no reader
-or parser (yet) — MightyPDF only *creates* PDFs.
+A from-scratch PDF library for PHP: raw PDF assembly plus a content layer
+for text, drawing, images, SVG, and AcroForm fields — and a reader that
+can open an existing PDF and edit it in place.
 
 Requires **PHP 8.3+**, `ext-iconv`, and `ext-zlib`.
 
@@ -236,10 +236,60 @@ $content2 = new PageBuilder($document, $page2);
 $document->saveToFile('output.pdf');
 ```
 
+## Editing an existing PDF
+
+`PdfEditor` opens a PDF, hands you its objects, and writes your changes
+back as an **incremental update**: the original bytes are preserved
+verbatim and only the objects you changed are appended after them.
+
+```php
+use MightyPDF\Editor\PdfEditor;
+use MightyPDF\Assembler\Types\PdfInteger;
+
+$editor = PdfEditor::open('contract.pdf');
+
+$catalog = $editor->catalog();
+$page = $editor->resolveDictionary(
+    $editor->resolveDictionary($catalog->get('Pages'))->get('Kids')->items()[0]
+);
+
+$page->set('Rotate', new PdfInteger(90));
+$editor->register($page);
+
+$editor->saveToFile('contract-rotated.pdf');
+```
+
+Objects the reader hands you *are* writer objects, so editing is just
+`Dictionary::set()`. `register()` marks an object to be written — it
+serves both for objects you modified and for new ones you built with an
+id from `allocate()`. Saving without registering anything returns the
+original bytes unchanged, byte for byte.
+
+Appending rather than rewriting is what makes this safe on files
+MightyPDF didn't write: anything you don't touch is preserved because its
+bytes were never regenerated, not because the library understood it. It
+also leaves an existing signature over the original byte range intact.
+
+**Reading is lenient where real files are damaged** — stale or missing
+xref offsets, wrong `/Length` values, junk between dictionary entries —
+and strict where being wrong would be silent. Both classic
+cross-reference tables and PDF 1.5+ cross-reference streams (with object
+streams and `/Predictor`) are supported, and an update is written in
+whichever format the source file uses.
+
+**Encrypted PDFs are refused**, rather than opened into binary noise.
+Decryption isn't implemented yet, and many everyday forms are encrypted
+with an empty password.
+
+Form filling and drawing onto an existing page are not yet wrapped in a
+high-level API — you can do both through the object model above, but
+`PageBuilder` does not target a parsed page yet.
+
 ## Known limitations
 
-- **Writer only** — there is no PDF parser/reader; MightyPDF cannot open
-  or edit an existing PDF.
+- **No encryption support** — encrypted PDFs cannot be opened.
+- **Editing is low-level** — no form-filling or page-overlay helpers
+  yet (see above).
 - **Text**: standard 14 fonts only, WinAnsi/CP1252 repertoire (no custom
   font embedding, no full Unicode).
 - **SVG**: see the "not supported" list above.

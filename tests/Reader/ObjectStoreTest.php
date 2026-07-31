@@ -149,6 +149,40 @@ final class ObjectStoreTest extends TestCase
         self::assertSame('payload', $stream->rawBytes());
     }
 
+    public function testReadsAnObjectOutOfAnObjectStream(): void
+    {
+        $store = new ObjectStore(self::objectStreamPdf());
+
+        // The catalog is compressed inside object stream 4 and has no
+        // "1 0 obj" header anywhere in the file.
+        self::assertSame('Catalog', $store->catalog()->get('Type')?->value());
+        self::assertSame('Pages', $store->resolveDictionary($store->catalog()->get('Pages'))?->get('Type')?->value());
+    }
+
+    public function testDecompressesAnObjectStreamOnlyOnce(): void
+    {
+        // A file that compresses its whole page tree into one container
+        // would otherwise pay the inflate again for every page in it.
+        $store = new ObjectStore(self::objectStreamPdf());
+
+        self::assertSame($store->get(1), $store->get(1));
+        self::assertSame($store->get(2), $store->get(2));
+    }
+
+    public function testDecodesAStreamsContent(): void
+    {
+        $store = new ObjectStore(self::writtenDocument('Decoded'));
+        $page = self::firstPage($store);
+
+        $contents = $page->get('Contents');
+        self::assertInstanceOf(PdfArray::class, $contents);
+
+        $stream = $store->resolve($contents->items()[0]);
+        self::assertInstanceOf(Stream::class, $stream);
+
+        self::assertStringContainsString('(Decoded) Tj', $store->decodedStream($stream));
+    }
+
     public function testReportsTheTrailerSizeForAllocatingNewObjectIds(): void
     {
         $store = new ObjectStore(self::writtenDocument('x'));
@@ -178,6 +212,55 @@ final class ObjectStoreTest extends TestCase
         self::assertInstanceOf(Dictionary::class, $page);
 
         return $page;
+    }
+
+    /**
+     * A PDF 1.5-style file: the catalog and page tree live compressed
+     * inside an object stream, and a cross-reference stream says so.
+     */
+    private static function objectStreamPdf(): string
+    {
+        $members = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Count 0 /Kids [] >>'];
+
+        // The container starts with N pairs of "object id, offset", then
+        // the objects themselves -- bare, with no "N 0 obj" wrapper.
+        $header = '';
+        $body = '';
+
+        foreach ($members as $index => $member) {
+            $header .= sprintf('%d %d ', $index + 1, strlen($body));
+            $body .= $member . ' ';
+        }
+
+        $payload = gzcompress($header . $body);
+
+        $pdf = "%PDF-1.5\n";
+        $containerOffset = strlen($pdf);
+        $pdf .= sprintf(
+            "4 0 obj\n<< /Type /ObjStm /N %d /First %d /Filter /FlateDecode /Length %d >>\nstream\n%s\nendstream\nendobj\n",
+            count($members),
+            strlen($header),
+            strlen($payload),
+            $payload,
+        );
+
+        $xrefOffset = strlen($pdf);
+        $rows = pack('Cnn', 0, 0, 65535)
+            . pack('Cnn', 2, 4, 0)
+            . pack('Cnn', 2, 4, 1)
+            . pack('Cnn', 0, 0, 0)
+            . pack('Cnn', 1, $containerOffset, 0)
+            . pack('Cnn', 1, $xrefOffset, 0);
+        $rowData = gzcompress($rows);
+
+        $pdf .= sprintf(
+            "5 0 obj\n<< /Type /XRef /Size 6 /Root 1 0 R /W [1 2 2] /Index [0 6]"
+            . " /Filter /FlateDecode /Length %d >>\nstream\n%s\nendstream\nendobj\n",
+            strlen($rowData),
+            $rowData,
+        );
+
+        return $pdf . "startxref\n{$xrefOffset}\n%%EOF\n";
     }
 
     /** A two-object file whose xref offsets are supplied by the caller. */

@@ -109,21 +109,158 @@ final class XrefTableTest extends TestCase
         self::read("%PDF-1.7\nstartxref\n99999\n%%EOF\n");
     }
 
-    public function testNamesCrossReferenceStreamsRatherThanFailingObscurely(): void
+    public function testReadsACrossReferenceStream(): void
     {
-        // The common case in PDF 1.5+ files, and the next thing to build.
-        // Saying so beats "expected keyword".
-        $body = "%PDF-1.7\n";
-        $offset = strlen($body);
+        $xref = self::read(self::crossReferenceStreamPdf());
 
+        self::assertSame(9, $xref->entry(1)?->offset);
+        self::assertSame(3, $xref->size());
+    }
+
+    public function testACrossReferenceStreamsDictionaryIsItsTrailer(): void
+    {
+        // There is no separate "trailer <<...>>" to find in such a file:
+        // /Root and friends live in the stream's own dictionary.
+        $root = self::read(self::crossReferenceStreamPdf())->trailer()->get('Root');
+
+        self::assertInstanceOf(PdfReference::class, $root);
+        self::assertSame(1, $root->objectId());
+    }
+
+    public function testTheMergedTrailerDropsKeysThatDescribeTheStreamItself(): void
+    {
+        // These would otherwise be copied forward into an incremental
+        // update's trailer, leaving a classic table announcing itself as
+        // a cross-reference stream.
+        $trailer = self::read(self::crossReferenceStreamPdf())->trailer();
+
+        foreach (['Type', 'W', 'Index', 'Filter', 'Length'] as $key) {
+            self::assertNull($trailer->get($key), "/$key should not survive into the document trailer");
+        }
+    }
+
+    public function testReadsCompressedEntriesPointingIntoAnObjectStream(): void
+    {
+        // The one thing a classic table cannot express at all.
+        $entry = self::read(self::crossReferenceStreamPdf())->entry(2);
+
+        self::assertTrue($entry?->isCompressed());
+        self::assertSame(4, $entry->containerObjectId);
+        self::assertSame(7, $entry->indexInContainer);
+    }
+
+    public function testAZeroWidthTypeFieldDefaultsToTypeOne(): void
+    {
+        // A saving files take when nothing in them is free or compressed.
+        $rows = pack('nn', 9, 0) . pack('nn', 40, 0);
+        $pdf = self::wrapXrefStream($rows, '/W [0 2 2] /Index [1 2]', 3);
+
+        $xref = self::read($pdf);
+
+        self::assertSame(9, $xref->entry(1)?->offset);
+        self::assertFalse($xref->entry(1)?->isCompressed());
+    }
+
+    public function testReadsAPredictedCrossReferenceStream(): void
+    {
+        // PNG "Up" prediction is the conventional way these are written,
+        // so a reader without it cannot open a modern PDF at all.
+        $rows = [
+            pack('Cnn', 0, 0, 65535),
+            pack('Cnn', 1, 9, 0),
+            pack('Cnn', 1, 40, 0),
+        ];
+
+        $predicted = '';
+        $previous = str_repeat("\x00", 5);
+
+        foreach ($rows as $row) {
+            $delta = '';
+
+            for ($i = 0; $i < 5; ++$i) {
+                $delta .= chr((ord($row[$i]) - ord($previous[$i])) & 0xFF);
+            }
+
+            $predicted .= "\x02" . $delta;
+            $previous = $row;
+        }
+
+        $pdf = self::wrapXrefStream(
+            $predicted,
+            '/W [1 2 2] /Index [0 3] /DecodeParms << /Predictor 12 /Columns 5 >>',
+            3,
+        );
+
+        self::assertSame(40, self::read($pdf)->entry(2)?->offset);
+    }
+
+    public function testReportsWhichSectionFormatTheFileUses(): void
+    {
+        // An incremental update has to match it -- see
+        // XrefTable::usesCrossReferenceStreams().
+        self::assertTrue(self::read(self::crossReferenceStreamPdf())->usesCrossReferenceStreams());
+        self::assertFalse(self::read(self::singleSection())->usesCrossReferenceStreams());
+    }
+
+    public function testReadsAHybridFilesXRefStmEntries(): void
+    {
+        // A hybrid file keeps a classic table for old readers and puts the
+        // entries that table cannot express in a stream beside it.
+        $body = "%PDF-1.5\n1 0 obj\n<< /Type /Catalog >>\nendobj\n";
+
+        $streamOffset = strlen($body);
+        $rows = pack('Cnn', 2, 4, 7);
+        $data = gzcompress($rows);
+        $body .= "9 0 obj\n<< /Type /XRef /Size 10 /Root 1 0 R /W [1 2 2] /Index [2 1] /Filter /FlateDecode /Length "
+            . strlen($data) . " >>\nstream\n" . $data . "\nendstream\nendobj\n";
+
+        $tableOffset = strlen($body);
         $pdf = $body
-            . "1 0 obj\n<< /Type /XRef /Size 2 >>\nstream\nx\nendstream\nendobj\n"
-            . "startxref\n{$offset}\n%%EOF\n";
+            . "xref\n0 2\n0000000000 65535 f \n0000000009 00000 n \n"
+            . "trailer\n<< /Size 10 /Root 1 0 R /XRefStm {$streamOffset} >>\n"
+            . "startxref\n{$tableOffset}\n%%EOF\n";
 
+        $xref = self::read($pdf);
+
+        self::assertSame(9, $xref->entry(1)?->offset, 'the classic table still governs what it covers');
+        self::assertTrue($xref->entry(2)?->isCompressed(), 'and the stream supplies what it cannot');
+        self::assertFalse($xref->usesCrossReferenceStreams(), 'the newest section is still the table');
+    }
+
+    public function testRejectsAnXrefStreamWithNoFieldWidths(): void
+    {
         $this->expectException(ParseException::class);
-        $this->expectExceptionMessage('cross-reference streams are not supported yet');
+        $this->expectExceptionMessage('/W array');
 
-        self::read($pdf);
+        self::read(self::wrapXrefStream('', '/Index [0 1]', 1));
+    }
+
+    /**
+     * A file whose only section is a cross-reference stream describing
+     * three objects: the free head, the catalog, and one object living
+     * inside object stream 4.
+     */
+    private static function crossReferenceStreamPdf(): string
+    {
+        $rows = pack('Cnn', 0, 0, 65535)
+            . pack('Cnn', 1, 9, 0)
+            . pack('Cnn', 2, 4, 7);
+
+        return self::wrapXrefStream($rows, '/W [1 2 2] /Index [0 3]', 3);
+    }
+
+    /** Wraps binary xref rows into a complete single-section PDF. */
+    private static function wrapXrefStream(string $rows, string $extraEntries, int $size): string
+    {
+        $body = "%PDF-1.5\n1 0 obj\n<< /Type /Catalog >>\nendobj\n";
+        $offset = strlen($body);
+        $data = gzcompress($rows);
+
+        return $body
+            . "8 0 obj\n<< /Type /XRef /Size {$size} /Root 1 0 R {$extraEntries}"
+            . " /Filter /FlateDecode /Length " . strlen($data) . " >>\n"
+            . "stream\n" . $data . "\nendstream\nendobj\n"
+            . "startxref\n{$offset}\n%%EOF\n";
     }
 
     public function testDetectsALoopInThePrevChain(): void

@@ -9,6 +9,7 @@ use MightyPDF\Assembler\PdfObject;
 use MightyPDF\Assembler\Trailer;
 use MightyPDF\Assembler\Types\PdfValue;
 use MightyPDF\Assembler\Xref;
+use MightyPDF\Assembler\XrefStream;
 use MightyPDF\Reader\ObjectStore;
 use MightyPDF\Reader\ParseException;
 
@@ -153,18 +154,54 @@ final class PdfEditor
             $out .= $object->render(true);
         }
 
+        // The update's cross-reference section has to be in the same
+        // format as the one it chains onto. See
+        // XrefTable::usesCrossReferenceStreams() for what goes wrong
+        // otherwise -- it is not a stylistic choice.
+        return $this->store->xref()->usesCrossReferenceStreams()
+            ? $this->appendCrossReferenceStream($out, $xref)
+            : $this->appendCrossReferenceTable($out, $xref);
+    }
+
+    private function appendCrossReferenceTable(string $out, Xref $xref): string
+    {
         $startXref = strlen($out);
 
-        $trailer = Trailer::forUpdate(
-            previousTrailer: $this->store->trailer(),
-            size: max($this->nextObjectId, $xref->highestObjectId() + 1),
-            previousXrefOffset: $this->store->xref()->startXrefOffset(),
-        );
+        $trailer = $this->updateTrailer(max($this->nextObjectId, $xref->highestObjectId() + 1));
 
         return $out
             . $xref->buildUpdateSection()
             . $trailer->build()
             . "startxref\n{$startXref}\n%%EOF\n";
+    }
+
+    private function appendCrossReferenceStream(string $out, Xref $xref): string
+    {
+        // The section is itself an object, so it needs a number, and it
+        // has to appear in its own table -- a reader that has just found
+        // it via startxref still expects to be told where it is.
+        //
+        // Read without consuming: save() must be callable twice and give
+        // the same answer, so it cannot advance the allocator.
+        $xrefStreamId = $this->nextObjectId;
+        $startXref = strlen($out);
+
+        $xref->addEntry($xrefStreamId, $startXref);
+
+        $trailer = $this->updateTrailer(max($xrefStreamId + 1, $xref->highestObjectId() + 1));
+
+        return $out
+            . XrefStream::build($xrefStreamId, $xref, $trailer)->render(true)
+            . "startxref\n{$startXref}\n%%EOF\n";
+    }
+
+    private function updateTrailer(int $size): Trailer
+    {
+        return Trailer::forUpdate(
+            previousTrailer: $this->store->trailer(),
+            size: $size,
+            previousXrefOffset: $this->store->xref()->startXrefOffset(),
+        );
     }
 
     public function saveToFile(string $path): void

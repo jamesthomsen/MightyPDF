@@ -60,6 +60,51 @@ final class Xref
         return $this->entries === [] ? 0 : max(array_keys($this->entries));
     }
 
+    public function offsetOf(int $objectId): int
+    {
+        return $this->entries[$objectId] ?? throw new \LogicException("No xref entry for object id $objectId.");
+    }
+
+    public function generationOf(int $objectId): int
+    {
+        return $this->generations[$objectId] ?? 0;
+    }
+
+    /**
+     * The registered ids, ascending, grouped into runs of consecutive
+     * numbers.
+     *
+     * Both update formats need exactly this grouping -- a classic table
+     * writes each run as a "first count" subsection header, a
+     * cross-reference stream writes the same pairs into its /Index -- so
+     * it is computed here once rather than twice, slightly differently.
+     *
+     * @return list<non-empty-list<int>>
+     */
+    public function contiguousRuns(): array
+    {
+        $ids = array_keys($this->entries);
+        sort($ids);
+
+        $runs = [];
+        $run = [];
+
+        foreach ($ids as $id) {
+            if ($run !== [] && $id !== $run[count($run) - 1] + 1) {
+                $runs[] = $run;
+                $run = [];
+            }
+
+            $run[] = $id;
+        }
+
+        if ($run !== []) {
+            $runs[] = $run;
+        }
+
+        return $runs;
+    }
+
     public function build(): string
     {
         $highest = $this->highestObjectId();
@@ -93,23 +138,9 @@ final class Xref
      */
     public function buildUpdateSection(): string
     {
-        $ids = array_keys($this->entries);
-        sort($ids);
-
         $out = "xref\n0 1\n" . self::FREE_LIST_HEAD;
 
-        $run = [];
-
-        foreach ($ids as $id) {
-            if ($run !== [] && $id !== $run[count($run) - 1] + 1) {
-                $out .= $this->subsection($run);
-                $run = [];
-            }
-
-            $run[] = $id;
-        }
-
-        if ($run !== []) {
+        foreach ($this->contiguousRuns() as $run) {
             $out .= $this->subsection($run);
         }
 

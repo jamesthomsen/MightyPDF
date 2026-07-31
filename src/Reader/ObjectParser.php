@@ -75,6 +75,26 @@ final class ObjectParser
     }
 
     /**
+     * Parses a bare object at $offset -- one with no "N G obj" wrapper,
+     * as the members of an object stream are stored.
+     *
+     * Clearing the look-ahead before seeking is the whole reason this
+     * exists rather than callers doing seek-then-parseValue: a token
+     * pushed back while parsing the *previous* object belongs to a
+     * position the cursor is about to leave, and draining it afterwards
+     * silently parses the wrong bytes. Only the second and later objects
+     * are affected, which is exactly the kind of bug that survives a
+     * cursory test.
+     */
+    public function parseValueAt(int $offset, ?int $objectId = null): PdfValue
+    {
+        $this->pushedBack = [];
+        $this->lexer->seek($offset);
+
+        return $this->parseValue($objectId);
+    }
+
+    /**
      * $objectId is stamped onto the value only when it turns out to be a
      * Dictionary or Stream, since those are the only types that can be
      * indirect objects in their own right. Nested dictionaries get null:

@@ -192,6 +192,75 @@ final class PdfEditorTest extends TestCase
         self::assertSame('Page', self::firstPage($store)->get('Type')?->value());
     }
 
+    public function testMatchesTheSourcesCrossReferenceFormat(): void
+    {
+        // A classic table whose /Prev points at a cross-reference stream
+        // is not a conforming chain: Ghostscript reports "xref table was
+        // repaired", having thrown the cross-reference information away
+        // and rebuilt it by scanning. The update must match the source.
+        $classic = self::touchCatalog(self::writtenDocument());
+        self::assertStringContainsString("\nxref\n", substr($classic, -400));
+        self::assertStringContainsString("\ntrailer\n", $classic);
+
+        $stream = self::touchCatalog(self::crossReferenceStreamPdf());
+        self::assertStringNotContainsString("\ntrailer\n", $stream);
+        self::assertStringContainsString('/Type /XRef', $stream);
+    }
+
+    public function testAnUpdateToAnXrefStreamFileReadsBack(): void
+    {
+        $original = self::crossReferenceStreamPdf();
+        $saved = self::touchCatalog($original);
+
+        self::assertStringStartsWith($original, $saved);
+
+        $store = new ObjectStore($saved);
+
+        self::assertTrue($store->catalog()->get('MightyPDFTouched')?->value());
+        self::assertTrue($store->xref()->usesCrossReferenceStreams());
+    }
+
+    public function testTheNewXrefStreamRecordsItsOwnPosition(): void
+    {
+        // A reader that has just found the section via startxref still
+        // expects the section to say where it is.
+        $saved = self::touchCatalog(self::crossReferenceStreamPdf());
+
+        $startXref = (int) (preg_match('/startxref\s+(\d+)\s+%%EOF\s*$/', $saved, $m) === 1 ? $m[1] : -1);
+        self::assertGreaterThan(0, $startXref);
+
+        $store = new ObjectStore($saved);
+        $xrefStreamId = $store->xref()->size() - 1;
+
+        self::assertSame($startXref, $store->xref()->entry($xrefStreamId)?->offset);
+    }
+
+    public function testSaveIsIdempotent(): void
+    {
+        // save() reads the allocator without consuming it, so calling it
+        // twice must not shuffle object numbers underneath the caller.
+        $editor = PdfEditor::fromBytes(self::crossReferenceStreamPdf());
+        $editor->register($editor->catalog()->set('MightyPDFTouched', new PdfBoolean(true)));
+
+        self::assertSame($editor->save(), $editor->save());
+    }
+
+    /** A minimal file whose only section is a cross-reference stream. */
+    private static function crossReferenceStreamPdf(): string
+    {
+        $body = "%PDF-1.5\n1 0 obj\n<< /Type /Catalog >>\nendobj\n";
+        $offset = strlen($body);
+
+        $rows = pack('Cnn', 0, 0, 65535) . pack('Cnn', 1, 9, 0) . pack('Cnn', 1, $offset, 0);
+        $data = gzcompress($rows);
+
+        return $body
+            . "2 0 obj\n<< /Type /XRef /Size 3 /Root 1 0 R /W [1 2 2] /Index [0 3]"
+            . " /Filter /FlateDecode /Length " . strlen($data) . " >>\n"
+            . "stream\n" . $data . "\nendstream\nendobj\n"
+            . "startxref\n{$offset}\n%%EOF\n";
+    }
+
     private static function writtenDocument(): string
     {
         $document = new Document();
