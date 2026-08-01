@@ -263,6 +263,27 @@ final class XrefTableTest extends TestCase
             . "startxref\n{$offset}\n%%EOF\n";
     }
 
+    public function testACrossReferenceStreamCannotForceAHugeAllocation(): void
+    {
+        // The cross-reference stream is decoded at open time, before any
+        // object is requested and before any password -- so a predictor
+        // with an enormous /Columns here is a pre-authentication
+        // denial-of-service. It must surface as a catchable ParseException,
+        // not a fatal out-of-memory. The stream body is a handful of bytes;
+        // the /Columns is what would have driven the allocation.
+        $rows = "\x02" . pack('Cnn', 1, 9, 0);
+        $pdf = self::wrapXrefStream(
+            $rows,
+            '/W [1 2 2] /Index [1 1] /DecodeParms << /Predictor 12 /Columns 900000000 >>',
+            2,
+        );
+
+        $this->expectException(ParseException::class);
+        $this->expectExceptionMessage('does not describe this data');
+
+        self::read($pdf);
+    }
+
     public function testDetectsALoopInThePrevChain(): void
     {
         $body = "%PDF-1.7\n";

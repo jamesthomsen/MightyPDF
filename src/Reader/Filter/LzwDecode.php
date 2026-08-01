@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Reader\Filter;
 
+use MightyPDF\Reader\ParseException;
+
 /**
  * /LZWDecode (ISO 32000-2 §7.4.4.2): variable-width LZW, codes growing
  * from 9 to 12 bits, with 256 meaning "clear the table" and 257 "end of
@@ -22,6 +24,15 @@ final class LzwDecode implements StreamFilter
     private const int END_OF_DATA = 257;
     private const int FIRST_FREE_CODE = 258;
     private const int MAX_CODE_WIDTH = 12;
+
+    /**
+     * @param int $maxDecodedBytes the decompression-bomb ceiling. Defaults
+     *        to the shared cap; a test injects a small one to prove the
+     *        limit fires without decoding 128 MiB to do it.
+     */
+    public function __construct(private readonly int $maxDecodedBytes = self::MAX_DECODED_BYTES)
+    {
+    }
 
     public function decode(string $data, DecodeParms $parms): string
     {
@@ -76,6 +87,17 @@ final class LzwDecode implements StreamFilter
             }
 
             $out .= $entry;
+
+            // LZW expands its input, so a small hostile stream can drive
+            // an unbounded buffer here. Stop when it grows past the cap --
+            // exhausting memory is a fatal, uncatchable error, so it has to
+            // be refused, not caught. A code emits at most one table entry
+            // (a few KiB), so the overshoot past the cap is bounded.
+            if (strlen($out) > $this->maxDecodedBytes) {
+                throw new ParseException(
+                    'Stream decodes to more than ' . $this->maxDecodedBytes . ' bytes; refusing it as a decompression bomb.',
+                );
+            }
 
             if ($previous !== null) {
                 $table[$nextCode++] = $previous . $entry[0];

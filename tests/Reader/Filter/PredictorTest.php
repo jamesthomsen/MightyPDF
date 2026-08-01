@@ -127,6 +127,41 @@ final class PredictorTest extends TestCase
         Predictor::undo('anything', new DecodeParms(predictor: 2, bitsPerComponent: 4, columns: 2));
     }
 
+    public function testRejectsARowWiderThanTheWholeStream(): void
+    {
+        // A denial-of-service vector: a tiny stream body with a /Columns
+        // (here) large enough to demand a multi-hundred-megabyte buffer.
+        // A predictor never emits more than it consumed, so a row wider
+        // than the entire stream cannot be describing this data. It must
+        // be refused before allocating -- a fatal out-of-memory is not
+        // catchable, so "let it fail" is not an option.
+        $this->expectException(ParseException::class);
+        $this->expectExceptionMessage('does not describe this data');
+
+        Predictor::undo(
+            str_repeat("\x00", 16),
+            new DecodeParms(predictor: 12, colors: 1, bitsPerComponent: 8, columns: 900_000_000),
+        );
+    }
+
+    public function testColorsAndBitsPerComponentAreBoundedToo(): void
+    {
+        // The same over-allocation is reachable through /Colors and
+        // /BitsPerComponent, not just /Columns, since row length is their
+        // product.
+        $this->expectException(ParseException::class);
+
+        Predictor::undo(
+            "\x00\x00",
+            new DecodeParms(predictor: 12, colors: 100_000_000, bitsPerComponent: 16, columns: 1),
+        );
+    }
+
+    public function testEmptyDataDecodesToEmpty(): void
+    {
+        self::assertSame('', Predictor::undo('', self::png(columns: 3)));
+    }
+
     private static function png(int $columns): DecodeParms
     {
         return new DecodeParms(predictor: 12, colors: 1, bitsPerComponent: 8, columns: $columns);

@@ -42,8 +42,34 @@ final class Predictor
 
     private static function undoPng(string $data, DecodeParms $parms): string
     {
+        if ($data === '') {
+            return '';
+        }
+
         $bytesPerPixel = self::bytesPerPixel($parms);
         $rowLength = self::rowLength($parms);
+
+        // A predictor is a reversible per-byte transform: it never emits
+        // more bytes than it consumed, so a row cannot be longer than the
+        // whole encoded stream (each row is one filter byte plus its
+        // rowLength data bytes). A /Columns -- or /Colors, or
+        // /BitsPerComponent -- large enough to violate that is not
+        // describing this data; it is asking the reader to allocate an
+        // arbitrary buffer from a handful of input bytes. That is a
+        // denial-of-service vector, and because exhausting memory is a
+        // fatal, uncatchable error in PHP it has to be refused *before*
+        // the allocation rather than caught after. Throwing a
+        // ParseException instead sends a cross-reference or object stream
+        // down ObjectStore's scavenging fallback rather than killing the
+        // process. A short final row is still tolerated (see the padding
+        // below); this rejects only a row wider than the entire stream.
+        if ($rowLength > strlen($data)) {
+            throw new ParseException(sprintf(
+                'A predictor row of %d bytes cannot come from a %d-byte stream; the /DecodeParms geometry does not describe this data.',
+                $rowLength,
+                strlen($data),
+            ));
+        }
 
         $out = '';
         $previous = str_repeat("\x00", $rowLength);
