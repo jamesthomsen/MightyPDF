@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace MightyPDF\Content\Image;
 
 use MightyPDF\Assembler\Dictionary;
-use MightyPDF\Assembler\IndirectObjectRegistry;
+use MightyPDF\Assembler\ObjectHost;
 use MightyPDF\Assembler\Stream;
 use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Assembler\Types\PdfHexString;
@@ -112,7 +112,7 @@ final class PngImage
     {
     }
 
-    public static function fromFile(IndirectObjectRegistry $registry, string $path): Stream
+    public static function fromFile(ObjectHost $registry, string $path): Stream
     {
         $bytes = file_get_contents($path);
         if ($bytes === false) {
@@ -122,7 +122,7 @@ final class PngImage
         return self::fromBytes($registry, $bytes);
     }
 
-    public static function fromBytes(IndirectObjectRegistry $registry, string $bytes): Stream
+    public static function fromBytes(ObjectHost $registry, string $bytes): Stream
     {
         if (!str_starts_with($bytes, self::SIGNATURE)) {
             throw new \InvalidArgumentException('Not a PNG file (bad signature).');
@@ -209,7 +209,7 @@ final class PngImage
      * indirect object.
      */
     private static function buildAlphaImage(
-        IndirectObjectRegistry $registry,
+        ObjectHost $registry,
         string $idat,
         int $width,
         int $height,
@@ -266,7 +266,7 @@ final class PngImage
      * in fromBytes() instead, which is both simpler and cheaper.
      */
     private static function buildDeinterlacedImage(
-        IndirectObjectRegistry $registry,
+        ObjectHost $registry,
         array $chunks,
         string $idat,
         int $width,

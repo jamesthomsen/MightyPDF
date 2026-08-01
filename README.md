@@ -364,11 +364,54 @@ XFA forms are refused unless you pass `allowXfa: true` — Acrobat may
 honour the XFA description instead of the AcroForm fields, so the fill
 would look correct in every tool except the one most people use.
 
+## Drawing on an existing page
+
+`PageOverlay` gives you the same `PageBuilder` used for a fresh page,
+pointed at a page of a document you opened — for a logo, a stamp, a
+watermark.
+
+```php
+use MightyPDF\Editor\PdfEditor;
+use MightyPDF\Editor\PageOverlay;
+
+$editor = PdfEditor::open('contract.pdf');
+$page = /* a page dictionary — see the editing section above */;
+
+$overlay = new PageOverlay($editor, $page);
+$overlay->content()
+    ->drawPng('logo.png', x: 430, y: 690, width: 90, height: 90)
+    ->drawText(StandardFont::HelveticaBold, 13.0, 52, 72, 'DRAFT');
+$overlay->apply();
+
+$editor->saveToFile('contract-stamped.pdf');
+```
+
+Everything drawn goes into a **form XObject** invoked once from the page,
+rather than being appended to the page's own content stream. That removes
+three ways of damaging a page you didn't write:
+
+- Resource names can't collide — the overlay brings its own `/Resources`,
+  so it doesn't matter what `/F1` already means on the page.
+- Shared resources can't be disturbed — a page's `/Resources` is often
+  inherited from an ancestor or shared with other pages, so it's copied
+  onto the page before anything is added.
+- Graphics state can't leak — existing content that leaves an unmatched
+  `q`, a clip or a colour set is bracketed in `q`/`Q` first.
+
+Nothing is written until `apply()`, so an overlay that draws nothing
+leaves the file byte-identical.
+
+Coordinates are the page's own, origin bottom-left, with `/MediaBox`
+resolved through inheritance — `$overlay->mediaBox()` reports it. A page
+with a `/Rotate` is displayed turned, and the overlay turns with it,
+staying put relative to the page's content; `$overlay->rotation()` tells
+you if you'd rather compensate.
+
 ## Known limitations
 
-- **No page-overlay helper** — `PageBuilder` does not target a parsed
-  page yet, so drawing onto an existing page means going through the
-  object model by hand.
+- **Form fields can't be added to an existing document** — the file
+  already has its own `/AcroForm` and a second one would be ignored.
+  Filling the fields it already has works (see above).
 - **Text**: standard 14 fonts only, WinAnsi/CP1252 repertoire (no custom
   font embedding, no full Unicode).
 - **SVG**: see the "not supported" list above.

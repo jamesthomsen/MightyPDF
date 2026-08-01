@@ -17,7 +17,7 @@ use MightyPDF\Assembler\Types\PdfRectangle;
  * doc comments for why centralizing that was the fix for the confirmed
  * 2012 /Size bug).
  */
-final class Document
+final class Document implements DocumentContext
 {
     private const string HEADER = "%PDF-1.7\n%\xE2\xE3\xCF\xD3\n";
 
@@ -90,6 +90,16 @@ final class Document
     public function registry(): IndirectObjectRegistry
     {
         return $this->registry;
+    }
+
+    public function allocate(): int
+    {
+        return $this->registry->allocate();
+    }
+
+    public function register(PdfObject $object): void
+    {
+        $this->registry->register($object);
     }
 
     public function cachedImage(string $contentHash): ?Stream

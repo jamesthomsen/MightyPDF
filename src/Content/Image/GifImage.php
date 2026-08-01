@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Image;
 
-use MightyPDF\Assembler\IndirectObjectRegistry;
+use MightyPDF\Assembler\ObjectHost;
 use MightyPDF\Assembler\Stream;
 use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Assembler\Types\PdfHexString;
@@ -33,7 +33,7 @@ final class GifImage
     {
     }
 
-    public static function fromFile(IndirectObjectRegistry $registry, string $path): Stream
+    public static function fromFile(ObjectHost $registry, string $path): Stream
     {
         $bytes = file_get_contents($path);
         if ($bytes === false) {
@@ -50,7 +50,7 @@ final class GifImage
      * which would later surface as an unrelated "xref has a gap" failure
      * when the whole document is saved.
      */
-    public static function fromBytes(IndirectObjectRegistry $registry, string $bytes): Stream
+    public static function fromBytes(ObjectHost $registry, string $bytes): Stream
     {
         $length = strlen($bytes);
         if ($length < 13 || !(str_starts_with($bytes, 'GIF87a') || str_starts_with($bytes, 'GIF89a'))) {
@@ -113,7 +113,7 @@ final class GifImage
         int $pos,
         ?string $globalColorTable,
         ?int $transparentIndex,
-        IndirectObjectRegistry $registry,
+        ObjectHost $registry,
     ): Stream {
         ++$pos; // skip the 0x2C introducer
         self::requireBytes($bytes, $pos, 9);

@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace MightyPDF\Content;
 
 use MightyPDF\Assembler\Dictionary;
-use MightyPDF\Assembler\Document;
+use MightyPDF\Assembler\DocumentContext;
 use MightyPDF\Assembler\Form\CheckboxField;
 use MightyPDF\Assembler\Form\RadioButtonWidget;
 use MightyPDF\Assembler\Form\RadioGroupField;
 use MightyPDF\Assembler\Form\TextField;
-use MightyPDF\Assembler\Page;
+use MightyPDF\Assembler\PageContext;
 use MightyPDF\Assembler\Stream;
 use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReal;
@@ -58,8 +58,8 @@ final class PageBuilder
     private int $nextExtGStateResourceNumber = 1;
 
     public function __construct(
-        private readonly Document $document,
-        private readonly Page $page,
+        private readonly DocumentContext $document,
+        private readonly PageContext $page,
     ) {
     }
 
@@ -299,21 +299,21 @@ final class PageBuilder
 
     public function drawJpeg(string $path, float $x, float $y, float $width, float $height): static
     {
-        $image = $this->loadImage($path, 'jpeg', fn (string $bytes) => JpegImage::fromBytes($this->document->registry(), $bytes));
+        $image = $this->loadImage($path, 'jpeg', fn (string $bytes) => JpegImage::fromBytes($this->document, $bytes));
 
         return $this->placeImage($image, $x, $y, $width, $height);
     }
 
     public function drawPng(string $path, float $x, float $y, float $width, float $height): static
     {
-        $image = $this->loadImage($path, 'png', fn (string $bytes) => PngImage::fromBytes($this->document->registry(), $bytes));
+        $image = $this->loadImage($path, 'png', fn (string $bytes) => PngImage::fromBytes($this->document, $bytes));
 
         return $this->placeImage($image, $x, $y, $width, $height);
     }
 
     public function drawGif(string $path, float $x, float $y, float $width, float $height): static
     {
-        $image = $this->loadImage($path, 'gif', fn (string $bytes) => GifImage::fromBytes($this->document->registry(), $bytes));
+        $image = $this->loadImage($path, 'gif', fn (string $bytes) => GifImage::fromBytes($this->document, $bytes));
 
         return $this->placeImage($image, $x, $y, $width, $height);
     }
@@ -347,7 +347,7 @@ final class PageBuilder
         }
 
         $image = $build($bytes);
-        $this->document->registry()->register($image);
+        $this->document->register($image);
         $this->document->cacheImage($contentHash, $image);
 
         return $image;
@@ -418,11 +418,11 @@ final class PageBuilder
             return $this->extGStateResourceNames[$key];
         }
 
-        $gsDict = new Dictionary($this->document->registry()->allocate());
+        $gsDict = new Dictionary($this->document->allocate());
         $gsDict->set('Type', new PdfName('ExtGState'));
         $gsDict->set('ca', new PdfReal($fillAlpha));
         $gsDict->set('CA', new PdfReal($strokeAlpha));
-        $this->document->registry()->register($gsDict);
+        $this->document->register($gsDict);
 
         $resourceName = 'GS' . $this->nextExtGStateResourceNumber++;
         $this->extGStateResourceNames[$key] = $resourceName;
@@ -454,7 +454,7 @@ final class PageBuilder
         $resourceName = $this->formFontResourceName($font);
 
         $field = new TextField(
-            $this->document->registry()->allocate(),
+            $this->document->allocate(),
             $name,
             new PdfRectangle($x, $y, $x + $width, $y + $height),
             $resourceName,
@@ -482,11 +482,11 @@ final class PageBuilder
     ): static {
         $onAppearance = $this->buildMarkAppearance($size, $mark);
         $offAppearance = $this->buildMarkAppearance($size, null);
-        $this->document->registry()->register($onAppearance);
-        $this->document->registry()->register($offAppearance);
+        $this->document->register($onAppearance);
+        $this->document->register($offAppearance);
 
         $field = new CheckboxField(
-            $this->document->registry()->allocate(),
+            $this->document->allocate(),
             $name,
             new PdfRectangle($x, $y, $x + $size, $y + $size),
             $checked,
@@ -511,7 +511,7 @@ final class PageBuilder
         $operators = new ContentStream();
         $mark?->draw($operators, $size);
 
-        $stream = new Stream($this->document->registry()->allocate(), $operators->bytes(), compress: false);
+        $stream = new Stream($this->document->allocate(), $operators->bytes(), compress: false);
         $stream->set('Type', new PdfName('XObject'));
         $stream->set('Subtype', new PdfName('Form'));
         $stream->set('BBox', new PdfRectangle(0, 0, $size, $size));
@@ -530,17 +530,17 @@ final class PageBuilder
      */
     public function addRadioGroup(string $name, array $options, ?string $checkedExportValue = null, MarkStyle $mark = MarkStyle::Dot): static
     {
-        $group = new RadioGroupField($this->document->registry()->allocate(), $name, $checkedExportValue);
-        $this->document->registry()->register($group);
+        $group = new RadioGroupField($this->document->allocate(), $name, $checkedExportValue);
+        $this->document->register($group);
 
         foreach ($options as $option) {
             $onAppearance = $this->buildMarkAppearance($option['size'], $mark);
             $offAppearance = $this->buildMarkAppearance($option['size'], null);
-            $this->document->registry()->register($onAppearance);
-            $this->document->registry()->register($offAppearance);
+            $this->document->register($onAppearance);
+            $this->document->register($offAppearance);
 
             $widget = new RadioButtonWidget(
-                $this->document->registry()->allocate(),
+                $this->document->allocate(),
                 $group->objectId(),
                 new PdfRectangle($option['x'], $option['y'], $option['x'] + $option['size'], $option['y'] + $option['size']),
                 $option['exportValue'],
@@ -548,7 +548,7 @@ final class PageBuilder
                 $onAppearance,
                 $offAppearance,
             );
-            $this->document->registry()->register($widget);
+            $this->document->register($widget);
 
             $group->addKid($widget->objectId());
             $this->page->addAnnotation($widget->objectId());
@@ -567,7 +567,7 @@ final class PageBuilder
      */
     private function registerField(TextField|CheckboxField $field): void
     {
-        $this->document->registry()->register($field);
+        $this->document->register($field);
         $this->page->addAnnotation($field->objectId());
         $this->document->acroForm()->addField($field->objectId());
     }
@@ -624,14 +624,14 @@ final class PageBuilder
             return $cached;
         }
 
-        $fontDict = new Dictionary($this->document->registry()->allocate());
+        $fontDict = new Dictionary($this->document->allocate());
         $fontDict->set('Type', new PdfName('Font'));
         $fontDict->set('Subtype', new PdfName('Type1'));
         $fontDict->set('BaseFont', new PdfName($font->baseFontName()));
         if ($font->usesWinAnsiEncoding()) {
             $fontDict->set('Encoding', new PdfName('WinAnsiEncoding'));
         }
-        $this->document->registry()->register($fontDict);
+        $this->document->register($fontDict);
         $this->document->cacheFont($key, $fontDict);
 
         return $fontDict;
@@ -640,8 +640,8 @@ final class PageBuilder
     private function append(string $bytes): void
     {
         if ($this->stream === null) {
-            $this->stream = new Stream($this->document->registry()->allocate(), '');
-            $this->document->registry()->register($this->stream);
+            $this->stream = new Stream($this->document->allocate(), '');
+            $this->document->register($this->stream);
             $this->page->addContentStream($this->stream);
         }
 

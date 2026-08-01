@@ -19,7 +19,7 @@ use MightyPDF\Assembler\Types\PdfRectangle;
  * those two lists and omitted entirely when empty (a page with no
  * content has no /Contents at all, per spec, rather than an empty array).
  */
-final class Page extends Dictionary
+final class Page extends Dictionary implements PageContext
 {
     private readonly Dictionary $resources;
 

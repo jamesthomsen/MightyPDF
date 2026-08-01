@@ -18,7 +18,7 @@ namespace MightyPDF\Assembler;
  * ever walks registered objects and records offsets; nothing else in the
  * assembler touches an Xref or does offset math.
  */
-final class IndirectObjectRegistry
+final class IndirectObjectRegistry implements ObjectHost
 {
     private int $nextId = 0;
 

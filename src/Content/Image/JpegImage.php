@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Image;
 
-use MightyPDF\Assembler\IndirectObjectRegistry;
+use MightyPDF\Assembler\ObjectHost;
 use MightyPDF\Assembler\Stream;
 use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
@@ -23,7 +23,7 @@ final class JpegImage
     {
     }
 
-    public static function fromFile(IndirectObjectRegistry $registry, string $path): Stream
+    public static function fromFile(ObjectHost $registry, string $path): Stream
     {
         $bytes = file_get_contents($path);
         if ($bytes === false) {
@@ -40,7 +40,7 @@ final class JpegImage
      * which would later surface as an unrelated "xref has a gap" failure
      * when the whole document is saved.
      */
-    public static function fromBytes(IndirectObjectRegistry $registry, string $bytes): Stream
+    public static function fromBytes(ObjectHost $registry, string $bytes): Stream
     {
         [$width, $height, $components] = self::readHeader($bytes);
 
