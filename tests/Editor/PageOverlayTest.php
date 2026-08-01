@@ -196,16 +196,25 @@ final class PageOverlayTest extends TestCase
         self::assertSame('99 0 R', $annots->items()[1]->format());
     }
 
-    public function testSaysWhyFormFieldsCannotBeAddedToAnExistingDocument(): void
+    public function testCreatesAFormForADocumentThatHasNone(): void
     {
-        // A second /AcroForm alongside the file's own would be ignored by
-        // readers, so the field would simply not be there.
         $editor = PdfEditor::fromBytes(self::pageWithContent());
+        $form = (new EditedDocument($editor))->acroForm();
 
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('FormFiller');
+        self::assertSame(
+            $form->objectId(),
+            $editor->catalog()->get('AcroForm')?->objectId(),
+            'the catalog must point at it',
+        );
+    }
 
-        (new EditedDocument($editor))->acroForm();
+    public function testGivesTheSameFormBackOnEveryCall(): void
+    {
+        // Two forms would mean the catalog pointing at one of them and
+        // the fields in the other simply not being there.
+        $document = new EditedDocument(PdfEditor::fromBytes(self::pageWithContent()));
+
+        self::assertSame($document->acroForm(), $document->acroForm());
     }
 
     public function testDrawsOntoADocumentThisLibraryWrote(): void

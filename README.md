@@ -407,16 +407,34 @@ with a `/Rotate` is displayed turned, and the overlay turns with it,
 staying put relative to the page's content; `$overlay->rotation()` tells
 you if you'd rather compensate.
 
+Form fields can be **added** to an existing document too — the file's own
+`/AcroForm` is taken over rather than a second one built beside it (the
+catalog has room for exactly one, so a second is simply ignored):
+
+```php
+$overlay = new PageOverlay($editor, $page);
+$overlay->content()->addTextField('signed_on', x: 200, y: 560, width: 200, height: 20);
+$overlay->apply();
+
+(new FormFiller($editor))->set('signed_on', '31 July 2026');
+```
+
+Everything the original form said — `/DA`, `/Q`, `/SigFlags`, entries this
+library has never heard of — is carried forward, existing fields are kept,
+and a font added for the new field's `/DA` gets a `/DR` name the document
+isn't already using. `/NeedsAppearances` is left exactly as found, since
+turning it on would ask readers to redraw every field in the document and
+not just the new one; fill a new field through `FormFiller` and its
+appearance is drawn directly.
+
 ## Known limitations
 
-- **Form fields can't be added to an existing document** — the file
-  already has its own `/AcroForm` and a second one would be ignored.
-  Filling the fields it already has works (see above).
 - **Text**: standard 14 fonts only, WinAnsi/CP1252 repertoire (no custom
   font embedding, no full Unicode).
 - **SVG**: see the "not supported" list above.
-- **Forms**: text fields and checkboxes only — no radio buttons, list
-  boxes, dropdowns, or signature fields.
+- **Creating fields**: text fields, checkboxes and radio groups — no list
+  boxes, dropdowns or signature fields. (Existing list boxes and dropdowns
+  in a document you open can be *filled*; see `FormFiller`.)
 
 ## Development
 
