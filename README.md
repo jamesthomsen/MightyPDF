@@ -166,10 +166,9 @@ cropped).
 - **PNG**: non-interlaced, no-alpha `IDAT` data is relayed verbatim (no
   decompress/recompress). PNGs with a baked-in alpha channel (color types
   4/6) are split into a color image plus a `/SMask`; interlaced (Adam7)
-  PNGs of any color type are de-interlaced first. Both are decode/re-encode
-  paths supported at 8 or 16 bits per channel; sub-byte bit depths
-  (1/2/4, grayscale/indexed only) aren't supported combined with
-  interlacing.
+  PNGs of any color type are de-interlaced first. Sub-byte bit depths
+  (1/2/4, grayscale or indexed) relay verbatim when not interlaced, and
+  are widened to one byte per pixel when they are.
 - **GIF**: decoded to indexed color; transparency is supported.
 
 ## SVG vector graphics

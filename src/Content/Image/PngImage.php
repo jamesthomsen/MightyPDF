@@ -57,14 +57,18 @@ use MightyPDF\Png\ScanlineFilter;
  *    combined with the alpha-splitting step when a PNG is both
  *    interlaced and alpha-bearing).
  *
+ * Sub-byte bit depths (1/2/4, only reachable via grayscale or indexed
+ * PNGs) relay verbatim when the PNG is not interlaced, and are widened to
+ * one byte per pixel when it is. Widening rather than re-packing, because
+ * Adam7 scatters each pass's pixels across the image at a stride: packed
+ * output would mean writing single bits into arbitrary positions of bytes
+ * shared with other passes, and the widened form costs nothing once
+ * deflated, a run of identical bytes being exactly what compresses best.
+ *
  * Scope (per project conventions -- explicitly unsupported rather than
- * silently wrong): only 8- or 16-bit-per-channel data for the alpha color
- * types and for interlaced PNGs of any color type. Sub-byte bit depths
- * (1/2/4, only reachable via grayscale or indexed PNGs) still work
- * through the verbatim-relay path as long as the PNG isn't interlaced --
- * combining a sub-byte bit depth with interlacing would need bit-level
- * (not byte-level) pass reassembly, which no current caller needs, and
- * raises a clear exception instead.
+ * silently wrong): the alpha color types are 8- or 16-bit-per-channel
+ * only, which is no restriction at all, since PNG does not permit them at
+ * any other depth.
  */
 final class PngImage
 {
@@ -229,7 +233,7 @@ final class PngImage
         $bpp = $channels * $bytesPerSample;
 
         self::guardDecodedSize($width, $height, $bpp);
-        $raw = self::inflate($idat, $width, $height, $bpp, $interlaced);
+        $raw = self::inflate($idat, $width, $height, $bpp * 8, $interlaced);
 
         $decoded = self::decodePixels($raw, $width, $height, $bpp, $interlaced);
         [$colorBytes, $alphaBytes] = self::splitColorAndAlpha($decoded, $width, $height, $colorChannels, $bytesPerSample);
@@ -274,24 +278,36 @@ final class PngImage
         int $bitDepth,
         int $colorType,
     ): Stream {
-        if (!in_array($bitDepth, [8, 16], true)) {
-            throw new \RuntimeException(
-                "Interlaced PNGs are only supported at 8 or 16 bits per channel (got $bitDepth); re-save without interlacing or at one of those depths.",
-            );
-        }
-
-        $bytesPerSample = intdiv($bitDepth, 8);
         $colors = match ($colorType) {
             0 => 1, // grayscale
             2 => 3, // truecolor
             3 => 1, // indexed
         };
-        $bpp = $colors * $bytesPerSample;
 
-        self::guardDecodedSize($width, $height, $bpp);
-        $raw = self::inflate($idat, $width, $height, $bpp, true);
+        if ($bitDepth < 8) {
+            // Sub-byte samples are widened to a byte each rather than
+            // re-packed. Adam7 scatters a pass's pixels across the image
+            // at a stride, so packed output would mean writing single
+            // bits into arbitrary positions of a shared byte -- and
+            // 1 byte per pixel is what a 1-bit image costs anyway once
+            // it has been deflated, since the run of identical bytes
+            // compresses to nothing.
+            $decoded = self::decodeSubByteInterlaced($raw = self::inflateSubByte($idat, $width, $height, $bitDepth), $width, $height, $bitDepth, $colorType);
+            $bitDepth = 8;
+        } else {
+            $bpp = $colors * intdiv($bitDepth, 8);
 
-        $decoded = self::decodePixels($raw, $width, $height, $bpp, true);
+            self::guardDecodedSize($width, $height, $bpp);
+
+            $decoded = self::decodePixels(
+                self::inflate($idat, $width, $height, $bpp * 8, true),
+                $width,
+                $height,
+                $bpp,
+                true,
+            );
+        }
+
         $colorSpace = self::colorSpaceFor($colorType, $chunks);
 
         $stream = new Stream($registry->allocate(), $decoded, compress: true);
@@ -303,6 +319,80 @@ final class PngImage
         $stream->set('ColorSpace', $colorSpace);
 
         return $stream;
+    }
+
+    private static function inflateSubByte(string $idat, int $width, int $height, int $bitDepth): string
+    {
+        // One byte per pixel out, whatever the depth in.
+        self::guardDecodedSize($width, $height, 1);
+
+        return self::inflate($idat, $width, $height, $bitDepth, true);
+    }
+
+    /**
+     * De-interlaces a 1-, 2- or 4-bit grayscale or indexed image into one
+     * byte per pixel.
+     *
+     * Only colour types 0 and 3 ever reach here; truecolour and any
+     * alpha-bearing type are 8 or 16 bits per channel by definition of
+     * the PNG format, so there is no sub-byte case for them to have.
+     *
+     * Grayscale values are scaled to fill a byte -- a 1-bit sample means
+     * black or white, not 0 or 1 -- while indexed values are palette
+     * positions and must be left exactly as they are.
+     */
+    private static function decodeSubByteInterlaced(
+        string $raw,
+        int $width,
+        int $height,
+        int $bitDepth,
+        int $colorType,
+    ): string {
+        $samplesPerByte = intdiv(8, $bitDepth);
+        $maximum = (1 << $bitDepth) - 1;
+        $scale = $colorType === 0 ? intdiv(255, $maximum) : 1;
+
+        $full = str_repeat("\x00", $width * $height);
+        $offset = 0;
+
+        foreach (self::ADAM7_PASSES as [$startX, $startY, $stepX, $stepY]) {
+            [$passWidth, $passHeight] = self::adam7PassDimensions($width, $height, $startX, $startY, $stepX, $stepY);
+
+            if ($passWidth === 0 || $passHeight === 0) {
+                continue;
+            }
+
+            $rowBytes = intdiv($passWidth * $bitDepth + 7, 8);
+            $previous = str_repeat("\x00", $rowBytes);
+
+            for ($py = 0; $py < $passHeight; ++$py) {
+                if ($offset + 1 + $rowBytes > strlen($raw)) {
+                    throw new \RuntimeException('PNG IDAT data is shorter than its declared dimensions.');
+                }
+
+                $filterType = ord($raw[$offset]);
+                $row = substr($raw, $offset + 1, $rowBytes);
+                $offset += 1 + $rowBytes;
+
+                // A distance of one byte, not one pixel: at these depths
+                // consecutive pixels share a byte, so the neighbour the
+                // filter predicts from is simply the preceding byte.
+                $reconstructed = ScanlineFilter::reconstructRow($filterType, $row, $previous, 1)
+                    ?? throw new \RuntimeException("Unknown PNG filter type: $filterType.");
+
+                $previous = $reconstructed;
+                $rowStart = ($startY + $py * $stepY) * $width + $startX;
+
+                for ($px = 0; $px < $passWidth; ++$px) {
+                    $packed = ord($reconstructed[intdiv($px, $samplesPerByte)]);
+                    $shift = 8 - $bitDepth * (($px % $samplesPerByte) + 1);
+
+                    $full[$rowStart + $px * $stepX] = chr((($packed >> $shift) & $maximum) * $scale);
+                }
+            }
+        }
+
+        return $full;
     }
 
     /**
@@ -331,19 +421,25 @@ final class PngImage
      * well-formed image of these dimensions *should* inflate to
      * (scanlines plus their leading filter byte, per Adam7 pass when
      * interlaced).
+     *
+     * Measured in bits per pixel rather than bytes so that the ceiling
+     * stays tight at sub-byte depths, where a row of 8 one-bit pixels is
+     * a single byte and not eight.
      */
-    private static function inflate(string $idat, int $width, int $height, int $bpp, bool $interlaced): string
+    private static function inflate(string $idat, int $width, int $height, int $bitsPerPixel, bool $interlaced): string
     {
+        $rowBytes = static fn (int $pixels): int => intdiv($pixels * $bitsPerPixel + 7, 8);
+
         $expected = 0;
         if (!$interlaced) {
-            $expected = $height * (1 + $width * $bpp);
+            $expected = $height * (1 + $rowBytes($width));
         } else {
             foreach (self::ADAM7_PASSES as [$startX, $startY, $stepX, $stepY]) {
                 [$passWidth, $passHeight] = self::adam7PassDimensions($width, $height, $startX, $startY, $stepX, $stepY);
                 if ($passWidth === 0 || $passHeight === 0) {
                     continue;
                 }
-                $expected += $passHeight * (1 + $passWidth * $bpp);
+                $expected += $passHeight * (1 + $rowBytes($passWidth));
             }
         }
 

@@ -6,6 +6,7 @@ namespace MightyPDF\Tests\Content\Image;
 
 use MightyPDF\Assembler\IndirectObjectRegistry;
 use MightyPDF\Content\Image\PngImage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class PngImageTest extends TestCase
@@ -206,12 +207,173 @@ final class PngImageTest extends TestCase
         self::assertSame("\xFF\xFF\x80\x80\x00\x00\x40\x40", $alphaBytes);
     }
 
-    public function testRejectsInterlacedPngWithSubByteBitDepth(): void
+    public function testReadsAnInterlacedSubByteImage(): void
     {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Interlaced PNGs are only supported at 8 or 16 bits per channel');
-        PngImage::fromFile(new IndirectObjectRegistry(), self::FIXTURES . '/sample-interlaced-4bit.png');
+        $image = PngImage::fromFile(new IndirectObjectRegistry(), self::FIXTURES . '/sample-interlaced-4bit.png');
+
+        // Widened to a byte per pixel: packing would mean writing single
+        // bits into bytes shared with other Adam7 passes.
+        self::assertSame(8, $image->get('BitsPerComponent')?->value());
+        self::assertSame("\x00", $image->rawBytes(), 'a 1x1 image of palette index 0');
     }
+
+    /**
+     * A pattern chosen so that every one of the seven Adam7 passes
+     * contributes, and so that a nibble read from the wrong half of a byte
+     * shows up as a shifted diagonal rather than as nothing.
+     */
+    public function testDeinterlacesEverySubBytePassIntoTheRightPixels(): void
+    {
+        $width = 8;
+        $height = 8;
+        $pixels = [];
+
+        for ($y = 0; $y < $height; ++$y) {
+            for ($x = 0; $x < $width; ++$x) {
+                $pixels[$y][$x] = $x === $y
+                    ? 1
+                    : (($x === 0 || $y === 0 || $x === $width - 1 || $y === $height - 1) ? 2 : 0);
+            }
+        }
+
+        $png = self::interlacedPng($pixels, bitDepth: 4, colorType: 3);
+        $image = PngImage::fromBytes(new IndirectObjectRegistry(), $png);
+
+        self::assertSame(self::flatten($pixels), $image->rawBytes());
+    }
+
+    /**
+     * Grayscale samples have to be scaled to fill a byte -- a 1-bit
+     * sample means black or white, not 0 or 1 -- while indexed samples
+     * are palette positions and must be left exactly as they are.
+     *
+     * @param int $bitDepth 1, 2 or 4
+     */
+    #[DataProvider('subByteDepths')]
+    public function testScalesGrayscaleSamplesButNotPaletteIndices(int $bitDepth): void
+    {
+        $maximum = (1 << $bitDepth) - 1;
+        $pixels = [];
+
+        for ($y = 0; $y < 8; ++$y) {
+            for ($x = 0; $x < 8; ++$x) {
+                $pixels[$y][$x] = ($x + $y) % ($maximum + 1);
+            }
+        }
+
+        $gray = PngImage::fromBytes(new IndirectObjectRegistry(), self::interlacedPng($pixels, $bitDepth, 0));
+        $indexed = PngImage::fromBytes(new IndirectObjectRegistry(), self::interlacedPng($pixels, $bitDepth, 3));
+
+        $scale = intdiv(255, $maximum);
+
+        self::assertSame(
+            implode('', array_map(static fn (int $v): string => chr($v * $scale), self::samples($pixels))),
+            $gray->rawBytes(),
+            'grayscale is scaled to fill a byte',
+        );
+
+        self::assertSame(self::flatten($pixels), $indexed->rawBytes(), 'indices are left alone');
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function subByteDepths(): iterable
+    {
+        yield '1 bit' => [1];
+        yield '2 bits' => [2];
+        yield '4 bits' => [4];
+    }
+
+    /** @param array<int, array<int, int>> $pixels */
+    private static function flatten(array $pixels): string
+    {
+        return implode('', array_map(chr(...), self::samples($pixels)));
+    }
+
+    /**
+     * @param array<int, array<int, int>> $pixels
+     * @return list<int>
+     */
+    private static function samples(array $pixels): array
+    {
+        $out = [];
+
+        foreach ($pixels as $row) {
+            foreach ($row as $value) {
+                $out[] = $value;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Encodes $pixels as an Adam7-interlaced PNG at a sub-byte depth --
+     * written here rather than borrowed from the decoder, so that the two
+     * cannot agree on the same mistake.
+     *
+     * @param array<int, array<int, int>> $pixels row-major sample values
+     */
+    private static function interlacedPng(array $pixels, int $bitDepth, int $colorType): string
+    {
+        $height = count($pixels);
+        $width = count($pixels[0]);
+        $samplesPerByte = intdiv(8, $bitDepth);
+        $raw = '';
+
+        foreach (self::ADAM7 as [$startX, $startY, $stepX, $stepY]) {
+            $passWidth = $width > $startX ? intdiv($width - $startX + $stepX - 1, $stepX) : 0;
+            $passHeight = $height > $startY ? intdiv($height - $startY + $stepY - 1, $stepY) : 0;
+
+            if ($passWidth === 0 || $passHeight === 0) {
+                continue;
+            }
+
+            for ($py = 0; $py < $passHeight; ++$py) {
+                $row = '';
+                $accumulator = 0;
+                $filled = 0;
+
+                for ($px = 0; $px < $passWidth; ++$px) {
+                    $accumulator = ($accumulator << $bitDepth) | $pixels[$startY + $py * $stepY][$startX + $px * $stepX];
+
+                    if (++$filled === $samplesPerByte) {
+                        $row .= chr($accumulator);
+                        $accumulator = 0;
+                        $filled = 0;
+                    }
+                }
+
+                if ($filled > 0) {
+                    $row .= chr($accumulator << ($bitDepth * ($samplesPerByte - $filled)));
+                }
+
+                // Filter type 0, None -- the filters themselves have their
+                // own tests.
+                $raw .= "\x00" . $row;
+            }
+        }
+
+        $ihdr = pack('NN', $width, $height) . chr($bitDepth) . chr($colorType) . "\x00\x00\x01";
+        $png = "\x89PNG\r\n\x1a\n" . self::chunk('IHDR', $ihdr);
+
+        if ($colorType === 3) {
+            $palette = '';
+
+            for ($i = 0; $i < (1 << $bitDepth); ++$i) {
+                $palette .= chr($i) . chr($i) . chr($i);
+            }
+
+            $png .= self::chunk('PLTE', $palette);
+        }
+
+        return $png . self::chunk('IDAT', (string) gzcompress($raw)) . self::chunk('IEND', '');
+    }
+
+    /** PNG spec §8.2: startX, startY, stepX, stepY per pass. */
+    private const array ADAM7 = [
+        [0, 0, 8, 8], [4, 0, 8, 8], [0, 4, 4, 8], [2, 0, 4, 4],
+        [0, 2, 2, 4], [1, 0, 2, 2], [0, 1, 1, 2],
+    ];
 
     public function testRejectsNonPngData(): void
     {
