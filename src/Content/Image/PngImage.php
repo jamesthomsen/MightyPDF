@@ -13,6 +13,7 @@ use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfValue;
+use MightyPDF\Png\ScanlineFilter;
 
 /**
  * Builds an Image XObject (ISO 32000-2 §8.9.5) from a PNG file.
@@ -431,6 +432,13 @@ final class PngImage
      * $offset past what it consumed so callers can chain passes over one
      * shared buffer. Returns the scanlines concatenated with their
      * leading filter-type bytes stripped.
+     *
+     * Undoing each row's filter is ScanlineFilter's job; what stays here
+     * is the framing. A row is $passWidth whole pixels of $bpp bytes --
+     * this path only ever runs at 8 or 16 bits per channel, so rows land
+     * on byte boundaries -- and a run that ends before its declared
+     * number of rows means a truncated IDAT, which is a corrupt image
+     * rather than something to pad over.
      */
     private static function unfilterPass(string $raw, int &$offset, int $passWidth, int $passHeight, int $bpp): string
     {
@@ -447,24 +455,8 @@ final class PngImage
             $row = substr($raw, $offset + 1, $rowBytes);
             $offset += 1 + $rowBytes;
 
-            $recon = '';
-            for ($x = 0; $x < $rowBytes; $x++) {
-                $left = $x >= $bpp ? ord($recon[$x - $bpp]) : 0;
-                $up = ord($prevRow[$x]);
-                $upLeft = $x >= $bpp ? ord($prevRow[$x - $bpp]) : 0;
-                $rawByte = ord($row[$x]);
-
-                $value = match ($filterType) {
-                    0 => $rawByte,
-                    1 => $rawByte + $left,
-                    2 => $rawByte + $up,
-                    3 => $rawByte + intdiv($left + $up, 2),
-                    4 => $rawByte + self::paethPredictor($left, $up, $upLeft),
-                    default => throw new \RuntimeException("Unknown PNG filter type: $filterType."),
-                };
-
-                $recon .= chr($value & 0xFF);
-            }
+            $recon = ScanlineFilter::reconstructRow($filterType, $row, $prevRow, $bpp)
+                ?? throw new \RuntimeException("Unknown PNG filter type: $filterType.");
 
             $out .= $recon;
             $prevRow = $recon;
@@ -496,20 +488,6 @@ final class PngImage
         }
 
         return [$colorOut, $alphaOut];
-    }
-
-    private static function paethPredictor(int $a, int $b, int $c): int
-    {
-        $p = $a + $b - $c;
-        $pa = abs($p - $a);
-        $pb = abs($p - $b);
-        $pc = abs($p - $c);
-
-        if ($pa <= $pb && $pa <= $pc) {
-            return $a;
-        }
-
-        return $pb <= $pc ? $b : $c;
     }
 
     /** @return array<string, list<string>> chunk type => list of chunk data (in file order) */
