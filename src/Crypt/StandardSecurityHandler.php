@@ -30,11 +30,20 @@ use MightyPDF\Assembler\Types\PdfValue;
  * form would parse "successfully" into a document full of binary noise:
  * field names matching nothing, content streams drawing nothing.
  *
- * Only decryption is implemented. Existing encryption is *preserved*
- * across an incremental update -- the same key re-enciphers whatever gets
- * written -- but there is no way here to encrypt a document that was not
- * already encrypted, which would mean generating /O and /U and taking on
- * a promise about confidentiality this library should not be making.
+ * open() reads whatever a file already uses, back to the 1996 original:
+ * RC4 at 40 to 128 bits, AES-128, AES-256. create() writes only AES-256,
+ * because there is no reason to put a broken cipher into a file being
+ * made today, and every reader that can open an encrypted PDF at all has
+ * understood AES-256 for a decade.
+ *
+ * What encryption here does and does not give you is worth stating
+ * plainly. With a real user password, AES-256 is strong and the document
+ * is genuinely unreadable without it. With an *empty* user password --
+ * the usual arrangement, where only an owner password is set -- it gives
+ * no confidentiality whatsoever: the file opens in every viewer without
+ * a prompt, because the key derives from the empty string, which anybody
+ * has. What it buys in that case is the /P permission flags, which are a
+ * request rather than a restriction (see Permissions).
  */
 final class StandardSecurityHandler
 {
@@ -51,7 +60,73 @@ final class StandardSecurityHandler
         private readonly CryptMethod $stringMethod,
         private readonly CryptMethod $streamMethod,
         private readonly bool $encryptMetadata,
+        private readonly ?Dictionary $encryptDictionary = null,
     ) {
+    }
+
+    /**
+     * Sets up AES-256 encryption for a document being written.
+     *
+     * The file key is random and is never derived from either password --
+     * at revision 6 the passwords only unlock a copy of it stored in /UE
+     * and /OE. That is why changing a password does not require
+     * re-encrypting the document, and why an empty user password leaves
+     * the key readable by anyone.
+     */
+    public static function create(string $userPassword, string $ownerPassword, int $permissions): self
+    {
+        $fileKey = random_bytes(32);
+
+        $userValidationSalt = random_bytes(8);
+        $userKeySalt = random_bytes(8);
+        $user = self::modernHash($userPassword, $userValidationSalt, '', 6)
+            . $userValidationSalt
+            . $userKeySalt;
+
+        // The owner hashes mix in the whole 48-byte /U, which is what ties
+        // an owner password to this one document.
+        $ownerValidationSalt = random_bytes(8);
+        $ownerKeySalt = random_bytes(8);
+        $owner = self::modernHash($ownerPassword, $ownerValidationSalt, $user, 6)
+            . $ownerValidationSalt
+            . $ownerKeySalt;
+
+        $dictionary = (new Dictionary())
+            ->set('Filter', new PdfName('Standard'))
+            ->set('V', new PdfInteger(5))
+            ->set('R', new PdfInteger(6))
+            ->set('CF', (new Dictionary())->set('StdCF', (new Dictionary())
+                ->set('CFM', new PdfName('AESV3'))
+                ->set('Length', new PdfInteger(32))
+                ->set('AuthEvent', new PdfName('DocOpen'))))
+            ->set('StmF', new PdfName('StdCF'))
+            ->set('StrF', new PdfName('StdCF'))
+            ->set('P', new PdfInteger($permissions))
+            ->set('O', PdfString::raw($owner))
+            ->set('U', PdfString::raw($user))
+            ->set('OE', PdfString::raw(self::wrapFileKey(
+                $fileKey,
+                self::modernHash($ownerPassword, $ownerKeySalt, $user, 6),
+            )))
+            ->set('UE', PdfString::raw(self::wrapFileKey(
+                $fileKey,
+                self::modernHash($userPassword, $userKeySalt, '', 6),
+            )))
+            ->set('Perms', PdfString::raw(self::permissionsBlock($permissions, $fileKey)));
+
+        return new self($fileKey, 6, CryptMethod::Aes256, CryptMethod::Aes256, true, $dictionary);
+    }
+
+    /**
+     * The /Encrypt dictionary to write, for a handler made by create().
+     *
+     * Null for one made by open(): the dictionary is already in the file,
+     * and is the one object that must not be rewritten -- it describes how
+     * to decrypt everything else.
+     */
+    public function encryptDictionary(): ?Dictionary
+    {
+        return $this->encryptDictionary;
     }
 
     /**
@@ -332,6 +407,49 @@ final class StandardSecurityHandler
         }
 
         throw new DecryptionException(self::wrongPasswordMessage($password));
+    }
+
+    /** The inverse of unwrapFileKey: Algorithms 8 and 9, forwards. */
+    private static function wrapFileKey(string $fileKey, string $intermediateKey): string
+    {
+        $wrapped = openssl_encrypt(
+            $fileKey,
+            'aes-256-cbc',
+            $intermediateKey,
+            OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING,
+            str_repeat("\x00", 16),
+        );
+
+        if ($wrapped === false) {
+            throw new DecryptionException('Failed to wrap the file encryption key.');
+        }
+
+        return $wrapped;
+    }
+
+    /**
+     * The /Perms block (Algorithm 10): the permissions again, enciphered
+     * with the file key so that a reader can check nobody has edited /P
+     * in the clear. Without it the flags could be rewritten by anyone with
+     * a hex editor, since /P itself is not protected.
+     */
+    private static function permissionsBlock(int $permissions, string $fileKey): string
+    {
+        $block = pack('V', $permissions & 0xFFFFFFFF)
+            . "\xFF\xFF\xFF\xFF"
+            // 'T' for "metadata is encrypted", then the literal marker
+            // bytes the spec requires, then four bytes of anything.
+            . 'T'
+            . 'adb'
+            . random_bytes(4);
+
+        $encrypted = openssl_encrypt($block, 'aes-256-ecb', $fileKey, OPENSSL_RAW_DATA | OPENSSL_ZERO_PADDING);
+
+        if ($encrypted === false) {
+            throw new DecryptionException('Failed to build the /Perms block.');
+        }
+
+        return $encrypted;
     }
 
     private static function unwrapFileKey(string $wrapped, string $intermediateKey): string

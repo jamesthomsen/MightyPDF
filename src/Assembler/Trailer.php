@@ -35,6 +35,7 @@ final class Trailer
         int $rootObjectId,
         ?int $infoObjectId = null,
         ?PdfArray $id = null,
+        ?int $encryptObjectId = null,
     ): self {
         $entries = new Dictionary();
         $entries->set('Size', new PdfInteger($size));
@@ -42,6 +43,10 @@ final class Trailer
 
         if ($infoObjectId !== null) {
             $entries->set('Info', new PdfReference($infoObjectId));
+        }
+
+        if ($encryptObjectId !== null) {
+            $entries->set('Encrypt', new PdfReference($encryptObjectId));
         }
 
         if ($id !== null) {

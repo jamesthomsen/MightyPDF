@@ -5,7 +5,12 @@ declare(strict_types=1);
 namespace MightyPDF\Assembler;
 
 use MightyPDF\Assembler\Form\AcroForm;
+use MightyPDF\Assembler\Types\PdfArray;
+use MightyPDF\Assembler\Types\PdfHexString;
 use MightyPDF\Assembler\Types\PdfRectangle;
+use MightyPDF\Crypt\CryptTransform;
+use MightyPDF\Crypt\Permissions;
+use MightyPDF\Crypt\StandardSecurityHandler;
 
 /**
  * Top-level facade for assembling a PDF document from scratch -- the
@@ -28,6 +33,9 @@ final class Document implements DocumentContext
     private readonly Catalog $catalog;
     private readonly PageTreeNode $pageTree;
     private ?AcroForm $acroForm = null;
+    private ?StandardSecurityHandler $security = null;
+    private ?int $encryptObjectId = null;
+    private ?PdfArray $id = null;
 
     /** @var list<Page> */
     private array $pages = [];
@@ -152,13 +160,60 @@ final class Document implements DocumentContext
         return $this->pages;
     }
 
+    /**
+     * Encrypts this document with AES-256 when it is saved.
+     *
+     * Be clear about what each password does. The *user* password is
+     * needed to open the document at all, and is the only thing here that
+     * provides confidentiality; leave it empty -- the usual arrangement --
+     * and the file opens in every viewer without a prompt, because the key
+     * derives from the empty string. The *owner* password is what a reader
+     * asks for before disregarding $permissions, which are a request
+     * rather than a restriction (see Permissions).
+     *
+     * So: an empty user password gives a document that anyone can read and
+     * that politely asks to be treated a certain way. A real one gives a
+     * document that cannot be read without it.
+     */
+    public function encrypt(
+        string $ownerPassword,
+        string $userPassword = '',
+        ?int $permissions = null,
+    ): void {
+        if ($this->encryptObjectId !== null) {
+            throw new \LogicException('This document is already encrypted.');
+        }
+
+        $this->security = StandardSecurityHandler::create(
+            $userPassword,
+            $ownerPassword,
+            $permissions ?? Permissions::all(),
+        );
+
+        $dictionary = new Dictionary($this->registry->allocate());
+
+        foreach (($this->security->encryptDictionary()?->entries() ?? []) as $key => $value) {
+            $dictionary->set((string) $key, $value);
+        }
+
+        $this->registry->register($dictionary);
+        $this->encryptObjectId = $dictionary->objectId();
+
+        // An encrypted document must carry a /ID, and both halves are the
+        // same for a file that has never been updated.
+        $id = new PdfHexString(random_bytes(16));
+        $this->id = new PdfArray($id, $id);
+    }
+
     public function save(): string
     {
-        $result = $this->registry->writeAll(self::HEADER);
+        $result = $this->registry->writeAll(self::HEADER, $this->encryptionPass());
 
         $trailer = Trailer::forNewDocument(
             size: $result->xref->highestObjectId() + 1,
             rootObjectId: $this->catalog->objectId(),
+            id: $this->id,
+            encryptObjectId: $this->encryptObjectId,
         );
 
         $startXref = strlen($result->bytes);
@@ -174,5 +229,43 @@ final class Document implements DocumentContext
         if (file_put_contents($path, $this->save()) === false) {
             throw new \RuntimeException("Failed to write PDF to $path");
         }
+    }
+
+    /**
+     * How each object gets enciphered on the way out, or null when the
+     * document is not encrypted.
+     *
+     * The /Encrypt dictionary is passed through untouched: it is what
+     * tells a reader how to decrypt everything else, so enciphering it
+     * would leave a file nothing could open.
+     *
+     * @return (\Closure(PdfObject): PdfObject)|null
+     */
+    private function encryptionPass(): ?\Closure
+    {
+        $security = $this->security;
+
+        if ($security === null) {
+            return null;
+        }
+
+        $encryptObjectId = $this->encryptObjectId;
+
+        return static function (PdfObject $object) use ($security, $encryptObjectId): PdfObject {
+            if ($object->objectId() === $encryptObjectId) {
+                return $object;
+            }
+
+            $objectId = $object->objectId();
+            $generation = $object->generation();
+
+            $encrypted = CryptTransform::apply(
+                $object,
+                static fn (string $bytes): string => $security->encryptString($bytes, $objectId, $generation),
+                static fn (string $bytes): string => $security->encryptStream($bytes, $objectId, $generation),
+            );
+
+            return $encrypted instanceof PdfObject ? $encrypted : $object;
+        };
     }
 }

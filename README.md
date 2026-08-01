@@ -236,6 +236,38 @@ $content2 = new PageBuilder($document, $page2);
 $document->saveToFile('output.pdf');
 ```
 
+## Encrypting a document you create
+
+```php
+use MightyPDF\Crypt\Permissions;
+
+$document->encrypt(
+    ownerPassword: 'owner-secret',
+    userPassword: '',                      // empty: opens without prompting
+    permissions: Permissions::allowing(Permissions::PRINT | Permissions::FILL_FORMS),
+);
+
+$document->saveToFile('protected.pdf');
+```
+
+AES-256 only — there's no reason to write a broken cipher into a new file.
+
+Be clear about what the two passwords do, because it's easy to expect more
+than PDF encryption gives you:
+
+- The **user password** is needed to open the document at all, and is the
+  only thing here that provides confidentiality. Leave it empty — the
+  usual arrangement — and the file opens in every viewer without a prompt,
+  because the key derives from the empty string, which anybody has.
+- The **owner password** is what a reader asks for before disregarding the
+  permissions.
+
+And `Permissions` are a *request*, not enforcement. The file has already
+been decrypted by the time the flags are read, so turning off "copy"
+doesn't stop anyone copying anything — it stops Acrobat offering the menu
+item. Real confidentiality comes from a real user password and nothing
+else.
+
 ## Editing an existing PDF
 
 `PdfEditor` opens a PDF, hands you its objects, and writes your changes

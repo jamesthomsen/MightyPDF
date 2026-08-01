@@ -47,7 +47,16 @@ final class IndirectObjectRegistry implements ObjectHost
      * happened to coincide. That implicit coupling is exactly what this
      * method removes: callers may register objects in any order.
      */
-    public function writeAll(string $header): SerializedDocumentBody
+    /**
+     * @param (\Closure(PdfObject): PdfObject)|null $prepare a last chance
+     *        to substitute what actually gets written -- encryption, which
+     *        has to reach the strings and streams inside every object
+     *        while leaving object numbers and offsets exactly where they
+     *        are. It returns a replacement rather than mutating, so the
+     *        document stays in the state the caller built and save() can
+     *        be called twice.
+     */
+    public function writeAll(string $header, ?\Closure $prepare = null): SerializedDocumentBody
     {
         $objects = $this->objects;
         ksort($objects);
@@ -57,7 +66,7 @@ final class IndirectObjectRegistry implements ObjectHost
 
         foreach ($objects as $objectId => $object) {
             $xref->addEntry($objectId, strlen($out));
-            $out .= $object->render(true);
+            $out .= ($prepare === null ? $object : $prepare($object))->render(true);
         }
 
         return new SerializedDocumentBody($out, $xref);
