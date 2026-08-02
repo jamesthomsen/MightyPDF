@@ -158,7 +158,7 @@ final class TextAppearanceBuilderTest extends TestCase
         self::assertNull($widget->get('AP'));
 
         $acroForm = $editor->resolveDictionary($editor->catalog()->get('AcroForm'));
-        self::assertTrue($acroForm?->get('NeedsAppearances')?->value());
+        self::assertTrue($acroForm?->get('NeedAppearances')?->value());
     }
 
     public function testFallsBackWhenTheFontsWidthsAreNowhereInTheFile(): void

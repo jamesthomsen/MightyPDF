@@ -4,7 +4,7 @@
  * AcroForm fields: text fields, checkboxes, radio groups, list boxes,
  * dropdowns, and an unsigned signature-field placeholder.
  *
- * Fields use /NeedsAppearances so readers regenerate the text/choice
+ * Fields use /NeedAppearances so readers regenerate the text/choice
  * visuals themselves from /DA + /V; checkboxes and radio buttons carry
  * their own small on/off appearance streams (drawn with ContentStream)
  * since those appearances are less consistently reader-regenerated.

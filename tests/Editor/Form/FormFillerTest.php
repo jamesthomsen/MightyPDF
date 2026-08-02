@@ -163,7 +163,7 @@ final class FormFillerTest extends TestCase
 
     public function testDiscardsStaleAppearancesOnEveryWidget(): void
     {
-        // A reader that ignores /NeedsAppearances would otherwise render
+        // A reader that ignores /NeedAppearances would otherwise render
         // the appearance stream for the previous value, perfectly, on
         // every page the field appears on.
         $editor = PdfEditor::fromBytes(self::multiWidgetForm());
@@ -181,7 +181,7 @@ final class FormFillerTest extends TestCase
 
         $acroForm = $editor->resolveDictionary($editor->catalog()->get('AcroForm'));
 
-        self::assertTrue($acroForm?->get('NeedsAppearances')?->value());
+        self::assertTrue($acroForm?->get('NeedAppearances')?->value());
     }
 
     public function testRefusesAValueLongerThanMaxLen(): void

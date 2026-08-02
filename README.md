@@ -348,7 +348,7 @@ $content->addSignatureField('signature', x: 200, y: 390, width: 200, height: 40)
 
 `addSignatureField(string $name, float $x, float $y, float $width, float $height)` — reserves a `/Rect` and an `/AcroForm` entry for a signature to be added later by some other process. This library does not sign documents (hashing a byte range, embedding a certificate, and validating trust are a different feature this project doesn't touch anywhere else), so the field is always created unsigned, with no `/V`.
 
-Text fields, list boxes and dropdowns rely on `/NeedsAppearances` so the
+Text fields, list boxes and dropdowns rely on `/NeedAppearances` so the
 PDF reader regenerates the visible text itself from the field's value and
 appearance string — this is standard, reader-supported behavior.
 Checkboxes and radio buttons instead carry their own small on/off
@@ -544,7 +544,7 @@ place anyone looks.
 
 **Filled values are drawn**, not just stored. Each text and choice field
 gets a freshly generated appearance stream, so a filled form looks filled
-in even in a reader that ignores `/NeedsAppearances`. The field's own
+in even in a reader that ignores `/NeedAppearances`. The field's own
 `/DA` is replayed verbatim — colour and all — and alignment (`/Q`),
 multiline wrapping, comb fields and auto-sizing (`0 Tf`) are all handled.
 Checkboxes and radio buttons keep their existing appearance streams and
@@ -552,7 +552,7 @@ are switched with `/AS`.
 
 Where a form doesn't say enough to draw with — no `/DA`, or a font whose
 widths aren't in the file — the stale stream is removed and
-`/NeedsAppearances` set instead, so a good reader still renders it and a
+`/NeedAppearances` set instead, so a good reader still renders it and a
 poor one shows an empty box rather than the previous value.
 
 The drawing is only a picture of the value. `/V` keeps the text exactly
@@ -625,7 +625,7 @@ $overlay->apply();
 Everything the original form said — `/DA`, `/Q`, `/SigFlags`, entries this
 library has never heard of — is carried forward, existing fields are kept,
 and a font added for the new field's `/DA` gets a `/DR` name the document
-isn't already using. `/NeedsAppearances` is left exactly as found, since
+isn't already using. `/NeedAppearances` is left exactly as found, since
 turning it on would ask readers to redraw every field in the document and
 not just the new one; fill a new field through `FormFiller` and its
 appearance is drawn directly.

@@ -13,7 +13,7 @@ use MightyPDF\Assembler\Types\PdfReference;
  * The document-level interactive form dictionary (ISO 32000-2 §12.7.2),
  * referenced from the Catalog's /AcroForm entry.
  *
- * /NeedsAppearances is set true: rather than this library hand-building a
+ * /NeedAppearances is set true: rather than this library hand-building a
  * correct text-field appearance stream for every field (a large amount
  * of work, and exactly the class of bug that caused the user's original
  * TCPDF form-field pain), readers are asked to regenerate field
@@ -46,7 +46,7 @@ final class AcroForm extends Dictionary
 
         $this->defaultResources = $defaultResources ?? new Dictionary();
         $this->set('DR', $this->defaultResources);
-        $this->set('NeedsAppearances', new PdfBoolean(true));
+        $this->set('NeedAppearances', new PdfBoolean(true));
         $this->syncFields();
     }
 
@@ -63,7 +63,7 @@ final class AcroForm extends Dictionary
      * library has never heard of -- and only /Fields is rebuilt, from the
      * ids it already listed plus whatever gets added.
      *
-     * /NeedsAppearances is deliberately left exactly as found. Turning it
+     * /NeedAppearances is deliberately left exactly as found. Turning it
      * on would ask readers to redraw every field in the document, not
      * just the new ones, which can visibly change fields nobody touched.
      * A newly added field with a value should be filled through
@@ -93,8 +93,8 @@ final class AcroForm extends Dictionary
             }
         }
 
-        if ($existing->get('NeedsAppearances') === null) {
-            $form->set('NeedsAppearances', null);
+        if ($existing->get('NeedAppearances') === null) {
+            $form->set('NeedAppearances', null);
         }
 
         $form->fieldObjectIds = $fieldObjectIds;

@@ -14,7 +14,7 @@ use MightyPDF\Assembler\Types\PdfRectangle;
  * A checkbox field (ISO 32000-2 §12.7.4.2.3), /FT /Btn.
  *
  * Unlike TextField, a checkbox's on/off visual is conventionally driven
- * by /AS + /AP rather than reader-regenerated from /NeedsAppearances
+ * by /AS + /AP rather than reader-regenerated from /NeedAppearances
  * alone, so this always carries a minimal two-state /AP /N appearance
  * dictionary -- the on/off Form XObjects themselves are built by
  * PageBuilder (which already owns ContentStream/registry access) and

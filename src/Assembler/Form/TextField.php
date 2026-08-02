@@ -47,7 +47,7 @@ final class TextField extends FormField
         // Not WinAnsi-encoded like drawn text is: a field value is data the
         // caller gets back out, not glyphs this library has to render, so
         // losing characters the standard-14 fonts cannot draw would destroy
-        // the value itself. /NeedsAppearances already leaves glyph
+        // the value itself. /NeedAppearances already leaves glyph
         // selection to the reader.
         if ($value !== null) {
             $this->set('V', PdfString::text($value));

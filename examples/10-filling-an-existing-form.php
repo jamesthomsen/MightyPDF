@@ -7,7 +7,7 @@
  *
  * Filled values are drawn into a fresh appearance stream for each field,
  * so the form looks filled in even to a reader that ignores
- * /NeedsAppearances, not just stored in /V.
+ * /NeedAppearances, not just stored in /V.
  *
  * Run: php examples/10-filling-an-existing-form.php
  */

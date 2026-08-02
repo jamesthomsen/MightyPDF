@@ -40,9 +40,9 @@ use MightyPDF\Editor\PdfEditor;
  *
  * For text and choice fields the new value is also *drawn*, into a fresh
  * appearance stream (see TextAppearanceBuilder), so that a filled form
- * looks filled in even to a reader that ignores /NeedsAppearances. Where
+ * looks filled in even to a reader that ignores /NeedAppearances. Where
  * the form does not say enough to draw with, the stale stream is removed
- * and /NeedsAppearances set instead: an empty box is a visible problem,
+ * and /NeedAppearances set instead: an empty box is a visible problem,
  * whereas a box still confidently showing the previous value is not.
  */
 final class FormFiller
@@ -279,7 +279,7 @@ final class FormFiller
      * Replaces each widget's appearance stream with one showing the new
      * value.
      *
-     * Drawing it here rather than leaving it to /NeedsAppearances is what
+     * Drawing it here rather than leaving it to /NeedAppearances is what
      * makes a filled form look filled in to a reader that ignores the
      * flag. Where the form does not say enough to draw with -- no /DA, or
      * a font whose widths are nowhere in the file -- the stale stream is
@@ -320,7 +320,7 @@ final class FormFiller
             return;
         }
 
-        $acroForm->set('NeedsAppearances', new PdfBoolean(true));
+        $acroForm->set('NeedAppearances', new PdfBoolean(true));
 
         // Whether the /AcroForm is an object of its own or written inline
         // in the catalog is the original writer's choice; when it is

@@ -469,7 +469,7 @@ final class PageBuilderTest extends TestCase
         self::assertStringContainsString('/FT /Tx', $output);
         self::assertStringContainsString('/T (FirstName)', $output);
         self::assertStringContainsString('/V (Jane)', $output);
-        self::assertStringContainsString('/NeedsAppearances true', $output);
+        self::assertStringContainsString('/NeedAppearances true', $output);
 
         // The field's /DA references a font resource that must resolve
         // via AcroForm's /DR, not the page's own /Resources.
@@ -545,9 +545,9 @@ final class PageBuilderTest extends TestCase
 
         $output = $document->save();
 
-        // Exactly one AcroForm object (one /NeedsAppearances declaration),
+        // Exactly one AcroForm object (one /NeedAppearances declaration),
         // and its /Fields array lists both pages' fields together.
-        self::assertSame(1, preg_match_all('/\/NeedsAppearances true/', $output));
+        self::assertSame(1, preg_match_all('/\/NeedAppearances true/', $output));
         preg_match('/\/Fields \[([^\]]*)\]/', $output, $matches);
         self::assertSame(2, substr_count($matches[1], ' 0 R'));
     }

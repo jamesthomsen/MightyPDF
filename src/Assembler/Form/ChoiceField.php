@@ -16,7 +16,7 @@ use MightyPDF\Assembler\Types\PdfString;
  * two are the same field type differing by one flag, so one class backs
  * both PageBuilder::addListBox() and PageBuilder::addDropdown().
  *
- * Relies on /NeedsAppearances like TextField, rather than hand-building
+ * Relies on /NeedAppearances like TextField, rather than hand-building
  * a list/dropdown appearance stream -- same reasoning as TextField's
  * docblock.
  */

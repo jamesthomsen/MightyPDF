@@ -58,7 +58,7 @@ final class AdoptedAcroFormTest extends TestCase
         self::assertSame('/Helv 9 Tf 0 g', $form->get('DA')?->toUtf8());
     }
 
-    public function testLeavesNeedsAppearancesExactlyAsItFoundIt(): void
+    public function testLeavesNeedAppearancesExactlyAsItFoundIt(): void
     {
         // Turning it on would ask readers to redraw every field in the
         // document, not just the new one, which can visibly change fields
@@ -68,7 +68,7 @@ final class AdoptedAcroFormTest extends TestCase
 
         $form = $editor->resolveDictionary($editor->catalog()->get('AcroForm'));
 
-        self::assertNull($form?->get('NeedsAppearances'));
+        self::assertNull($form?->get('NeedAppearances'));
     }
 
     public function testDoesNotReuseAFontNameTheDocumentAlreadyMeansSomethingBy(): void

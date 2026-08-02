@@ -25,7 +25,7 @@ use MightyPDF\Editor\PdfEditor;
  * Draws a filled text field's value into an appearance stream, so that it
  * is visible without the reader being asked to redraw it.
  *
- * /NeedsAppearances is the easy answer and not a complete one. It asks
+ * /NeedAppearances is the easy answer and not a complete one. It asks
  * the reader to build these streams itself, which Acrobat, poppler and
  * Ghostscript all do -- but a reader that ignores the flag shows an empty
  * box where a filled-in value ought to be, and the flag also means the
@@ -61,7 +61,7 @@ final class TextAppearanceBuilder
     /**
      * @return ?Stream null when the form does not say enough to draw
      *         with -- no /DA, or a font that cannot be measured. The
-     *         caller falls back to /NeedsAppearances.
+     *         caller falls back to /NeedAppearances.
      */
     public function build(Field $field, Dictionary $widget, string $text): ?Stream
     {

@@ -10,13 +10,33 @@ use PHPUnit\Framework\TestCase;
 
 final class AcroFormTest extends TestCase
 {
-    public function testStartsWithNoFieldsAndNeedsAppearancesTrue(): void
+    public function testStartsWithNoFieldsAndNeedAppearancesTrue(): void
     {
         $rendered = (new AcroForm(1))->render(false);
 
         self::assertStringContainsString('/Fields []', $rendered);
-        self::assertStringContainsString('/NeedsAppearances true', $rendered);
+        self::assertStringContainsString('/NeedAppearances true', $rendered);
         self::assertStringContainsString('/DR <<>>', $rendered);
+    }
+
+    /**
+     * The key is /NeedAppearances, and this library spelled it
+     * /NeedsAppearances for its whole life -- which reads perfectly
+     * naturally and is not the name in ISO 32000-2 Table 226.
+     *
+     * Nothing complains about that. A reader ignores dictionary keys it
+     * does not know, so a document asking to have its field appearances
+     * regenerated was simply not asking, and text fields created with a
+     * value showed empty boxes. The assertion below is deliberately on
+     * the exact string rather than through get(), since reading it back
+     * by the same name the writer used is what hid this.
+     */
+    public function testTheAppearanceFlagIsSpelledTheWayTheSpecSpellsIt(): void
+    {
+        $rendered = (new AcroForm(1))->render(false);
+
+        self::assertStringContainsString('/NeedAppearances true', $rendered);
+        self::assertStringNotContainsString('NeedsAppearances', $rendered);
     }
 
     public function testAddFieldAppendsAReference(): void
