@@ -24,6 +24,12 @@ namespace MightyPDF\Content\Svg;
  */
 final class SvgStyle
 {
+    /** CSS's initial font-size, and as good a default as any for a document that names none. */
+    private const float DEFAULT_FONT_SIZE = 16.0;
+
+    /** A weight at or above this draws with the bold cut of the font. */
+    private const int BOLD_WEIGHT = 600;
+
     /**
      * $fillReference/$strokeReference hold the id of a paint server --
      * `fill="url(#sunset)"` -- which is a paint this class cannot
@@ -45,12 +51,31 @@ final class SvgStyle
         public readonly bool $evenOdd = false,
         public readonly ?string $fillReference = null,
         public readonly ?string $strokeReference = null,
+        public readonly ?string $fontFamily = null,
+        public readonly float $fontSizePt = self::DEFAULT_FONT_SIZE,
+        public readonly bool $bold = false,
+        public readonly bool $italic = false,
+        public readonly string $textAnchor = 'start',
+        public readonly float $letterSpacing = 0.0,
     ) {
     }
 
     public function merge(\SimpleXMLElement $element): self
     {
-        $attrs = self::collectAttributes($element);
+        return $this->mergeAttributes(self::collectAttributes($element));
+    }
+
+    /**
+     * The same merge from an attribute map rather than an element, for
+     * callers holding something other than SimpleXML -- text content is
+     * walked as DOM, since mixed content is the one thing SimpleXML
+     * cannot present (see SvgRenderer).
+     *
+     * @param array<string, string> $attrs
+     */
+    public function mergeAttributes(array $attrs): self
+    {
+        $attrs = self::withStyleDeclarations($attrs);
 
         [$fill, $fillReference] = $this->paint($attrs['fill'] ?? null, $this->fill, $this->fillReference);
         [$stroke, $strokeReference] = $this->paint($attrs['stroke'] ?? null, $this->stroke, $this->strokeReference);
@@ -71,7 +96,48 @@ final class SvgStyle
             $evenOdd,
             $fillReference,
             $strokeReference,
+            $attrs['font-family'] ?? $this->fontFamily,
+            isset($attrs['font-size']) ? self::fontSize($attrs['font-size'], $this->fontSizePt) : $this->fontSizePt,
+            isset($attrs['font-weight']) ? self::isBold($attrs['font-weight']) : $this->bold,
+            isset($attrs['font-style']) ? $attrs['font-style'] !== 'normal' : $this->italic,
+            $attrs['text-anchor'] ?? $this->textAnchor,
+            isset($attrs['letter-spacing']) ? (float) $attrs['letter-spacing'] : $this->letterSpacing,
         );
+    }
+
+    /**
+     * A font size, which CSS lets you write in a dozen units and SVG
+     * artwork almost always writes as a plain number of user units.
+     *
+     * "em" and percentages are relative to the inherited size, which is
+     * cheap to honour and would otherwise read as a size of 1. Other
+     * units are taken at face value, the same simplification
+     * SvgDocument makes for the drawing's own width and height.
+     */
+    private static function fontSize(string $value, float $inherited): float
+    {
+        $value = trim($value);
+
+        if (!preg_match('/-?\d*\.?\d+/', $value, $matches)) {
+            return $inherited;
+        }
+
+        $number = (float) $matches[0];
+
+        return match (true) {
+            str_ends_with($value, '%') => $inherited * $number / 100,
+            str_ends_with($value, 'em'), str_ends_with($value, 'rem') => $inherited * $number,
+            default => $number,
+        };
+    }
+
+    private static function isBold(string $weight): bool
+    {
+        return match ($weight) {
+            'bold', 'bolder' => true,
+            'normal', 'lighter' => false,
+            default => (int) $weight >= self::BOLD_WEIGHT,
+        };
     }
 
     /**
@@ -93,7 +159,7 @@ final class SvgStyle
         return $reference !== null ? [null, $reference] : [SvgColor::parse($value), null];
     }
 
-    /** @return array<string, string> presentation attributes, with any "style" attribute's declarations overlaid */
+    /** @return array<string, string> */
     private static function collectAttributes(\SimpleXMLElement $element): array
     {
         $attrs = [];
@@ -101,15 +167,28 @@ final class SvgStyle
             $attrs[(string) $name] = (string) $value;
         }
 
-        if (isset($attrs['style'])) {
-            foreach (explode(';', $attrs['style']) as $declaration) {
-                $declaration = trim($declaration);
-                if ($declaration === '' || !str_contains($declaration, ':')) {
-                    continue;
-                }
-                [$property, $value] = array_map(trim(...), explode(':', $declaration, 2));
-                $attrs[$property] = $value;
+        return $attrs;
+    }
+
+    /**
+     * Presentation attributes with any "style" attribute's declarations
+     * overlaid, since either spelling means the same thing and tools
+     * disagree about which to write.
+     *
+     * @param array<string, string> $attrs
+     * @return array<string, string>
+     */
+    private static function withStyleDeclarations(array $attrs): array
+    {
+        foreach (explode(';', $attrs['style'] ?? '') as $declaration) {
+            $declaration = trim($declaration);
+
+            if ($declaration === '' || !str_contains($declaration, ':')) {
+                continue;
             }
+
+            [$property, $value] = array_map(trim(...), explode(':', $declaration, 2));
+            $attrs[$property] = $value;
         }
 
         return $attrs;

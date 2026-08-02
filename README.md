@@ -234,12 +234,62 @@ vector data (not a raster image), it stays crisp at any size — the same
 file can be drawn small and large with no quality loss.
 
 Supported: paths (lines, curves, arcs), basic shapes (`rect`, `circle`,
-`ellipse`, `line`, `polyline`, `polygon`), solid fill/stroke colors,
-opacity, and simple transforms (`translate`/`scale`/`rotate`/`skew`/`matrix`).
+`ellipse`, `line`, `polyline`, `polygon`), fill/stroke in flat colours or
+gradients, opacity, and simple transforms
+(`translate`/`scale`/`rotate`/`skew`/`matrix`).
 
-**Not supported** (elements are skipped, not mis-rendered): gradients,
-patterns, filters, embedded raster images, text, CSS cascading beyond a
-flat `style` attribute, and animation. See
+**Gradients** — `<linearGradient>` and `<radialGradient>`, in either
+`objectBoundingBox` (the default, measured across the shape) or
+`userSpaceOnUse` units, with `gradientTransform`, and with
+`href`/`xlink:href` inheritance so one gradient can borrow another's
+stops. They become PDF shading patterns, which stay vector: a gradient
+scales with the drawing rather than being rasterized into it.
+
+Two things about them are worth knowing:
+
+- **`stop-opacity` is ignored** — the colour is honoured, the
+  transparency is not. A partly transparent stop is not a property of
+  the colour in PDF; it needs a second, greyscale shading attached to
+  the graphics state as a soft mask.
+- **`spreadMethod="reflect"` and `"repeat"` are drawn as `pad`**, the
+  default: the end colours are held flat beyond the ends of the
+  gradient rather than bouncing or tiling.
+
+**Embedded raster images** — an `<image>` element is drawn, with
+`preserveAspectRatio` (`meet`, `slice` including the clip, `none`, and
+the alignment keywords) honoured. PNG, JPEG and GIF are recognised from
+the bytes rather than from the data URI's declared media type, which
+tools get wrong.
+
+**Only `data:` URIs are read.** An `<image href="/etc/passwd">` or an
+`href` pointing at a URL is skipped, not fetched: an SVG may have
+arrived from anywhere, and following a path in one would let a document
+this library did not write name a file it then embeds in a document that
+may be sent on. Inline is also how self-contained SVGs carry images in
+practice.
+
+**Text** — `<text>` and `<tspan>`, with `font-family`, `font-size`,
+`font-weight`, `font-style`, `text-anchor`, `letter-spacing`, per-span
+fill colours and the `x`/`y`/`dx`/`dy` positioning a span can carry.
+Whitespace is collapsed the way SVG specifies, so indented markup does
+not turn into indented text.
+
+A drawing names its font the way CSS does — a list of preferences ending
+in a generic name — and there is no font catalogue here to look those up
+in. By default they map onto the standard 14: anything serif-ish becomes
+Times, anything monospace becomes Courier, everything else Helvetica,
+with the bold and italic cuts chosen from `font-weight`/`font-style`.
+Pass a resolver to use real fonts instead:
+
+```php
+$content->drawSvg($path, x: 72, y: 500, width: 200, height: 200,
+    fontResolver: fn (string $family, bool $bold, bool $italic) => $bold ? $interBold : $inter);
+```
+
+**Not supported** (elements are skipped, not mis-rendered): patterns,
+filters, `<textPath>`, CSS cascading beyond a flat `style` attribute, and
+animation. A `fill="url(#…)"` naming anything that cannot be resolved
+paints nothing, rather than failing the document. See
 [`src/Content/Svg/SvgDocument.php`](src/Content/Svg/SvgDocument.php) for
 the exact scope.
 
@@ -627,7 +677,11 @@ for a runnable version.
   into it, and an embedded subset holds only the glyphs this document
   already drew, so pointing a field at one would give the reader a font
   without the characters it needs.
-- **SVG**: see the "not supported" list above.
+- **SVG**: see the "not supported" list above. Two of those are
+  deliberate rather than pending: **filters** are a pixel operation, and
+  supporting them would mean rasterizing the drawing — the opposite of
+  what placing vector artwork is for — and **animation** has no meaning
+  in a page that does not move.
 - **Signing**: `addSignatureField()` only reserves an unsigned placeholder
   — this library has no code anywhere to hash a byte range, embed a
   certificate, or validate one, so nothing in it can actually sign a

@@ -78,9 +78,9 @@ final class SvgDocument
      * and $shadingPatternResourceName (gradient, matrix, boundingBox) =>
      * name for a gradient fill.
      *
-     * $shadingPatternResourceName may be omitted by a caller that cannot
-     * provide pattern resources, in which case gradient fills paint
-     * nothing -- the behaviour before gradients were supported at all.
+     * The last two are optional, and a caller that omits them gets the
+     * behaviour from before those features existed: gradient fills and
+     * <image> elements are skipped rather than failing.
      * $baseMatrix is what the caller has already transformed this
      * drawing by, which a gradient has to know about; see
      * SvgShadingPattern for why a pattern cannot simply inherit it.
@@ -92,8 +92,17 @@ final class SvgDocument
         \Closure $extGStateResourceName,
         ?\Closure $shadingPatternResourceName = null,
         array $baseMatrix = SvgTransform::IDENTITY,
+        ?\Closure $imageResourceName = null,
+        ?\Closure $textFontResourceName = null,
     ): void {
-        $renderer = new SvgRenderer($stream, $this->gradients, $extGStateResourceName, $shadingPatternResourceName);
+        $renderer = new SvgRenderer(
+            $stream,
+            $this->gradients,
+            $extGStateResourceName,
+            $shadingPatternResourceName,
+            $imageResourceName,
+            $textFontResourceName,
+        );
 
         $renderer->render($this->root, $baseMatrix);
     }

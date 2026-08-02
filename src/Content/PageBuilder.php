@@ -27,7 +27,10 @@ use MightyPDF\Content\Image\JpegImage;
 use MightyPDF\Content\Image\PngImage;
 use MightyPDF\Content\Svg\SvgDocument;
 use MightyPDF\Content\Svg\SvgGradient;
+use MightyPDF\Content\Svg\SvgRasterImage;
 use MightyPDF\Content\Svg\SvgShadingPattern;
+use MightyPDF\Content\Svg\SvgStyle;
+use MightyPDF\Content\Svg\SvgTextFont;
 use MightyPDF\Content\Text\TextWrapper;
 
 /**
@@ -444,8 +447,14 @@ final class PageBuilder
      * coordinate inside the SVG itself is used exactly as authored, with
      * no per-shape sign-flipping needed.
      */
-    public function drawSvg(string $path, float $x, float $y, float $width, float $height): static
-    {
+    public function drawSvg(
+        string $path,
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        ?\Closure $fontResolver = null,
+    ): static {
         $svg = SvgDocument::fromFile($path);
 
         $scaleX = $width / $svg->viewBoxWidth;
@@ -472,6 +481,8 @@ final class PageBuilder
             $this->extGStateResourceName(...),
             $this->shadingPatternResourceName(...),
             $placement,
+            $this->svgImageResource(...),
+            fn (SvgStyle $style): ?SvgTextFont => $this->svgTextFont($style, $fontResolver),
         );
 
         $operators->popGraphicsState();
@@ -479,6 +490,134 @@ final class PageBuilder
         $this->append($operators->bytes());
 
         return $this;
+    }
+
+    /**
+     * Chooses the font a piece of SVG text is drawn with, and names it
+     * in this page's resources.
+     *
+     * The default mapping is to the standard 14: an SVG names a font
+     * family the way CSS does -- a list of preferences ending in a
+     * generic name -- and there is no font on the machine to look those
+     * up in, nor should embedding one be decided behind the caller's
+     * back. So "serif" and anything Times-like becomes Times, monospace
+     * becomes Courier, and everything else Helvetica, with the bold and
+     * italic cuts chosen from font-weight and font-style.
+     *
+     * A caller who wants the drawing's own typeface passes a resolver
+     * to drawSvg(), which is handed the same three facts and may return
+     * any Font -- an EmbeddedFont included.
+     */
+    private function svgTextFont(SvgStyle $style, ?\Closure $resolver): ?SvgTextFont
+    {
+        $font = $resolver === null
+            ? self::standardFontFor($style->fontFamily, $style->bold, $style->italic)
+            : $resolver($style->fontFamily ?? '', $style->bold, $style->italic);
+
+        if (!$font instanceof Font) {
+            return null;
+        }
+
+        $writer = $font->writerFor($this->document);
+
+        return new SvgTextFont($this->fontResourceName($font, $writer), $font, $writer);
+    }
+
+    private static function standardFontFor(?string $family, bool $bold, bool $italic): StandardFont
+    {
+        $family = strtolower($family ?? '');
+
+        // The first family named that this can honour wins, which is
+        // what the CSS font-family list means.
+        foreach (preg_split('/\s*,\s*/', $family) ?: [] as $name) {
+            $name = trim($name, " \t'\"");
+
+            if ($name === 'monospace' || str_contains($name, 'courier') || str_contains($name, 'mono')) {
+                return match (true) {
+                    $bold && $italic => StandardFont::CourierBoldOblique,
+                    $bold => StandardFont::CourierBold,
+                    $italic => StandardFont::CourierOblique,
+                    default => StandardFont::Courier,
+                };
+            }
+
+            if ($name === 'serif' || str_contains($name, 'times') || str_contains($name, 'georgia')
+                || str_contains($name, 'garamond') || str_contains($name, 'roman')) {
+                return match (true) {
+                    $bold && $italic => StandardFont::TimesBoldItalic,
+                    $bold => StandardFont::TimesBold,
+                    $italic => StandardFont::TimesItalic,
+                    default => StandardFont::TimesRoman,
+                };
+            }
+        }
+
+        return match (true) {
+            $bold && $italic => StandardFont::HelveticaBoldOblique,
+            $bold => StandardFont::HelveticaBold,
+            $italic => StandardFont::HelveticaOblique,
+            default => StandardFont::Helvetica,
+        };
+    }
+
+    /**
+     * Embeds a raster image carried inside an SVG and names it in this
+     * page's resources.
+     *
+     * The format is read from the bytes rather than from the data URI's
+     * media type: the type is written by whatever produced the SVG and
+     * is wrong often enough that trusting it would mean handing PNG
+     * bytes to the JPEG decoder on someone else's typo. Bytes that are
+     * not an image this library decodes -- or that are a broken one --
+     * return null, and the element is skipped rather than failing the
+     * whole document, matching how SVG handles everything it cannot
+     * draw.
+     */
+    private function svgImageResource(string $bytes): ?SvgRasterImage
+    {
+        $format = match (true) {
+            str_starts_with($bytes, "\x89PNG\r\n\x1a\n") => 'png',
+            str_starts_with($bytes, "\xFF\xD8\xFF") => 'jpeg',
+            str_starts_with($bytes, 'GIF87a'), str_starts_with($bytes, 'GIF89a') => 'gif',
+            default => null,
+        };
+
+        if ($format === null) {
+            return null;
+        }
+
+        $contentHash = "svg-$format:" . hash('xxh128', $bytes);
+        $image = $this->document->cachedImage($contentHash);
+
+        if ($image === null) {
+            try {
+                $image = match ($format) {
+                    'png' => PngImage::fromBytes($this->document, $bytes),
+                    'jpeg' => JpegImage::fromBytes($this->document, $bytes),
+                    'gif' => GifImage::fromBytes($this->document, $bytes),
+                };
+            } catch (\RuntimeException | \InvalidArgumentException) {
+                return null;
+            }
+
+            $this->document->register($image);
+            $this->document->cacheImage($contentHash, $image);
+        }
+
+        $resourceName = 'Im' . $this->nextImageResourceNumber++;
+
+        $xObjects = $this->page->resources()->get('XObject');
+        if (!$xObjects instanceof Dictionary) {
+            $xObjects = new Dictionary();
+            $this->page->resources()->set('XObject', $xObjects);
+        }
+        $xObjects->set($resourceName, new PdfReference($image->objectId()));
+
+        return new SvgRasterImage(
+            $resourceName,
+            (int) ($image->get('Width')?->format() ?? 0),
+            (int) ($image->get('Height')?->format() ?? 0),
+        );
     }
 
     /**

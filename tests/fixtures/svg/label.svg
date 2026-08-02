@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+  <defs>
+    <linearGradient id="band" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5e35b1"/>
+      <stop offset="1" stop-color="#00897b"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="200" height="100" rx="0" fill="url(#band)"/>
+  <text x="100" y="45" text-anchor="middle" font-family="Helvetica" font-size="22" font-weight="bold" fill="#ffffff">
+    Vector text
+  </text>
+  <text x="100" y="70" text-anchor="middle" font-family="Georgia, serif" font-size="12" fill="#e0f2f1">
+    drawn from <tspan font-style="italic">the SVG itself</tspan>
+  </text>
+</svg>

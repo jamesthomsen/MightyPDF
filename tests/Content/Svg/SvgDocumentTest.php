@@ -6,6 +6,7 @@ namespace MightyPDF\Tests\Content\Svg;
 
 use MightyPDF\Content\ContentStream;
 use MightyPDF\Content\Svg\SvgDocument;
+use MightyPDF\Content\Svg\SvgRasterImage;
 use PHPUnit\Framework\TestCase;
 
 final class SvgDocumentTest extends TestCase
@@ -204,5 +205,222 @@ final class SvgDocumentTest extends TestCase
         $polylineStream = new ContentStream();
         $polyline->render($polylineStream, $this->noExtGState());
         self::assertStringNotContainsString("h\n", $polylineStream->bytes());
+    }
+
+    public function testFillsAShapeThroughThePatternColourSpace(): void
+    {
+        $bytes = self::renderWithGradients(
+            '<rect x="0" y="0" width="10" height="10" fill="url(#g)"/>',
+        );
+
+        self::assertStringContainsString("/Pattern cs\n/P1 scn", $bytes);
+        self::assertStringContainsString("f\n", $bytes);
+    }
+
+    public function testStrokesThroughThePatternColourSpaceToo(): void
+    {
+        $bytes = self::renderWithGradients(
+            '<rect x="0" y="0" width="10" height="10" fill="none" stroke="url(#g)" stroke-width="2"/>',
+        );
+
+        self::assertStringContainsString("/Pattern CS\n/P1 SCN", $bytes);
+        self::assertStringContainsString("2 w\n", $bytes);
+        self::assertStringContainsString("S\n", $bytes);
+    }
+
+    /**
+     * The pattern is given the shape's own box, so two shapes sharing
+     * one gradient get one pattern each -- a gradient in the default
+     * units means "across this shape", not "across the drawing".
+     */
+    public function testEachShapeGetsItsOwnPattern(): void
+    {
+        $bytes = self::renderWithGradients(
+            '<rect x="0" y="0" width="10" height="4" fill="url(#g)"/>'
+            . '<rect x="0" y="5" width="10" height="4" fill="url(#g)"/>',
+        );
+
+        self::assertStringContainsString('/P1 scn', $bytes);
+        self::assertStringContainsString('/P2 scn', $bytes);
+    }
+
+    /**
+     * A reference to a paint server that is not there is a broken
+     * decoration, not a broken document -- it paints nothing, and the
+     * path ends with "n" rather than being filled with whatever colour
+     * happened to be set last.
+     */
+    public function testAGradientReferenceThatLeadsNowherePaintsNothing(): void
+    {
+        $bytes = self::renderWithGradients('<rect x="0" y="0" width="10" height="10" fill="url(#absent)"/>');
+
+        self::assertStringNotContainsString('scn', $bytes);
+        self::assertStringContainsString("n\n", $bytes);
+        self::assertStringNotContainsString("f\n", $bytes);
+    }
+
+    /** A gradient between one colour and the same colour is a flat fill. */
+    public function testAGradientOfOneColourIsPaintedAsAFlatFill(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10"><defs><linearGradient id="flat">'
+            . '<stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#ff0000"/>'
+            . '</linearGradient></defs>'
+            . '<rect x="0" y="0" width="10" height="10" fill="url(#flat)"/></svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render($stream, $this->noExtGState(), static fn (): string => 'P1');
+
+        self::assertStringContainsString('1 0 0 rg', $stream->bytes());
+        self::assertStringNotContainsString('scn', $stream->bytes());
+    }
+
+    /**
+     * A caller with nowhere to put pattern resources gets the behaviour
+     * from before gradients were supported: the fill is skipped rather
+     * than the document failing.
+     */
+    public function testGradientsPaintNothingWhenTheCallerCannotSupplyPatterns(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10"><defs><linearGradient id="g">'
+            . '<stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/>'
+            . '</linearGradient></defs>'
+            . '<rect x="0" y="0" width="10" height="10" fill="url(#g)"/></svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render($stream, $this->noExtGState());
+
+        self::assertStringNotContainsString('scn', $stream->bytes());
+        self::assertStringContainsString("n\n", $stream->bytes());
+    }
+
+    /**
+     * The matrix handed to the pattern has to include every transform
+     * the shape sits under, because a PDF pattern is positioned from
+     * the page and not from the transform in effect where it is used.
+     */
+    public function testThePatternMatrixCarriesTheEnclosingTransforms(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10"><defs><linearGradient id="g" gradientUnits="userSpaceOnUse">'
+            . '<stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/>'
+            . '</linearGradient></defs>'
+            . '<g transform="translate(3 4)"><rect x="0" y="0" width="10" height="10" fill="url(#g)"/></g></svg>',
+        );
+
+        $seen = null;
+        $svg->render(
+            new ContentStream(),
+            $this->noExtGState(),
+            static function (mixed $gradient, array $matrix) use (&$seen): string {
+                $seen = $matrix;
+
+                return 'P1';
+            },
+            [2.0, 0.0, 0.0, 2.0, 0.0, 0.0],
+        );
+
+        // The group's translation happens inside the placement, so it
+        // is scaled by it: 3 and 4 become 6 and 8.
+        self::assertSame([2.0, 0.0, 0.0, 2.0, 6.0, 8.0], $seen);
+    }
+
+    public function testDrawsARasterImageCarriedInsideTheDrawing(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 100 100"><image x="10" y="20" width="40" height="40" '
+            . 'href="data:image/png;base64,' . base64_encode('pretend png') . '"/></svg>',
+        );
+
+        $stream = new ContentStream();
+        $seen = null;
+
+        $svg->render(
+            $stream,
+            $this->noExtGState(),
+            null,
+            [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            static function (string $bytes) use (&$seen): SvgRasterImage {
+                $seen = $bytes;
+
+                return new SvgRasterImage('Im1', 40, 40);
+            },
+        );
+
+        self::assertSame('pretend png', $seen);
+        self::assertStringContainsString('40 0 0 -40 10 60 cm', $stream->bytes());
+        self::assertStringContainsString("/Im1 Do", $stream->bytes());
+    }
+
+    public function testAnImageReferenceToAFileIsNotFollowed(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 100 100"><image x="0" y="0" width="10" height="10" href="/etc/passwd"/></svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render(
+            $stream,
+            $this->noExtGState(),
+            null,
+            [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            static fn (): never => throw new \LogicException('nothing should have been read'),
+        );
+
+        self::assertSame('', $stream->bytes());
+    }
+
+    /** Bytes the caller cannot decode are skipped, like any element that cannot be drawn. */
+    public function testAnImageTheCallerCannotDecodeIsSkipped(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 100 100"><image x="0" y="0" width="10" height="10" '
+            . 'href="data:image/png;base64,' . base64_encode('not an image') . '"/></svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render($stream, $this->noExtGState(), null, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], static fn (): null => null);
+
+        self::assertStringNotContainsString('Do', $stream->bytes());
+    }
+
+    public function testImagesAreSkippedWhenTheCallerCannotEmbedThem(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 100 100"><image x="0" y="0" width="10" height="10" '
+            . 'href="data:image/png;base64,' . base64_encode('pretend png') . '"/></svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render($stream, $this->noExtGState());
+
+        self::assertSame('', $stream->bytes());
+    }
+
+    private static function renderWithGradients(string $body): string
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10"><defs><linearGradient id="g">'
+            . '<stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/>'
+            . '</linearGradient></defs>'
+            . $body
+            . '</svg>',
+        );
+
+        $stream = new ContentStream();
+        $patterns = 0;
+
+        $svg->render(
+            $stream,
+            static fn (): never => throw new \LogicException('No opacity < 1 expected in this test.'),
+            static function () use (&$patterns): string {
+                return 'P' . ++$patterns;
+            },
+        );
+
+        return $stream->bytes();
     }
 }

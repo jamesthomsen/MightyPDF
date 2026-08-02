@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace MightyPDF\Content\Svg;
 
 use MightyPDF\Content\ContentStream;
+use MightyPDF\Content\Font\TrueType\FontException;
+use MightyPDF\Content\Text\Utf8;
 
 /**
  * Walks a parsed SVG element tree and emits the PDF operators that draw
@@ -24,9 +26,9 @@ use MightyPDF\Content\ContentStream;
 final class SvgRenderer
 {
     private const array SKIPPED_TAGS = [
-        'defs', 'title', 'desc', 'metadata', 'text', 'style', 'symbol',
+        'defs', 'title', 'desc', 'metadata', 'style', 'symbol',
         'clipPath', 'mask', 'linearGradient', 'radialGradient', 'pattern',
-        'filter', 'image', 'use', 'animate', 'animateTransform', 'animateMotion',
+        'filter', 'use', 'animate', 'animateTransform', 'animateMotion',
     ];
 
     /**
@@ -36,12 +38,22 @@ final class SvgRenderer
      *        null where the caller cannot provide pattern resources, in
      *        which case a gradient fill degrades to no paint -- the same
      *        fallback as a reference that cannot be resolved at all
+     * @param (\Closure(SvgStyle): ?SvgTextFont)|null $textFontResourceName
+     *        chooses and registers a font for a piece of text; null
+     *        itself, or a null result, skips the text
+     * @param (\Closure(string): ?SvgRasterImage)|null $imageResourceName
+     *        turns the bytes of an embedded raster image into a page
+     *        resource, or returns null for bytes it cannot decode; null
+     *        itself where the caller cannot embed images at all, in
+     *        which case <image> elements are skipped
      */
     public function __construct(
         private readonly ContentStream $stream,
         private readonly array $gradients,
         private readonly \Closure $extGStateResourceName,
         private readonly ?\Closure $shadingPatternResourceName,
+        private readonly ?\Closure $imageResourceName = null,
+        private readonly ?\Closure $textFontResourceName = null,
     ) {
     }
 
@@ -91,6 +103,8 @@ final class SvgRenderer
             'line' => $this->renderLine($element, $style, $matrix),
             'polyline' => $this->renderPoly($element, $style, $matrix, closed: false),
             'polygon' => $this->renderPoly($element, $style, $matrix, closed: true),
+            'image' => $this->renderImage($element, $style),
+            'text' => $this->renderText($element, $style),
             default => null, // unrecognized element: skip, don't fail the whole document
         };
 
@@ -241,6 +255,334 @@ final class SvgRenderer
         }
 
         $this->finishPainting($painted, $style, fillable: $closed);
+    }
+
+    /**
+     * Draws a raster image embedded in the drawing.
+     *
+     * Only images carried inline as data: URIs are drawn -- see
+     * SvgImageSource for why a file path or URL is not followed -- and
+     * bytes that are not an image this library can decode are skipped
+     * rather than raised, the same way an unsupported element is. A
+     * broken decoration in a drawing should not fail the document it
+     * decorates.
+     */
+    private function renderImage(\SimpleXMLElement $element, SvgStyle $style): void
+    {
+        $width = (float) ($element['width'] ?? 0);
+        $height = (float) ($element['height'] ?? 0);
+
+        if ($this->imageResourceName === null || $width <= 0 || $height <= 0) {
+            return;
+        }
+
+        $bytes = SvgImageSource::bytes(self::href($element));
+
+        if ($bytes === null) {
+            return;
+        }
+
+        $image = ($this->imageResourceName)($bytes);
+
+        if ($image === null) {
+            return;
+        }
+
+        $x = (float) ($element['x'] ?? 0);
+        $y = (float) ($element['y'] ?? 0);
+
+        $placement = SvgAspectRatio::place(
+            isset($element['preserveAspectRatio']) ? (string) $element['preserveAspectRatio'] : null,
+            $x,
+            $y,
+            $width,
+            $height,
+            $image->width,
+            $image->height,
+        );
+
+        $this->stream->pushGraphicsState();
+
+        if ($style->fillOpacity < 1.0) {
+            $this->stream->setExtGState(($this->extGStateResourceName)($style->fillOpacity, $style->strokeOpacity));
+        }
+
+        if ($placement['clip']) {
+            // "slice" scales the image to cover its rectangle, which
+            // means the parts that overflow have to be cut off rather
+            // than drawn over whatever else is on the page.
+            $this->stream->clipToRectangle($x, $y, $width, $height);
+        }
+
+        $this->stream->concatMatrix(...$placement['matrix'])
+            ->paintXObject($image->resourceName)
+            ->popGraphicsState();
+    }
+
+    /**
+     * Draws a <text> element and the <tspan>s inside it.
+     *
+     * Two things make this more than "set a font and show a string".
+     *
+     * Text is *mixed content* -- characters and tspans interleaved, in
+     * order -- which SimpleXML cannot walk (it presents children and
+     * text separately), so this drops to DOM for the walk. And
+     * text-anchor is not a property of a run but of a *chunk*: a run of
+     * text uninterrupted by an absolute position. Centring means
+     * measuring a whole chunk before drawing any of it, which is why
+     * the runs are collected first and emitted second.
+     */
+    private function renderText(\SimpleXMLElement $element, SvgStyle $style): void
+    {
+        if ($this->textFontResourceName === null) {
+            return;
+        }
+
+        $runs = [];
+        $this->collectTextRuns(dom_import_simplexml($element), $style, $runs);
+        $runs = self::trimEnds($runs);
+
+        $pen = [
+            'x' => (float) ($element['x'] ?? 0),
+            'y' => (float) ($element['y'] ?? 0),
+        ];
+
+        foreach (self::chunk($runs) as $chunk) {
+            $this->drawTextChunk($chunk, $pen);
+        }
+    }
+
+    /**
+     * Walks the mixed content of a text element into a flat list of
+     * runs, each with the style and any positioning that applies to it.
+     *
+     * @param list<array{text: string, style: SvgStyle, x: float|null, y: float|null, dx: float, dy: float}> $runs
+     */
+    private function collectTextRuns(\DOMElement $element, SvgStyle $style, array &$runs): void
+    {
+        foreach ($element->childNodes as $node) {
+            if ($node instanceof \DOMText) {
+                $text = self::collapseWhitespace($node->textContent);
+
+                if ($text !== '') {
+                    $runs[] = ['text' => $text, 'style' => $style, 'x' => null, 'y' => null, 'dx' => 0.0, 'dy' => 0.0];
+                }
+
+                continue;
+            }
+
+            if (!$node instanceof \DOMElement || $node->localName !== 'tspan') {
+                continue;
+            }
+
+            $childStyle = $style->mergeAttributes(self::attributesOf($node));
+            $before = count($runs);
+
+            $this->collectTextRuns($node, $childStyle, $runs);
+
+            // The tspan's own positioning belongs to the first run it
+            // produced -- a tspan that contains only another tspan
+            // produces none of its own, and the position still has to
+            // land on whatever text comes first inside it.
+            if (isset($runs[$before])) {
+                $runs[$before]['x'] = $node->hasAttribute('x') ? (float) $node->getAttribute('x') : $runs[$before]['x'];
+                $runs[$before]['y'] = $node->hasAttribute('y') ? (float) $node->getAttribute('y') : $runs[$before]['y'];
+                $runs[$before]['dx'] += (float) $node->getAttribute('dx');
+                $runs[$before]['dy'] += (float) $node->getAttribute('dy');
+            }
+        }
+    }
+
+    /**
+     * Splits runs into chunks: a chunk begins wherever a run gives an
+     * absolute position, and text-anchor measures and aligns one chunk
+     * at a time.
+     *
+     * @param list<array{text: string, style: SvgStyle, x: float|null, y: float|null, dx: float, dy: float}> $runs
+     * @return list<list<array{text: string, style: SvgStyle, x: float|null, y: float|null, dx: float, dy: float}>>
+     */
+    private static function chunk(array $runs): array
+    {
+        $chunks = [];
+        $current = [];
+
+        foreach ($runs as $run) {
+            if ($current !== [] && ($run['x'] !== null || $run['y'] !== null)) {
+                $chunks[] = $current;
+                $current = [];
+            }
+
+            $current[] = $run;
+        }
+
+        if ($current !== []) {
+            $chunks[] = $current;
+        }
+
+        return $chunks;
+    }
+
+    /**
+     * @param list<array{text: string, style: SvgStyle, x: float|null, y: float|null, dx: float, dy: float}> $chunk
+     * @param array{x: float, y: float} $pen
+     */
+    private function drawTextChunk(array $chunk, array &$pen): void
+    {
+        $fonts = [];
+        $width = 0.0;
+
+        foreach ($chunk as $index => $run) {
+            $font = ($this->textFontResourceName)($run['style']);
+            $fonts[$index] = $font;
+
+            if ($font !== null) {
+                $width += self::runWidth($font, $run);
+            }
+        }
+
+        $first = $chunk[0];
+        $pen['x'] = ($first['x'] ?? $pen['x']) + $first['dx'];
+        $pen['y'] = ($first['y'] ?? $pen['y']) + $first['dy'];
+
+        // text-anchor shifts the whole chunk against the point it was
+        // given: "middle" centres it there, "end" finishes there.
+        $pen['x'] -= match ($first['style']->textAnchor) {
+            'middle' => $width / 2,
+            'end' => $width,
+            default => 0.0,
+        };
+
+        foreach ($chunk as $index => $run) {
+            $font = $fonts[$index];
+
+            if ($font === null) {
+                continue;
+            }
+
+            if ($index > 0) {
+                $pen['x'] = ($run['x'] ?? $pen['x']) + $run['dx'];
+                $pen['y'] = ($run['y'] ?? $pen['y']) + $run['dy'];
+            }
+
+            $this->drawTextRun($font, $run, $pen);
+        }
+    }
+
+    /**
+     * @param array{text: string, style: SvgStyle, x: float|null, y: float|null, dx: float, dy: float} $run
+     * @param array{x: float, y: float} $pen
+     */
+    private function drawTextRun(SvgTextFont $font, array $run, array &$pen): void
+    {
+        $style = $run['style'];
+
+        try {
+            $encoded = $font->writer->encode($run['text']);
+        } catch (FontException) {
+            // The font has no glyph for something in this run. Skipping
+            // it matches how everything else here handles what it
+            // cannot draw, and beats drawing empty boxes.
+            return;
+        }
+
+        $this->stream->pushGraphicsState();
+
+        if ($style->fillOpacity < 1.0) {
+            $this->stream->setExtGState(($this->extGStateResourceName)($style->fillOpacity, $style->strokeOpacity));
+        }
+
+        $this->stream->setFillColorRgb(...($style->fill ?? [0.0, 0.0, 0.0]))
+            ->beginText()
+            ->setFont($font->resourceName, $style->fontSizePt);
+
+        if ($style->letterSpacing !== 0.0) {
+            $this->stream->setCharacterSpacing($style->letterSpacing);
+        }
+
+        // The vertical flip counteracts the one the whole drawing is
+        // placed under -- see ContentStream::showTextWithMatrix().
+        $this->stream->showTextWithMatrix(
+            [1.0, 0.0, 0.0, -1.0, $pen['x'], $pen['y']],
+            $encoded,
+            $font->writer->usesHexStrings(),
+        )->endText()->popGraphicsState();
+
+        $pen['x'] += self::runWidth($font, $run);
+    }
+
+    /**
+     * @param array{text: string, style: SvgStyle, x: float|null, y: float|null, dx: float, dy: float} $run
+     */
+    private static function runWidth(SvgTextFont $font, array $run): float
+    {
+        $style = $run['style'];
+
+        return $font->font->widthOfPt($run['text'], $style->fontSizePt)
+            + $style->letterSpacing * count(Utf8::codePoints($run['text']));
+    }
+
+    /** @return array<string, string> */
+    private static function attributesOf(\DOMElement $element): array
+    {
+        $attributes = [];
+
+        foreach ($element->attributes as $attribute) {
+            $attributes[$attribute->name] = $attribute->value;
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * SVG collapses runs of whitespace -- including the newlines and
+     * indentation that pretty-printed markup is full of -- into single
+     * spaces.
+     *
+     * Deliberately not trimmed: the space in "Runs: <tspan>one</tspan>
+     * and <tspan>two</tspan>" belongs to the text, and trimming each
+     * piece as it is read runs the words together. Only the very start
+     * and end of a text element are trimmed, once all of it has been
+     * collected -- see trimEnds().
+     */
+    private static function collapseWhitespace(string $text): string
+    {
+        return (string) preg_replace('/\s+/u', ' ', $text);
+    }
+
+    /**
+     * Drops the whitespace at the two ends of a text element, which is
+     * indentation rather than content, and with it any run that was
+     * nothing else.
+     *
+     * @param list<array{text: string, style: SvgStyle, x: float|null, y: float|null, dx: float, dy: float}> $runs
+     * @return list<array{text: string, style: SvgStyle, x: float|null, y: float|null, dx: float, dy: float}>
+     */
+    private static function trimEnds(array $runs): array
+    {
+        if ($runs === []) {
+            return [];
+        }
+
+        $last = count($runs) - 1;
+        $runs[0]['text'] = ltrim($runs[0]['text']);
+        $runs[$last]['text'] = rtrim($runs[$last]['text']);
+
+        return array_values(array_filter($runs, static fn (array $run): bool => $run['text'] !== ''));
+    }
+
+    /**
+     * An element's image reference, written as SVG 2's "href" or the
+     * older "xlink:href" -- both are current in the wild.
+     */
+    private static function href(\SimpleXMLElement $element): string
+    {
+        $href = (string) ($element->attributes()['href'] ?? '');
+
+        if ($href !== '') {
+            return $href;
+        }
+
+        return (string) ($element->attributes('http://www.w3.org/1999/xlink')['href'] ?? '');
     }
 
     private function ellipsePath(float $cx, float $cy, float $rx, float $ry): void

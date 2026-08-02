@@ -978,6 +978,43 @@ final class PageBuilderTest extends TestCase
         self::assertStringContainsString('Tw', $this->decompressedContentStreamBytes($page));
     }
 
+    public function testAnSvgGradientBecomesAPatternResourceOnThePage(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+
+        (new PageBuilder($document, $page))->drawSvg(self::FIXTURES . '/../svg/gradient.svg', 0, 0, 200, 200);
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/Pattern << /P1', $output);
+        self::assertStringContainsString('/PatternType 2', $output);
+        self::assertStringContainsString('/ShadingType 2', $output);
+        self::assertStringContainsString('/Pattern cs', $this->decompressedContentStreamBytes($page));
+    }
+
+    public function testARasterImageInsideAnSvgIsEmbeddedAsAnXObject(): void
+    {
+        $png = base64_encode((string) file_get_contents(self::FIXTURES . '/sample.png'));
+
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+            . '<image x="0" y="0" width="100" height="100" href="data:image/png;base64,' . $png . '"/></svg>';
+
+        $path = tempnam(sys_get_temp_dir(), 'mightypdf-svg') . '.svg';
+        file_put_contents($path, $svg);
+
+        try {
+            $document = new Document();
+            $page = $document->newPage();
+            (new PageBuilder($document, $page))->drawSvg($path, 0, 0, 200, 200);
+
+            self::assertStringContainsString('/Subtype /Image', $document->save());
+            self::assertStringContainsString('/Im1 Do', $this->decompressedContentStreamBytes($page));
+        } finally {
+            unlink($path);
+        }
+    }
+
     private static function embeddedFont(): EmbeddedFont
     {
         return EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build());

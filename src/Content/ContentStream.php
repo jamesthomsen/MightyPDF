@@ -99,6 +99,40 @@ final class ContentStream implements PathSink
     }
 
     /**
+     * Shows text positioned by a full text matrix rather than by a
+     * point.
+     *
+     * What needs it is text inside a drawing that has been flipped:
+     * SVG measures y downwards and PDF upwards, so vector artwork is
+     * placed under a matrix that inverts one axis -- and text drawn
+     * under that would come out mirrored. Countering it takes a text
+     * matrix of its own, which is a matrix and not a position.
+     *
+     * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix
+     */
+    public function showTextWithMatrix(array $matrix, string $bytes, bool $hex = false): static
+    {
+        $this->buffer .= sprintf(
+            "%s %s %s %s %s %s Tm\n%s Tj\n",
+            ...[...array_map(self::num(...), $matrix), self::string($bytes, $hex)],
+        );
+
+        return $this;
+    }
+
+    /**
+     * Sets the extra space added after every glyph -- SVG's
+     * letter-spacing, and part of the graphics state like word spacing,
+     * so callers that set it are responsible for setting it back.
+     */
+    public function setCharacterSpacing(float $spacingPt): static
+    {
+        $this->buffer .= sprintf("%s Tc\n", self::num($spacingPt));
+
+        return $this;
+    }
+
+    /**
      * Sets word spacing (extra space added after every ASCII space byte,
      * 0x20, in subsequent Tj calls) -- part of the graphics state, so it
      * persists across BT/ET until explicitly changed again. Used for
@@ -190,6 +224,29 @@ final class ContentStream implements PathSink
     public function fillAndStroke(bool $evenOdd = false): static
     {
         $this->buffer .= ($evenOdd ? "B*\n" : "B\n");
+
+        return $this;
+    }
+
+    /**
+     * Clips everything drawn afterwards to a rectangle.
+     *
+     * Three operators in one call because they are only meaningful
+     * together: the rectangle is a path, "W" marks the path as the clip
+     * for what follows, and "n" ends it without painting it -- leave
+     * that last one out and the rectangle is also drawn. The clip lasts
+     * until the enclosing graphics state is restored, so callers wrap
+     * this in pushGraphicsState()/popGraphicsState().
+     */
+    public function clipToRectangle(float $x, float $y, float $width, float $height): static
+    {
+        $this->buffer .= sprintf(
+            "%s %s %s %s re\nW\nn\n",
+            self::num($x),
+            self::num($y),
+            self::num($width),
+            self::num($height),
+        );
 
         return $this;
     }

@@ -2,10 +2,10 @@
 
 /**
  * Placing an SVG vector image on a page. Supports paths (lines, curves,
- * arcs), basic shapes (rect/circle/ellipse/line/polyline/polygon), solid
- * fill/stroke colors, opacity, and simple transforms -- see
- * src/Content/Svg/SvgDocument.php for the exact scope (no gradients,
- * patterns, filters, embedded images, text, or animation).
+ * arcs), basic shapes (rect/circle/ellipse/line/polyline/polygon),
+ * fill/stroke in flat colours or linear/radial gradients, opacity, and
+ * simple transforms -- see src/Content/Svg/SvgDocument.php for the exact
+ * scope (no patterns, filters, embedded images, text, or animation).
  *
  * Run: php examples/05-svg.php
  */
@@ -19,6 +19,7 @@ use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\PageBuilder;
 
 $svgFile = __DIR__ . '/../tests/fixtures/svg/sample.svg';
+$gradientFile = __DIR__ . '/../tests/fixtures/svg/gradient.svg';
 
 $document = new Document();
 $page = $document->newPage();
@@ -30,6 +31,20 @@ $content->drawText(StandardFont::HelveticaBold, 24.0, 72, 720, 'SVG vector graph
 // scales cleanly with no loss of quality (unlike a raster image).
 $content->drawSvg($svgFile, 72, 560, 120, 120);
 $content->drawSvg($svgFile, 240, 480, 240, 240);
+
+// Gradients become PDF shading patterns. A gradient in the default
+// "objectBoundingBox" units is measured across the shape it paints, so
+// the same definition fits each shape it is used on -- and follows them
+// through whatever transforms they sit under.
+$content->drawText(StandardFont::Helvetica, 12.0, 72, 430, 'Linear and radial gradients, at two sizes:');
+$content->drawSvg($gradientFile, 72, 280, 140, 140);
+$content->drawSvg($gradientFile, 240, 280, 220, 140);
+
+// Text in a drawing is drawn as text -- searchable and selectable, not
+// outlines. The font families an SVG names map onto the standard 14
+// unless a resolver says otherwise (see the README).
+$content->drawText(StandardFont::Helvetica, 12.0, 72, 250, 'Text inside the drawing:');
+$content->drawSvg(__DIR__ . '/../tests/fixtures/svg/label.svg', 72, 100, 280, 140);
 
 @mkdir(__DIR__ . '/output', recursive: true);
 $document->saveToFile(__DIR__ . '/output/05-svg.pdf');
