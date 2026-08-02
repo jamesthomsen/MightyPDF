@@ -15,7 +15,9 @@ use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReal;
 use MightyPDF\Assembler\Types\PdfRectangle;
 use MightyPDF\Assembler\Types\PdfReference;
+use MightyPDF\Assembler\Types\PdfString;
 use MightyPDF\Assembler\Types\PdfValue;
+use MightyPDF\Editor\Form\FormImporter;
 
 /**
  * Copies pages from one opened document into a fresh Document being
@@ -27,12 +29,16 @@ use MightyPDF\Assembler\Types\PdfValue;
  * once (via $idMap) and referenced by all of them afterwards, rather than
  * re-embedded per page.
  *
- * Only a page's visual content and non-form annotations come across.
- * /Subtype /Widget annotations (form field widgets) are deliberately
- * skipped -- carrying them over correctly would mean merging them into a
- * shared /AcroForm across source files (name collisions, /Parent
- * hierarchies, the "one /AcroForm per catalog" constraint AcroForm::adopt()
- * already has to work around for a single file) which is out of scope here.
+ * A page's visual content, its annotations, and any form fields those
+ * annotations belong to all come across. Fields are the awkward part,
+ * and the awkwardness is not in copying them: a field is a document-wide
+ * thing reached through a page, so importing one page of a form means
+ * rebuilding just enough of that form to hold it. See importWidget() for
+ * the pruning that needs, and FormImporter for what has to be settled
+ * across sources rather than within one.
+ *
+ * Pass a FormImporter to carry fields; without one, widget annotations
+ * are skipped and a merged page keeps its appearance but not its form.
  */
 final class PageImporter
 {
@@ -45,9 +51,19 @@ final class PageImporter
     /** @var array<int, PdfObject> target object id => the copied object */
     private array $copied = [];
 
+    /** @var array<int, Dictionary> source field id => the field node copied for it */
+    private array $fields = [];
+
+    /** @var array<int, list<int>> source field id => target ids of the children kept under it */
+    private array $fieldKids = [];
+
+    /** @var array<string, string>|null source /DR resource renames, resolved on first field */
+    private ?array $resourceRenames = null;
+
     public function __construct(
         private readonly PdfEditor $source,
         private readonly Document $target,
+        private readonly ?FormImporter $form = null,
     ) {
     }
 
@@ -139,11 +155,216 @@ final class PageImporter
             }
         }
 
-        foreach ($this->nonWidgetAnnotationReferences($sourcePage) as $reference) {
-            $page->addAnnotation($this->copyObject($reference->objectId())->objectId());
+        foreach ($this->annotationReferences($sourcePage) as $reference) {
+            $annotation = $this->source->resolveDictionary($reference);
+
+            if (!FormImporter::isWidget($annotation)) {
+                $page->addAnnotation($this->copyObject($reference->objectId())->objectId());
+
+                continue;
+            }
+
+            if ($this->form !== null) {
+                $page->addAnnotation($this->importWidget($reference->objectId(), $page)->objectId());
+            }
         }
 
         return $page;
+    }
+
+    /**
+     * Copies a form field's widget and rebuilds the ancestry it hangs
+     * from, keeping only what was imported.
+     *
+     * The pruning is the whole difficulty. A field's /Kids list its
+     * widgets across the *whole* source document, so copying a field
+     * wholesale from one imported page drags in widgets belonging to
+     * pages that were never imported -- and through their /P, the pages
+     * themselves. What comes across instead is built from the bottom up:
+     * each widget that was imported, then the fields above it, with
+     * /Kids rebuilt from the children that actually arrived.
+     *
+     * A field whose widget is merged into it (the common one-widget
+     * case) is its own root, and is handed to the form directly.
+     */
+    private function importWidget(int $widgetId, Page $page): Dictionary
+    {
+        $widget = $this->copyFieldObject($widgetId, $page);
+        $sourceWidget = $this->source->resolveDictionary(new PdfReference($widgetId));
+        $parent = $sourceWidget?->get('Parent');
+
+        if (!$parent instanceof PdfReference) {
+            $this->form?->take($widget);
+
+            return $widget;
+        }
+
+        $child = $widget;
+        $childSourceId = $widgetId;
+
+        for ($depth = 0; $depth < self::MAX_TREE_DEPTH; ++$depth) {
+            $parentSourceId = $parent->objectId();
+            $node = $this->copyFieldObject($parentSourceId, null);
+
+            $child->set('Parent', new PdfReference($node->objectId()));
+
+            if (!in_array($child->objectId(), $this->fieldKids[$parentSourceId] ?? [], true)) {
+                $this->fieldKids[$parentSourceId][] = $child->objectId();
+                $this->syncKids($parentSourceId);
+            }
+
+            $grandparent = $this->source->resolveDictionary($parent)?->get('Parent');
+
+            if (!$grandparent instanceof PdfReference) {
+                // Reached the root. Handing it over twice is harmless
+                // only if the form is told once, so this happens on the
+                // hop that created it.
+                if ($childSourceId !== $parentSourceId && count($this->fieldKids[$parentSourceId]) === 1) {
+                    $this->form?->take($node);
+                }
+
+                return $widget;
+            }
+
+            $child = $node;
+            $childSourceId = $parentSourceId;
+            $parent = $grandparent;
+        }
+
+        return $widget;
+    }
+
+    /**
+     * Copies a field or widget dictionary, leaving out the two entries
+     * that describe where it sits.
+     *
+     * /Parent and /Kids are rebuilt by importWidget() from what was
+     * imported; copying them would follow the source's own structure
+     * straight back out of this page. /P is set to the target page
+     * instead of copied for the same reason: the source's page object is
+     * not the one this widget now lives on.
+     */
+    private function copyFieldObject(int $sourceId, ?Page $page): Dictionary
+    {
+        if (isset($this->fields[$sourceId])) {
+            return $this->fields[$sourceId];
+        }
+
+        $source = $this->source->resolveDictionary(new PdfReference($sourceId))
+            ?? throw new \RuntimeException("Cannot import form field $sourceId: it is not a dictionary.");
+
+        $copy = new Dictionary($this->target->allocate());
+        $this->fields[$sourceId] = $copy;
+        $this->idMap[$sourceId] = $copy->objectId();
+        $this->copied[$copy->objectId()] = $copy;
+
+        foreach ($source->entries() as $key => $value) {
+            if (in_array((string) $key, ['Parent', 'Kids', 'P'], true)) {
+                continue;
+            }
+
+            $copy->set((string) $key, $this->copyValue($value));
+        }
+
+        if ($page !== null) {
+            $copy->set('P', new PdfReference($page->objectId()));
+        }
+
+        $this->rewriteDefaultAppearance($copy);
+        $this->target->register($copy);
+
+        return $copy;
+    }
+
+    /**
+     * Points a copied field's /DA at whatever its font ended up called
+     * in the merged form's /DR -- see FormImporter::takeDefaultResources().
+     */
+    private function rewriteDefaultAppearance(Dictionary $field): void
+    {
+        $da = $field->get('DA');
+
+        if (!$da instanceof PdfString || $this->form === null) {
+            return;
+        }
+
+        $this->resourceRenames ??= $this->takeDefaultResources();
+
+        if ($this->resourceRenames === []) {
+            return;
+        }
+
+        $field->set('DA', PdfString::text(
+            FormImporter::rewriteDefaultAppearance($da->toUtf8(), $this->resourceRenames),
+        ));
+    }
+
+    /**
+     * Hands this source's /DR entries to the merged form, and reports
+     * which of them had to be renamed to get in.
+     *
+     * A resource is identified to the form by its contents rather than
+     * by its object number -- see FormImporter::takeDefaultResource().
+     * Two files' /Helv are the same font if they say the same thing,
+     * and cannot be the same object, since they are in different files.
+     *
+     * @return array<string, string> old name => new name
+     */
+    private function takeDefaultResources(): array
+    {
+        $resources = $this->source->resolveDictionary($this->sourceForm()?->get('DR'));
+        $renames = [];
+
+        foreach ($resources?->entries() ?? [] as $category => $entries) {
+            if (!$entries instanceof Dictionary) {
+                continue;
+            }
+
+            foreach ($entries->entries() as $name => $value) {
+                $chosen = $this->form?->takeDefaultResource(
+                    (string) $category,
+                    (string) $name,
+                    $this->signatureOf($value),
+                    fn (): PdfValue => $this->copyValue($value),
+                );
+
+                if ($chosen !== null && $chosen !== (string) $name) {
+                    $renames[(string) $name] = $chosen;
+                }
+            }
+        }
+
+        return $renames;
+    }
+
+    /**
+     * What a resource *is*, as bytes: the object it points at, rendered.
+     *
+     * Rendering the reference itself would compare object numbers, which
+     * say nothing across files. Rendering what it resolves to compares
+     * the font -- and a font that embeds a program still differs
+     * between files, because the program hangs off it by reference, so
+     * this errs towards keeping both rather than merging two fonts that
+     * only look alike.
+     */
+    private function signatureOf(PdfValue $value): string
+    {
+        $resolved = $this->source->resolve($value);
+
+        return $resolved instanceof PdfObject ? $resolved->render(false) : ($resolved?->format() ?? '');
+    }
+
+    private function syncKids(int $parentSourceId): void
+    {
+        $this->fields[$parentSourceId]->set('Kids', new PdfArray(...array_map(
+            static fn (int $id): PdfReference => new PdfReference($id),
+            $this->fieldKids[$parentSourceId],
+        )));
+    }
+
+    private function sourceForm(): ?Dictionary
+    {
+        return $this->source->resolveDictionary($this->source->catalog()->get('AcroForm'));
     }
 
     private function importResources(Dictionary $sourcePage, Page $page): void
@@ -202,8 +423,14 @@ final class PageImporter
         return [];
     }
 
-    /** @return list<PdfReference> */
-    private function nonWidgetAnnotationReferences(Dictionary $page): array
+    /**
+     * An annotation written inline in /Annots rather than as an object
+     * of its own is malformed and cannot be pointed at, so only
+     * references are taken.
+     *
+     * @return list<PdfReference>
+     */
+    private function annotationReferences(Dictionary $page): array
     {
         $annots = $this->source->resolve($page->get('Annots'));
 
@@ -211,23 +438,10 @@ final class PageImporter
             return [];
         }
 
-        $references = [];
-
-        foreach ($annots->items() as $item) {
-            if (!$item instanceof PdfReference) {
-                continue;
-            }
-
-            $subtype = $this->source->resolveDictionary($item)?->get('Subtype');
-
-            if ($subtype instanceof PdfName && $subtype->value() === 'Widget') {
-                continue;
-            }
-
-            $references[] = $item;
-        }
-
-        return $references;
+        return array_values(array_filter(
+            $annots->items(),
+            static fn (PdfValue $item): bool => $item instanceof PdfReference,
+        ));
     }
 
     /**

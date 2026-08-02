@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MightyPDF\Editor;
 
 use MightyPDF\Assembler\Document;
+use MightyPDF\Editor\Form\FormImporter;
 
 /**
  * Combines the pages of several existing PDFs into one new document.
@@ -19,13 +20,25 @@ final class PdfMerger
     {
         $document = new Document();
 
+        // One form for the whole merge, not one per source: a document
+        // has room for a single /AcroForm, and the questions that make
+        // merging forms hard -- two files each with a "signature" field,
+        // two /DR dictionaries each with a different /Helv -- only exist
+        // between sources. See FormImporter.
+        $form = new FormImporter($document);
+
         foreach ($paths as $path) {
-            $importer = new PageImporter(PdfEditor::open($path), $document);
+            $source = PdfEditor::open($path);
+            $importer = new PageImporter($source, $document, $form);
+
+            $form->takeFormSettings($source->resolveDictionary($source->catalog()->get('AcroForm')));
 
             foreach ($importer->pages() as $sourcePage) {
                 $importer->import($sourcePage);
             }
         }
+
+        $form->finish();
 
         return $document;
     }

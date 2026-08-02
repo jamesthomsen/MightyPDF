@@ -650,13 +650,30 @@ an object shared by several pages of the *same* source file — a font used
 throughout a report, say — is copied once and shared by the copies too,
 not re-embedded per page.
 
-Non-form annotations (links, sticky notes, and the like) are carried over
-along with the page they're on. Form field widgets are not: merging those
-correctly would mean combining every source file's `/AcroForm` into one —
-matching names, re-parenting hierarchies, resolving collisions between
-files that each happen to have a field called the same thing — which is
-further than this goes. A page with form fields still merges; the fields
-on it just don't come along.
+Annotations are carried over along with the page they're on — links and
+sticky notes, and **form fields** too.
+
+Merging forms means combining every source file's `/AcroForm` into the
+one a document is allowed to have, and two things about that are worth
+knowing:
+
+- **Fields that share a name are renamed.** Two files that each have a
+  `signature` field are not describing one field, but a PDF field's
+  value lives on the field itself, so left sharing a name they would
+  share a value — filling either would fill both. The second becomes
+  `signature_2`. Read the merged document's field names back with
+  `FormFiller::names()` before filling it.
+- **Fonts that two forms name differently are kept apart.** A field's
+  `/DA` names a font from the form's `/DR` (`/Helv 9 Tf`), and two files
+  may both call something `/Helv` and mean different fonts. Where the
+  two resources say the same thing they're shared; where they don't, the
+  incoming one is renamed and the `/DA` strings referring to it are
+  rewritten to match.
+
+Only what a merged page needs comes across: a field's other widgets, on
+pages that were not imported, are left behind rather than dragging those
+pages in with them. A radio group whose buttons are all on an imported
+page arrives whole.
 
 For anything short of "every page of every file, in order," `PdfMerger` is
 sugar over the lower-level `PageImporter`, which copies one page at a time
@@ -706,10 +723,14 @@ for a runnable version.
   — this library has no code anywhere to hash a byte range, embed a
   certificate, or validate one, so nothing in it can actually sign a
   document.
-- **Merging**: form field widgets on a merged page are dropped (see
-  "Merging PDFs" above), and the merged document always gets a fresh, flat
-  page tree regardless of how the source files' own page trees were
-  shaped — which matches how `Document` builds every page tree already.
+- **Merging**: the merged document always gets a fresh, flat page tree
+  regardless of how the source files' own page trees were shaped — which
+  matches how `Document` builds every page tree already. Form fields
+  come across (see "Merging PDFs" above); the form's `/CO` calculation
+  order does not, since it lists fields that renaming may have moved.
+  A field's own actions — JavaScript among them — are copied unchanged,
+  so a script that addresses another field *by name* will not find a
+  field a name collision renamed.
 
 ## Development
 

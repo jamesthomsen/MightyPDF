@@ -10,6 +10,7 @@ use MightyPDF\Assembler\Stream;
 use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\PageBuilder;
+use MightyPDF\Editor\Form\FormImporter;
 use MightyPDF\Editor\PageImporter;
 use MightyPDF\Editor\PdfEditor;
 use MightyPDF\Editor\PdfMerger;
@@ -109,7 +110,12 @@ final class PageImporterTest extends TestCase
         self::assertSame("\x80", $image->rawBytes());
     }
 
-    public function testNonWidgetAnnotationIsCarriedOver(): void
+    /**
+     * An importer given no form has nowhere to put a field, so widgets
+     * are left behind rather than copied into a page that references a
+     * form the document does not have.
+     */
+    public function testWidgetsAreSkippedWithoutAFormToPutThemIn(): void
     {
         $source = PdfEditor::fromBytes(self::twoPageFixture());
         $target = new Document();
@@ -119,7 +125,21 @@ final class PageImporterTest extends TestCase
 
         $annots = $page->get('Annots');
         self::assertInstanceOf(PdfArray::class, $annots);
-        self::assertCount(1, $annots->items(), 'the Widget annotation must be excluded');
+        self::assertCount(1, $annots->items(), 'only the Link annotation');
+    }
+
+    public function testWidgetsAreCarriedOverWhenThereIsAFormToPutThemIn(): void
+    {
+        $source = PdfEditor::fromBytes(self::twoPageFixture());
+        $target = new Document();
+        $importer = new PageImporter($source, $target, new FormImporter($target));
+
+        $page = $importer->import(iterator_to_array($importer->pages(), false)[1]);
+
+        $annots = $page->get('Annots');
+        self::assertInstanceOf(PdfArray::class, $annots);
+        self::assertCount(2, $annots->items(), 'the Link and the Widget');
+        self::assertCount(1, $target->acroForm()->fieldObjectIds());
     }
 
     public function testDocumentMergeCombinesPagesFromMultipleFilesInOrder(): void
