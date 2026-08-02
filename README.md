@@ -47,6 +47,8 @@ output is written to `examples/output/`.
 | [09-encrypting-a-document.php](examples/09-encrypting-a-document.php) | AES-256 encryption with `Document::encrypt()` and `Permissions` |
 | [10-filling-an-existing-form.php](examples/10-filling-an-existing-form.php) | Filling an existing PDF's form fields with `FormFiller` |
 | [11-stamping-an-existing-page.php](examples/11-stamping-an-existing-page.php) | Stamping a page with `PageOverlay`, plus adding a field to an existing form |
+| [12-document-metadata.php](examples/12-document-metadata.php) | Setting Title/Author/Subject/Keywords/Creator/Producer/CreationDate |
+| [13-merging-documents.php](examples/13-merging-documents.php) | Combining pages from multiple PDFs into one with `PdfMerger` |
 
 ## Core concepts
 
@@ -238,6 +240,30 @@ $content2 = new PageBuilder($document, $page2);
 
 $document->saveToFile('output.pdf');
 ```
+
+## Document metadata
+
+```php
+$document->info()->setTitle('Quarterly Report');
+$document->info()->setAuthor('Jane Doe');
+$document->info()->setSubject('Q2 2026 results');
+$document->info()->setKeywords('quarterly, report, finance');
+$document->info()->setCreator('My App');
+$document->info()->setProducer('MightyPDF');
+$document->info()->setCreationDate(new DateTimeImmutable());
+```
+
+`info()` allocates the `/Info` dictionary the first time it's called —
+fully opt-in, the same way `/AcroForm` is: a document that never touches
+`info()` gets no `/Info` entry at all. `Title`/`Author`/`Subject`/`Keywords`/
+`Creator`/`Producer` accept plain text and are stored as ASCII when
+possible, UTF-16BE otherwise — the same encoding rule already used for
+form field names and values, so non-Latin text round-trips losslessly
+rather than being transliterated or mangled. `setCreationDate()` takes any
+`DateTimeInterface` and formats it per the PDF spec's own date syntax.
+
+See [`examples/12-document-metadata.php`](examples/12-document-metadata.php)
+for a runnable version.
 
 ## Encrypting a document you create
 
@@ -473,6 +499,55 @@ appearance is drawn directly.
 See [`examples/11-stamping-an-existing-page.php`](examples/11-stamping-an-existing-page.php)
 for a runnable version covering both the stamp and the added field.
 
+## Merging PDFs
+
+```php
+use MightyPDF\Editor\PdfMerger;
+
+$merged = PdfMerger::merge('cover.pdf', 'report.pdf', 'appendix.pdf');
+$merged->saveToFile('combined.pdf');
+```
+
+Every page from every file is copied, in order, into one new `Document`.
+Each page's content, resources (fonts, images, everything it draws with)
+and geometry (`/MediaBox`, `/Rotate`, inherited from the source's own page
+tree if it lives there rather than on the page itself) come across intact;
+an object shared by several pages of the *same* source file — a font used
+throughout a report, say — is copied once and shared by the copies too,
+not re-embedded per page.
+
+Non-form annotations (links, sticky notes, and the like) are carried over
+along with the page they're on. Form field widgets are not: merging those
+correctly would mean combining every source file's `/AcroForm` into one —
+matching names, re-parenting hierarchies, resolving collisions between
+files that each happen to have a field called the same thing — which is
+further than this goes. A page with form fields still merges; the fields
+on it just don't come along.
+
+For anything short of "every page of every file, in order," `PdfMerger` is
+sugar over the lower-level `PageImporter`, which copies one page at a time
+from an already-open `PdfEditor` and stays available for picking out a
+subset of pages, or importing from a source opened some other way:
+
+```php
+use MightyPDF\Editor\PageImporter;
+use MightyPDF\Editor\PdfEditor;
+
+$document = new Document();
+$importer = new PageImporter(PdfEditor::open('report.pdf'), $document);
+
+foreach ($importer->pages() as $index => $page) {
+    if ($index === 0) {
+        continue; // skip the cover page
+    }
+
+    $importer->import($page);
+}
+```
+
+See [`examples/13-merging-documents.php`](examples/13-merging-documents.php)
+for a runnable version.
+
 ## Known limitations
 
 - **Text**: standard 14 fonts only, WinAnsi/CP1252 repertoire (no custom
@@ -481,6 +556,10 @@ for a runnable version covering both the stamp and the added field.
 - **Creating fields**: text fields, checkboxes and radio groups — no list
   boxes, dropdowns or signature fields. (Existing list boxes and dropdowns
   in a document you open can be *filled*; see `FormFiller`.)
+- **Merging**: form field widgets on a merged page are dropped (see
+  "Merging PDFs" above), and the merged document always gets a fresh, flat
+  page tree regardless of how the source files' own page trees were
+  shaped — which matches how `Document` builds every page tree already.
 
 ## Development
 

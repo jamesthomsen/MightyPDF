@@ -160,6 +160,31 @@ final class DocumentTest extends TestCase
         self::assertStringContainsString('/Type /Catalog', $output);
     }
 
+    public function testInfoIsWiredIntoTheTrailerAndReferencesARealInfoObject(): void
+    {
+        $document = new Document();
+        $document->newPage();
+        $document->info()->setTitle('Quarterly Report');
+
+        $output = $document->save();
+
+        preg_match('/\/Info (\d+) 0 R/', $output, $matches);
+        self::assertNotEmpty($matches);
+
+        $infoId = (int) $matches[1];
+        self::assertStringContainsString("$infoId 0 obj\n<< /Title (Quarterly Report)", $output);
+    }
+
+    public function testSavingWithoutTouchingInfoEmitsNoInfoKeyAtAll(): void
+    {
+        $document = new Document();
+        $document->newPage();
+
+        $output = $document->save();
+
+        self::assertStringNotContainsString('/Info ', $output);
+    }
+
     public function testSaveToFileWritesTheSameBytesAsSave(): void
     {
         $document = new Document();

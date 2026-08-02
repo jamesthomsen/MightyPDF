@@ -33,6 +33,7 @@ final class Document implements DocumentContext
     private readonly Catalog $catalog;
     private readonly PageTreeNode $pageTree;
     private ?AcroForm $acroForm = null;
+    private ?DocumentInfo $info = null;
     private ?StandardSecurityHandler $security = null;
     private ?int $encryptObjectId = null;
     private ?PdfArray $id = null;
@@ -161,6 +162,21 @@ final class Document implements DocumentContext
     }
 
     /**
+     * Created lazily, same reasoning as acroForm(): most documents never
+     * set metadata at all, so nothing is allocated or written to /Info
+     * unless something here is actually set.
+     */
+    public function info(): DocumentInfo
+    {
+        if ($this->info === null) {
+            $this->info = new DocumentInfo($this->registry->allocate());
+            $this->registry->register($this->info);
+        }
+
+        return $this->info;
+    }
+
+    /**
      * Encrypts this document with AES-256 when it is saved.
      *
      * Be clear about what each password does. The *user* password is
@@ -212,6 +228,7 @@ final class Document implements DocumentContext
         $trailer = Trailer::forNewDocument(
             size: $result->xref->highestObjectId() + 1,
             rootObjectId: $this->catalog->objectId(),
+            infoObjectId: $this->info?->objectId(),
             id: $this->id,
             encryptObjectId: $this->encryptObjectId,
         );
