@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Svg;
 
-use MightyPDF\Content\ContentStream;
+use MightyPDF\Content\PathSink;
 
 /**
  * Converts an SVG elliptical-arc path segment (the "A"/"a" command) into
@@ -21,7 +21,7 @@ final class SvgArc
     }
 
     public static function emit(
-        ContentStream $stream,
+        PathSink $stream,
         float $x1,
         float $y1,
         float $rx,
@@ -97,7 +97,7 @@ final class SvgArc
     }
 
     private static function emitSegment(
-        ContentStream $stream,
+        PathSink $stream,
         float $cx,
         float $cy,
         float $rx,

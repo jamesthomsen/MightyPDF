@@ -9,12 +9,14 @@ use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\Stream;
 use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Assembler\Types\PdfReference;
+use MightyPDF\Content\Font\EmbeddedFont;
 use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\PageBuilder;
 use MightyPDF\Editor\EditedDocument;
 use MightyPDF\Editor\PageOverlay;
 use MightyPDF\Editor\PdfEditor;
 use MightyPDF\Reader\ObjectStore;
+use MightyPDF\Tests\Support\SyntheticTrueTypeFont;
 use PHPUnit\Framework\TestCase;
 
 final class PageOverlayTest extends TestCase
@@ -238,6 +240,34 @@ final class PageOverlayTest extends TestCase
     }
 
     /** @return array{0: PdfEditor, 1: PageOverlay} */
+    /**
+     * An embedded font's program cannot be built until the document has
+     * stopped growing, so it is filled in during a finalize pass at save
+     * time. An incremental update is a second, separate writer with its
+     * own save path, and forgetting the pass there does not fail loudly:
+     * it writes a font whose /FontFile2 is an empty stream, which some
+     * readers show as blank text and others as nothing at all.
+     */
+    public function testAnEmbeddedFontStampedOntoAnExistingPageIsWrittenComplete(): void
+    {
+        [$editor, $overlay] = self::overlayOn(self::pageWithContent());
+        $overlay->content()->drawText(
+            EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build()),
+            12.0,
+            40,
+            40,
+            'AB',
+        );
+        $overlay->apply();
+
+        $update = $editor->save();
+
+        self::assertStringContainsString('/Subtype /CIDFontType2', $update);
+        self::assertStringContainsString('/W [1 [600 700]]', $update);
+        self::assertSame(1, preg_match('/\/Length1 (\d+)/', $update, $matches));
+        self::assertGreaterThan(0, (int) $matches[1], 'the font program was never written');
+    }
+
     private static function overlayOn(string $pdf): array
     {
         $editor = PdfEditor::fromBytes($pdf);

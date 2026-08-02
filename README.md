@@ -92,9 +92,15 @@ Colors are RGB with each channel in the `0.0`–`1.0` range.
 
 ## Text and fonts
 
-MightyPDF uses PDF's 14 standard fonts (`Helvetica`, `Times`, `Courier`
-in their regular/bold/italic/bold-italic variants, plus `Symbol` and
-`ZapfDingbats`). These are built into every conforming PDF reader, so no
+Two kinds of font: PDF's 14 standard ones, which need nothing embedded,
+and any TrueType file you point at, which does. Both are drawn with the
+same calls.
+
+### Standard fonts
+
+`Helvetica`, `Times` and `Courier` in their
+regular/bold/italic/bold-italic variants, plus `Symbol` and
+`ZapfDingbats`. These are built into every conforming PDF reader, so no
 font files are embedded — text just works, with no extra setup.
 
 ```php
@@ -103,7 +109,7 @@ use MightyPDF\Content\Font\StandardFont;
 $content->drawText(StandardFont::HelveticaBold, 24.0, 72, 720, 'Text and fonts');
 ```
 
-`drawText(StandardFont $font, float $sizePt, float $x, float $y, string $text)`
+`drawText(Font $font, float $sizePt, float $x, float $y, string $text)`
 draws `$text` with its baseline at `($x, $y)`.
 
 Available cases: `Helvetica`, `HelveticaBold`, `HelveticaOblique`,
@@ -111,23 +117,63 @@ Available cases: `Helvetica`, `HelveticaBold`, `HelveticaOblique`,
 `TimesBoldItalic`, `Courier`, `CourierBold`, `CourierOblique`,
 `CourierBoldOblique`, `Symbol`, `ZapfDingbats`.
 
-Text is transcoded to WinAnsiEncoding (≈ CP1252) internally. Characters
-outside that repertoire are transliterated to the nearest ASCII
-equivalent (e.g. curly quotes → straight quotes) rather than failing —
-full Unicode text would require embedding a font program, which is out
-of scope for v1.
+Text drawn in one of these is transcoded to WinAnsiEncoding (≈ CP1252).
+Characters outside that repertoire are transliterated to the nearest
+ASCII equivalent (e.g. curly quotes → straight quotes) rather than
+failing. For text that has to keep its own characters, embed a font.
 
-**Measuring text.** `StandardFont::metrics()` returns a `FontMetrics`
-object for layout math (e.g. centering):
+### Embedding a TrueType font
 
 ```php
-use MightyPDF\Assembler\Types\WinAnsiEncoding;
+use MightyPDF\Content\Font\EmbeddedFont;
 
-$metrics = StandardFont::Helvetica->metrics();
-$encoded = WinAnsiEncoding::encode($text);
-$width = $metrics->widthOf($encoded, $sizePt); // width in points
+$font = EmbeddedFont::load('/path/to/Inter-Regular.ttf');
+
+$content->drawText($font, 14.0, 72, 700, 'Ελληνικά · Русский · Größe — ∑ €');
+```
+
+An `EmbeddedFont` goes anywhere a `StandardFont` does. Text drawn with
+one can hold any character the font itself contains, and the document
+carries a `/ToUnicode` map, so selecting and copying the text in a
+reader gives back the characters rather than glyph numbers.
+
+**Only the glyphs you draw are embedded.** The font is subset as the
+document is written and the program is built at save time, when the used
+set is finally known — a page of text typically costs a few kilobytes
+against a font file of several hundred. Pass `subset: false` to embed
+the file whole.
+
+**A font contains what it contains.** Drawing a character the font has
+no glyph for throws rather than drawing an empty box, since a box is
+invisible in review and obvious in print. Ask first where the text is
+not known in advance:
+
+```php
+$missing = $font->missingCharacters($text); // ['字', '한'] — each one once
+$font->supports($text);                     // or just: can it draw this?
+```
+
+Scope: TrueType outlines, i.e. a `.ttf` file with a `glyf` table.
+OpenType/CFF fonts (`.otf` with PostScript outlines) and font
+collections (`.ttc`) are refused by name — both are a different
+embedding path in PDF, not a variation on this one.
+
+See [`examples/14-embedding-a-font.php`](examples/14-embedding-a-font.php)
+for a runnable version.
+
+### Measuring text
+
+Every font measures its own text, so layout math (centering, fitting a
+box) is the same for both kinds:
+
+```php
+$width = $font->widthOfPt($text, $sizePt);  // width in points
 $x = ($pageWidth - $width) / 2;
 ```
+
+`StandardFont::metrics()` additionally exposes the standard-14 width
+tables directly, keyed by WinAnsi code, for callers working in encoded
+bytes.
 
 ## Lines and shapes
 
@@ -200,7 +246,9 @@ the exact scope.
 ## Form fields (AcroForm)
 
 Six field types are supported: single-line text fields, checkboxes, radio
-groups, list boxes, dropdowns, and signature-field placeholders. Adding
+groups, list boxes, dropdowns, and signature-field placeholders. Field
+fonts are standard-14 only — see "Known limitations" for why an embedded
+font is the wrong thing to point a field at. Adding
 any of them lazily creates the document's single shared `/AcroForm` the
 first time it's needed — every field on every page ends up listed
 together in that one form.
@@ -569,8 +617,16 @@ for a runnable version.
 
 ## Known limitations
 
-- **Text**: standard 14 fonts only, WinAnsi/CP1252 repertoire (no custom
-  font embedding, no full Unicode).
+- **Fonts**: the standard 14, plus any TrueType (`.ttf`) file, embedded
+  and subset. OpenType/CFF (`.otf`) and font collections (`.ttc`) are
+  refused rather than half-embedded. Text drawn in a *standard* font is
+  still limited to WinAnsi/CP1252 and transliterated outside it; text in
+  an embedded font is not.
+- **Form fields**: a field's font is one of the standard 14. A field's
+  `/DA` names the font a *reader* uses to lay out what someone types
+  into it, and an embedded subset holds only the glyphs this document
+  already drew, so pointing a field at one would give the reader a font
+  without the characters it needs.
 - **SVG**: see the "not supported" list above.
 - **Signing**: `addSignatureField()` only reserves an unsigned placeholder
   — this library has no code anywhere to hash a byte range, embed a

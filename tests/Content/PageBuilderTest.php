@@ -8,8 +8,10 @@ use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\Form\TextField;
 use MightyPDF\Assembler\Page;
 use MightyPDF\Content\ContentStream;
+use MightyPDF\Content\Font\EmbeddedFont;
 use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\PageBuilder;
+use MightyPDF\Tests\Support\SyntheticTrueTypeFont;
 use PHPUnit\Framework\TestCase;
 
 final class PageBuilderTest extends TestCase
@@ -911,6 +913,74 @@ final class PageBuilderTest extends TestCase
         $objCount = preg_match_all('/\d+ 0 obj/', $output);
         $endobjCount = preg_match_all('/endobj/', $output);
         self::assertSame($objCount, $endobjCount);
+    }
+
+    /**
+     * Two-byte character codes go out as a hex string: a literal string
+     * would need every byte that happens to be "(", ")" or "\" escaped,
+     * and half of every code is a high byte where those values are
+     * ordinary.
+     */
+    public function testTextInAnEmbeddedFontIsShownAsAHexString(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+
+        (new PageBuilder($document, $page))->drawText(self::embeddedFont(), 12.0, 72.0, 700.0, 'AB');
+
+        self::assertStringContainsString('<00010002> Tj', $this->decompressedContentStreamBytes($page));
+    }
+
+    /**
+     * Word spacing (Tw) has no effect on two-byte codes at all, so
+     * justified text in an embedded font is spaced with TJ adjustments
+     * instead. Emitting Tw there would not be an error -- it would
+     * silently produce unjustified text.
+     */
+    public function testJustifiedParagraphsInAnEmbeddedFontUseTjAdjustmentsRatherThanWordSpacing(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+
+        (new PageBuilder($document, $page))->drawParagraph(
+            self::embeddedFont(),
+            12.0,
+            72.0,
+            600.0,
+            60.0,
+            60.0,
+            "A B A B A\nB",
+            align: 'J',
+        );
+
+        $content = $this->decompressedContentStreamBytes($page);
+
+        self::assertStringContainsString('] TJ', $content);
+        self::assertStringNotContainsString('Tw', $content);
+    }
+
+    public function testJustifiedParagraphsInAStandardFontStillUseWordSpacing(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+
+        (new PageBuilder($document, $page))->drawParagraph(
+            StandardFont::Helvetica,
+            12.0,
+            72.0,
+            600.0,
+            60.0,
+            60.0,
+            "one two three four five six\nseven",
+            align: 'J',
+        );
+
+        self::assertStringContainsString('Tw', $this->decompressedContentStreamBytes($page));
+    }
+
+    private static function embeddedFont(): EmbeddedFont
+    {
+        return EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build());
     }
 
     private function decompressedContentStreamBytes(Page $page): string

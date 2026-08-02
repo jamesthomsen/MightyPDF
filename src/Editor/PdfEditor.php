@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MightyPDF\Editor;
 
 use MightyPDF\Assembler\Dictionary;
+use MightyPDF\Assembler\IndirectObjectRegistry;
 use MightyPDF\Assembler\PdfObject;
 use MightyPDF\Assembler\Trailer;
 use MightyPDF\Assembler\Types\PdfReference;
@@ -176,6 +177,12 @@ final class PdfEditor
 
         $objects = $this->changed;
         ksort($objects);
+
+        // Anything that had to wait for the document to stop growing --
+        // an embedded font's subset, which depends on every draw call
+        // that could have used a glyph -- gets finished here, before a
+        // single object is serialized. See Finalizable.
+        IndirectObjectRegistry::finalizeAll($objects);
 
         $xref = new Xref();
 

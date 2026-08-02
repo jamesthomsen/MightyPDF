@@ -25,6 +25,14 @@ namespace MightyPDF\Content\Svg;
 final class SvgStyle
 {
     /**
+     * $fillReference/$strokeReference hold the id of a paint server --
+     * `fill="url(#sunset)"` -- which is a paint this class cannot
+     * resolve on its own: a gradient is a document-wide definition, and
+     * what it becomes depends on the shape being painted. It is carried
+     * as written and resolved by SvgRenderer, and it displaces the plain
+     * colour rather than sitting alongside it, since an element has one
+     * fill.
+     *
      * @param array{0: float, 1: float, 2: float}|null $fill
      * @param array{0: float, 1: float, 2: float}|null $stroke
      */
@@ -35,6 +43,8 @@ final class SvgStyle
         public readonly float $fillOpacity = 1.0,
         public readonly float $strokeOpacity = 1.0,
         public readonly bool $evenOdd = false,
+        public readonly ?string $fillReference = null,
+        public readonly ?string $strokeReference = null,
     ) {
     }
 
@@ -42,8 +52,9 @@ final class SvgStyle
     {
         $attrs = self::collectAttributes($element);
 
-        $fill = isset($attrs['fill']) ? SvgColor::parse($attrs['fill']) : $this->fill;
-        $stroke = isset($attrs['stroke']) ? SvgColor::parse($attrs['stroke']) : $this->stroke;
+        [$fill, $fillReference] = $this->paint($attrs['fill'] ?? null, $this->fill, $this->fillReference);
+        [$stroke, $strokeReference] = $this->paint($attrs['stroke'] ?? null, $this->stroke, $this->strokeReference);
+
         $strokeWidth = isset($attrs['stroke-width']) ? (float) $attrs['stroke-width'] : $this->strokeWidth;
         $evenOdd = isset($attrs['fill-rule']) ? $attrs['fill-rule'] === 'evenodd' : $this->evenOdd;
 
@@ -58,7 +69,28 @@ final class SvgStyle
             $this->fillOpacity * $ownFillOpacity * $ownOpacity,
             $this->strokeOpacity * $ownStrokeOpacity * $ownOpacity,
             $evenOdd,
+            $fillReference,
+            $strokeReference,
         );
+    }
+
+    /**
+     * Resolves one paint property against what was inherited: a colour,
+     * a reference to a paint server, or neither -- and an element that
+     * sets the property at all replaces both halves of what it inherited.
+     *
+     * @param array{0: float, 1: float, 2: float}|null $inheritedColor
+     * @return array{0: array{0: float, 1: float, 2: float}|null, 1: string|null}
+     */
+    private function paint(?string $value, ?array $inheritedColor, ?string $inheritedReference): array
+    {
+        if ($value === null) {
+            return [$inheritedColor, $inheritedReference];
+        }
+
+        $reference = SvgColor::referenceId($value);
+
+        return $reference !== null ? [null, $reference] : [SvgColor::parse($value), null];
     }
 
     /** @return array<string, string> presentation attributes, with any "style" attribute's declarations overlaid */

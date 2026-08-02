@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Svg;
 
-use MightyPDF\Content\ContentStream;
+use MightyPDF\Content\PathSink;
 
 /**
  * Parses an SVG path "d" attribute (SVG 1.1 §8.3) and replays it as
@@ -27,7 +27,7 @@ final class SvgPathParser
     {
     }
 
-    public static function apply(string $d, ContentStream $stream): void
+    public static function apply(string $d, PathSink $stream): void
     {
         $tokens = self::tokenize($d);
         $index = 0;
@@ -228,7 +228,7 @@ final class SvgPathParser
     }
 
     private static function emitQuadratic(
-        ContentStream $stream,
+        PathSink $stream,
         float $x0,
         float $y0,
         float $qx,

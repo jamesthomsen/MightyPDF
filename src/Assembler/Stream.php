@@ -54,6 +54,22 @@ final class Stream extends Dictionary
     }
 
     /**
+     * Replaces this stream's body outright.
+     *
+     * For a stream whose content cannot be known when it is registered:
+     * an embedded font program, which is a subset of a font file
+     * containing exactly the glyphs the document turned out to use, and
+     * so is built during the finalize pass (see Finalizable) rather than
+     * at the draw call that first needed the font. Distinct from
+     * appendBytes() because that case replaces rather than accumulates,
+     * and must give the same answer if it runs twice.
+     */
+    public function replaceBytes(string $bytes): void
+    {
+        $this->rawBytes = $bytes;
+    }
+
+    /**
      * The bytes exactly as this object holds them -- which is *not* always
      * the same thing as the bytes that will be written. The pair
      * (rawBytes, $compress) is the real state: with compression on these

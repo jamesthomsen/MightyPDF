@@ -18,13 +18,16 @@ use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReal;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfRectangle;
-use MightyPDF\Assembler\Types\WinAnsiEncoding;
 use MightyPDF\Content\Barcode\Code39;
+use MightyPDF\Content\Font\Font;
+use MightyPDF\Content\Font\FontWriter;
 use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\Image\GifImage;
 use MightyPDF\Content\Image\JpegImage;
 use MightyPDF\Content\Image\PngImage;
 use MightyPDF\Content\Svg\SvgDocument;
+use MightyPDF\Content\Svg\SvgGradient;
+use MightyPDF\Content\Svg\SvgShadingPattern;
 use MightyPDF\Content\Text\TextWrapper;
 
 /**
@@ -35,25 +38,26 @@ use MightyPDF\Content\Text\TextWrapper;
  * per call) -- plus the bookkeeping needed to reference supporting
  * resources (fonts, later images) from the page's /Resources dictionary.
  *
- * Two methods split the side effects of "start using this font here":
- * fontObject() owns allocating/registering/caching the one shared Font
- * dictionary per document, and fontResourceName() owns naming it in this
- * page's /Resources /Font. They are separate because the object is
- * document-scoped while the name is page-scoped -- conflating the two is
- * what let form fields on different pages collide in the shared AcroForm
- * /DR (fixed by moving that naming onto AcroForm itself). Same discipline
- * as IndirectObjectRegistry centralizing xref bookkeeping -- scattering
- * these steps across call sites is exactly what produced the 2012 bugs
- * this project is rebuilding away from.
+ * The side effects of "start using this font here" are split in two:
+ * Font::writerFor() owns allocating/registering/caching the one shared
+ * font object per document, and fontResourceName() below owns naming it
+ * in this page's /Resources /Font. They are separate because the object
+ * is document-scoped while the name is page-scoped -- conflating the two
+ * is what let form fields on different pages collide in the shared
+ * AcroForm /DR (fixed by moving that naming onto AcroForm itself). Same
+ * discipline as IndirectObjectRegistry centralizing xref bookkeeping --
+ * scattering these steps across call sites is exactly what produced the
+ * 2012 bugs this project is rebuilding away from.
  */
 final class PageBuilder
 {
     private ?Stream $stream = null;
 
-    /** @var array<string, string> StandardFont case name => resource name (e.g. "F1"), for page /Resources /Font */
+    /** @var array<string, string> Font::cacheKey() => resource name (e.g. "F1"), for page /Resources /Font */
     private array $fontResourceNames = [];
     private int $nextFontResourceNumber = 1;
     private int $nextImageResourceNumber = 1;
+    private int $nextPatternResourceNumber = 1;
 
     /** @var array<string, string> "fillAlpha:strokeAlpha" => resource name (e.g. "GS1") */
     private array $extGStateResourceNames = [];
@@ -74,16 +78,21 @@ final class PageBuilder
      * whatever color was last set" default would make text color depend
      * on unrelated drawing order elsewhere on the page.
      */
-    public function drawText(StandardFont $font, float $sizePt, float $x, float $y, string $text, float $r = 0.0, float $g = 0.0, float $b = 0.0): static
+    public function drawText(Font $font, float $sizePt, float $x, float $y, string $text, float $r = 0.0, float $g = 0.0, float $b = 0.0): static
     {
-        $resourceName = $this->fontResourceName($font);
-        $encoded = WinAnsiEncoding::encode($text);
+        $writer = $font->writerFor($this->document);
+
+        // Encoded before the font is named in this page's resources, so
+        // that text the font cannot draw leaves no half-finished trace
+        // on a page a caller may still go on to use.
+        $encoded = $writer->encode($text);
+        $resourceName = $this->fontResourceName($font, $writer);
 
         $operators = new ContentStream();
         $operators->setFillColorRgb($r, $g, $b)
             ->beginText()
             ->setFont($resourceName, $sizePt)
-            ->showTextAt($x, $y, $encoded)
+            ->showTextAt($x, $y, $encoded, $writer->usesHexStrings())
             ->endText();
 
         $this->append($operators->bytes());
@@ -113,7 +122,7 @@ final class PageBuilder
      * for the same reason.
      */
     public function drawParagraph(
-        StandardFont $font,
+        Font $font,
         float $sizePt,
         float $x,
         float $y,
@@ -128,16 +137,14 @@ final class PageBuilder
         float $b = 0.0,
     ): static {
         $lineHeightPt ??= $sizePt * 1.15;
-        $metrics = $font->metrics();
-        $lines = TextWrapper::wrap($text, $metrics, $sizePt, $width);
+        $writer = $font->writerFor($this->document);
+        $lines = TextWrapper::wrapUtf8($text, $font, $sizePt, $width);
         $lastIndex = count($lines) - 1;
 
-        // No ascent metric is shipped for the standard-14 fonts (see
-        // FontMetrics), so this uses a standard approximation (~0.8 of
-        // the nominal size) to place the first baseline just inside the
-        // box's top edge -- consistent with how drawText()'s $y is
-        // documented as a baseline, not a box top.
-        $ascent = $sizePt * 0.8;
+        // Places the first baseline just inside the box's top edge --
+        // consistent with how drawText()'s $y is documented as a
+        // baseline, not a box top.
+        $ascent = $font->ascentPt($sizePt);
         $blockHeight = count($lines) * $lineHeightPt;
         $topY = match ($valign) {
             'M' => $y + $height / 2 + min($blockHeight, $height) / 2,
@@ -145,12 +152,12 @@ final class PageBuilder
             default => $y + $height,
         };
 
-        $resourceName = $this->fontResourceName($font);
+        $resourceName = $this->fontResourceName($font, $writer);
         $operators = new ContentStream();
         $lineY = $topY - $ascent;
 
         foreach ($lines as $index => $line) {
-            $lineWidth = $metrics->widthOf($line, $sizePt);
+            $lineWidth = $font->widthOfPt($line, $sizePt);
             $spaceCount = substr_count($line, ' ');
 
             $wordSpacing = 0.0;
@@ -165,10 +172,24 @@ final class PageBuilder
 
             $operators->setFillColorRgb($r, $g, $b)
                 ->beginText()
-                ->setFont($resourceName, $sizePt)
-                ->setWordSpacing($wordSpacing)
-                ->showTextAt($lineX, $lineY, $line)
-                ->endText();
+                ->setFont($resourceName, $sizePt);
+
+            if ($writer->supportsWordSpacing()) {
+                $operators->setWordSpacing($wordSpacing)
+                    ->showTextAt($lineX, $lineY, $writer->encode($line), $writer->usesHexStrings());
+            } else {
+                // A font with two-byte codes cannot be justified with the
+                // word-spacing operator -- see ContentStream::
+                // showTextRunsAt(), which is what does it instead.
+                $operators->showTextRunsAt(
+                    $lineX,
+                    $lineY,
+                    self::spacedRuns($writer, $line, $wordSpacing / $sizePt * 1000.0),
+                    $writer->usesHexStrings(),
+                );
+            }
+
+            $operators->endText();
 
             $lineY -= $lineHeightPt;
         }
@@ -176,6 +197,42 @@ final class PageBuilder
         $this->append($operators->bytes());
 
         return $this;
+    }
+
+    /**
+     * One line of text as TJ runs: each word, with $gap thousandths of
+     * the font size added after it. A gap of zero is one run and one
+     * string, i.e. the same thing a plain Tj would have shown.
+     *
+     * The space itself stays attached to the word before it rather than
+     * being dropped: it is a real glyph with a real width, and the gap
+     * is extra space *on top of* it, exactly as the word-spacing
+     * operator would have added.
+     *
+     * @return list<string|float>
+     */
+    private static function spacedRuns(FontWriter $writer, string $line, float $gap): array
+    {
+        if ($gap === 0.0) {
+            return [$writer->encode($line)];
+        }
+
+        $words = explode(' ', $line);
+        $last = count($words) - 1;
+        $runs = [];
+
+        foreach ($words as $index => $word) {
+            if ($index === $last) {
+                $runs[] = $writer->encode($word);
+
+                break;
+            }
+
+            $runs[] = $writer->encode("$word ");
+            $runs[] = $gap;
+        }
+
+        return $runs;
     }
 
     public function drawLine(
@@ -394,23 +451,66 @@ final class PageBuilder
         $scaleX = $width / $svg->viewBoxWidth;
         $scaleY = $height / $svg->viewBoxHeight;
 
-        $operators = new ContentStream();
-        $operators->pushGraphicsState()->concatMatrix(
+        $placement = [
             $scaleX,
-            0,
-            0,
+            0.0,
+            0.0,
             -$scaleY,
             $x - $svg->viewBoxX * $scaleX,
             $y + $height + $svg->viewBoxY * $scaleY,
-        );
+        ];
 
-        $svg->render($operators, $this->extGStateResourceName(...));
+        $operators = new ContentStream();
+        $operators->pushGraphicsState()->concatMatrix(...$placement);
+
+        // The placement matrix is handed over as well as emitted: a
+        // gradient is painted through a pattern, and a pattern is
+        // positioned relative to the page rather than to the CTM this
+        // "cm" just set. See SvgShadingPattern.
+        $svg->render(
+            $operators,
+            $this->extGStateResourceName(...),
+            $this->shadingPatternResourceName(...),
+            $placement,
+        );
 
         $operators->popGraphicsState();
 
         $this->append($operators->bytes());
 
         return $this;
+    }
+
+    /**
+     * Owns every side effect of "paint something with this gradient":
+     * build the pattern, register it, and name it in this page's
+     * /Resources /Pattern. Same discipline as fontResourceName() and
+     * placeImage().
+     *
+     * Not cached the way fonts and images are. A shading pattern carries
+     * the matrix of the shape it paints, so two shapes with the same
+     * gradient need two patterns -- which is also why the resource name
+     * is simply the next free one rather than something derived from
+     * the gradient's id.
+     *
+     * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix
+     * @param array{0: float, 1: float, 2: float, 3: float} $boundingBox
+     */
+    private function shadingPatternResourceName(SvgGradient $gradient, array $matrix, array $boundingBox): string
+    {
+        $pattern = SvgShadingPattern::build($this->document->allocate(), $gradient, $matrix, $boundingBox);
+        $this->document->register($pattern);
+
+        $resourceName = 'P' . $this->nextPatternResourceNumber++;
+
+        $patterns = $this->page->resources()->get('Pattern');
+        if (!$patterns instanceof Dictionary) {
+            $patterns = new Dictionary();
+            $this->page->resources()->set('Pattern', $patterns);
+        }
+        $patterns->set($resourceName, new PdfReference($pattern->objectId()));
+
+        return $resourceName;
     }
 
     private function extGStateResourceName(float $fillAlpha, float $strokeAlpha): string
@@ -666,11 +766,12 @@ final class PageBuilder
      * Resource name for $font in this page's own /Resources /Font. The
      * name is page-local (each page has its own /Resources, so /F1 on
      * two pages is unambiguous), but the font *object* it points at is
-     * shared document-wide via fontObject().
+     * shared document-wide -- the font itself owns that, via
+     * Font::writerFor().
      */
-    private function fontResourceName(StandardFont $font): string
+    private function fontResourceName(Font $font, FontWriter $writer): string
     {
-        $key = $font->name;
+        $key = $font->cacheKey();
         if (isset($this->fontResourceNames[$key])) {
             return $this->fontResourceNames[$key];
         }
@@ -684,7 +785,7 @@ final class PageBuilder
             $fonts = new Dictionary();
             $resources->set('Font', $fonts);
         }
-        $fonts->set($resourceName, new PdfReference($this->fontObject($font)->objectId()));
+        $fonts->set($resourceName, new PdfReference($writer->dictionary()->objectId()));
 
         return $resourceName;
     }
@@ -693,38 +794,19 @@ final class PageBuilder
      * Unlike page /Resources, the AcroForm's /DR is one dictionary shared
      * by every page, so AcroForm owns both the naming and the dedupe --
      * see AcroForm::fontResourceName().
+     *
+     * Standard fonts only, unlike the drawing methods above: a field's
+     * /DA names a font that the *reader* uses to lay out what someone
+     * types into it, so an embedded subset -- which contains only the
+     * glyphs this document already drew -- is the wrong thing to point
+     * a text field at. See the README's form-field section.
      */
     private function formFontResourceName(StandardFont $font): string
     {
-        return $this->document->acroForm()->fontResourceName($font->name, $this->fontObject($font));
-    }
-
-    /**
-     * The one /Type /Font object for $font in this document, allocated on
-     * first use and reused by every later page and by the AcroForm /DR.
-     * Standard-14 fonts carry no embedded font program or /Widths, so the
-     * dictionary is byte-identical per case -- the case name is a
-     * complete cache key.
-     */
-    private function fontObject(StandardFont $font): Dictionary
-    {
-        $key = $font->name;
-        $cached = $this->document->cachedFont($key);
-        if ($cached !== null) {
-            return $cached;
-        }
-
-        $fontDict = new Dictionary($this->document->allocate());
-        $fontDict->set('Type', new PdfName('Font'));
-        $fontDict->set('Subtype', new PdfName('Type1'));
-        $fontDict->set('BaseFont', new PdfName($font->baseFontName()));
-        if ($font->usesWinAnsiEncoding()) {
-            $fontDict->set('Encoding', new PdfName('WinAnsiEncoding'));
-        }
-        $this->document->register($fontDict);
-        $this->document->cacheFont($key, $fontDict);
-
-        return $fontDict;
+        return $this->document->acroForm()->fontResourceName(
+            $font->name,
+            $font->writerFor($this->document)->dictionary(),
+        );
     }
 
     private function append(string $bytes): void

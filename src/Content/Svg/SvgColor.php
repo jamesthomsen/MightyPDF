@@ -44,6 +44,24 @@ final class SvgColor
     {
     }
 
+    /**
+     * The id in a paint value of the form `url(#sunset)`, or null for a
+     * value that names a colour rather than a paint server.
+     *
+     * The quotes some tools write inside the parentheses are not part of
+     * the id, and neither is the fallback colour that may follow the
+     * reference -- `url(#sunset) blue` means "that gradient, or blue if
+     * it cannot be found", and only the first half is answered here.
+     */
+    public static function referenceId(string $value): ?string
+    {
+        if (preg_match('/^url\(\s*[\'"]?#([^\'")\s]+)[\'"]?\s*\)/', trim($value), $matches) !== 1) {
+            return null;
+        }
+
+        return $matches[1];
+    }
+
     /** @return array{0: float, 1: float, 2: float}|null RGB, each 0.0-1.0, or null for no paint */
     public static function parse(?string $value): ?array
     {
@@ -57,12 +75,14 @@ final class SvgColor
         }
 
         if (str_starts_with($value, 'url(')) {
-            // A reference to a gradient/pattern paint server def, which
-            // is out of scope for this milestone. Rather than failing
-            // the whole document over one shape's decorative fill,
-            // degrade to "no paint" for this property only -- the same
-            // fallback a real renderer uses when a referenced paint
-            // server can't be resolved at all.
+            // A reference to a paint server. Gradients are resolved --
+            // see referenceId() below and SvgRenderer, which is where
+            // the document and the shape being painted are both in
+            // scope. Patterns are not, and a reference to anything that
+            // cannot be resolved degrades to "no paint" for this
+            // property only, rather than failing the whole document over
+            // one shape's decorative fill. That is the same fallback a
+            // real renderer uses.
             return null;
         }
 

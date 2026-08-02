@@ -17,11 +17,48 @@ namespace MightyPDF\Content\Svg;
  * rotate(angle, cx, cy) (rotation about a point) is expanded into its
  * three constituent translate/rotate/translate-back matrices for exactly
  * the same reason.
+ *
+ * compose() exists for the one case where that does not hold: a gradient
+ * is painted through a PDF pattern, and a pattern carries a single
+ * matrix of its own rather than being drawn under the CTM. Working out
+ * what that matrix should be means multiplying transforms here after
+ * all.
  */
 final class SvgTransform
 {
+    /** @var array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} */
+    public const array IDENTITY = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+
     private function __construct()
     {
+    }
+
+    /**
+     * The single matrix equivalent to applying $first and then $second.
+     *
+     * PDF and SVG both write a 2D affine transform as [a b c d e f] and
+     * both treat a point as a row vector, so this is the same
+     * multiplication in both worlds -- which is what lets a gradient's
+     * own transform, the shape's bounding box and the placement of the
+     * whole drawing be folded into one pattern matrix.
+     *
+     * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $first
+     * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $second
+     * @return array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float}
+     */
+    public static function compose(array $first, array $second): array
+    {
+        [$a1, $b1, $c1, $d1, $e1, $f1] = $first;
+        [$a2, $b2, $c2, $d2, $e2, $f2] = $second;
+
+        return [
+            $a1 * $a2 + $b1 * $c2,
+            $a1 * $b2 + $b1 * $d2,
+            $c1 * $a2 + $d1 * $c2,
+            $c1 * $b2 + $d1 * $d2,
+            $e1 * $a2 + $f1 * $c2 + $e2,
+            $e1 * $b2 + $f1 * $d2 + $f2,
+        ];
     }
 
     /** @return list<array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float}> */

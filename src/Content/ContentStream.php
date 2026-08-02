@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content;
 
+use MightyPDF\Assembler\Types\PdfHexString;
 use MightyPDF\Assembler\Types\PdfNumberFormat;
 use MightyPDF\Assembler\Types\PdfString;
 
@@ -17,7 +18,7 @@ use MightyPDF\Assembler\Types\PdfString;
  * to call these methods and wires up whatever resources (fonts, images)
  * they reference by name.
  */
-final class ContentStream
+final class ContentStream implements PathSink
 {
     private string $buffer = '';
 
@@ -42,14 +43,56 @@ final class ContentStream
         return $this;
     }
 
-    /** $winAnsiBytes must already be encoded -- see WinAnsiEncoding::encode(). */
-    public function showTextAt(float $x, float $y, string $winAnsiBytes): static
+    /**
+     * $bytes must already be encoded for the font in effect -- see
+     * FontWriter::encode().
+     *
+     * $hex writes them as "<...>" instead of "(...)", which is what a
+     * font with two-byte codes needs: half of every code is a high byte
+     * that may collide with the literal-string delimiters, and while
+     * escaping handles that correctly, a hex string cannot get it wrong
+     * and stays readable in the raw file.
+     */
+    public function showTextAt(float $x, float $y, string $bytes, bool $hex = false): static
     {
         $this->buffer .= sprintf(
             "1 0 0 1 %s %s Tm\n%s Tj\n",
             self::num($x),
             self::num($y),
-            PdfString::latin1($winAnsiBytes)->format(),
+            self::string($bytes, $hex),
+        );
+
+        return $this;
+    }
+
+    /**
+     * Shows text as a sequence of runs with explicit gaps between them:
+     * the TJ operator, where a number in the array moves the pen back by
+     * that many thousandths of the current font size.
+     *
+     * This is how justified text is spaced out for a font whose codes
+     * are two bytes wide, because the word-spacing operator (Tw) does
+     * not apply to those at all (ISO 32000-2 §9.3.3) -- it acts on the
+     * single byte 32, and a two-byte encoding has no such byte. Setting
+     * Tw there is not an error, which is the problem: the text simply
+     * comes out unjustified.
+     *
+     * @param list<string|float> $runs already-encoded strings to show,
+     *        interleaved with gaps in thousandths of the font size
+     */
+    public function showTextRunsAt(float $x, float $y, array $runs, bool $hex = false): static
+    {
+        $parts = [];
+
+        foreach ($runs as $run) {
+            $parts[] = is_string($run) ? self::string($run, $hex) : self::num(-$run);
+        }
+
+        $this->buffer .= sprintf(
+            "1 0 0 1 %s %s Tm\n[%s] TJ\n",
+            self::num($x),
+            self::num($y),
+            implode(' ', $parts),
         );
 
         return $this;
@@ -159,6 +202,29 @@ final class ContentStream
         return $this;
     }
 
+    /**
+     * Fills with a named /Pattern resource -- a gradient, here -- rather
+     * than with a flat colour.
+     *
+     * Two operators, because a pattern is not a colour: the colour space
+     * has to be switched to /Pattern first, and only then does the name
+     * mean anything. The pair also has to be re-emitted for each shape,
+     * since any later "rg" switches the space back to DeviceRGB.
+     */
+    public function setFillPattern(string $resourceName): static
+    {
+        $this->buffer .= sprintf("/Pattern cs\n/%s scn\n", $resourceName);
+
+        return $this;
+    }
+
+    public function setStrokePattern(string $resourceName): static
+    {
+        $this->buffer .= sprintf("/Pattern CS\n/%s SCN\n", $resourceName);
+
+        return $this;
+    }
+
     /** Activates a named ExtGState resource (e.g. for /ca, /CA alpha). */
     public function setExtGState(string $resourceName): static
     {
@@ -228,5 +294,12 @@ final class ContentStream
     private static function num(float $value): string
     {
         return PdfNumberFormat::format($value);
+    }
+
+    private static function string(string $bytes, bool $hex): string
+    {
+        return $hex
+            ? (new PdfHexString($bytes))->format()
+            : PdfString::latin1($bytes)->format();
     }
 }

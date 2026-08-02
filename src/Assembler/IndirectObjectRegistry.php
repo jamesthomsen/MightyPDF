@@ -61,6 +61,8 @@ final class IndirectObjectRegistry implements ObjectHost
         $objects = $this->objects;
         ksort($objects);
 
+        self::finalizeAll($objects);
+
         $xref = new Xref();
         $out = $header;
 
@@ -70,5 +72,29 @@ final class IndirectObjectRegistry implements ObjectHost
         }
 
         return new SerializedDocumentBody($out, $xref);
+    }
+
+    /**
+     * Gives every object that has to wait for the whole document its last
+     * chance to fill itself in, before any of them is serialized.
+     *
+     * A separate pass rather than a step inside the write loop: a font
+     * dictionary finalizing itself writes into its own descriptor and
+     * font-file streams, which are objects in their own right and may
+     * carry lower numbers -- and so would already have been written past.
+     * See Finalizable for what implementations must guarantee.
+     *
+     * Shared with the incremental-update writer (MightyPDF\Editor\
+     * PdfEditor::save()), which has the same problem and no registry.
+     *
+     * @param iterable<PdfObject> $objects
+     */
+    public static function finalizeAll(iterable $objects): void
+    {
+        foreach ($objects as $object) {
+            if ($object instanceof Finalizable) {
+                $object->finalize();
+            }
+        }
     }
 }
