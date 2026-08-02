@@ -199,10 +199,11 @@ the exact scope.
 
 ## Form fields (AcroForm)
 
-Three field types are supported: single-line text fields, checkboxes, and
-radio groups. Adding any of them lazily creates the document's single
-shared `/AcroForm` the first time it's needed — every field on every page
-ends up listed together in that one form.
+Six field types are supported: single-line text fields, checkboxes, radio
+groups, list boxes, dropdowns, and signature-field placeholders. Adding
+any of them lazily creates the document's single shared `/AcroForm` the
+first time it's needed — every field on every page ends up listed
+together in that one form.
 
 ```php
 $content->addTextField('first_name', x: 200, y: 665, width: 250, height: 20, value: 'Jane');
@@ -214,6 +215,12 @@ $content->addRadioGroup('plan', [
     ['exportValue' => 'Basic', 'x' => 200, 'y' => 560, 'size' => 12],
     ['exportValue' => 'Pro', 'x' => 260, 'y' => 560, 'size' => 12],
 ], checkedExportValue: 'Pro');
+
+$content->addListBox('country', ['USA', 'Canada', 'Mexico'], x: 200, y: 470, width: 150, height: 60, value: 'Canada');
+
+$content->addDropdown('shipping', ['Standard', 'Express'], x: 200, y: 440, width: 150, height: 20, value: 'Standard');
+
+$content->addSignatureField('signature', x: 200, y: 390, width: 200, height: 40);
 ```
 
 `addTextField(string $name, float $x, float $y, float $width, float $height, ?string $value = null, StandardFont $font = StandardFont::Helvetica, float $fontSizePt = 10.0, ?int $maxLength = null)`
@@ -222,13 +229,17 @@ $content->addRadioGroup('plan', [
 
 `addRadioGroup(string $name, array $options, ?string $checkedExportValue = null, MarkStyle $mark = MarkStyle::Dot)` — `$options` is a list of `['exportValue' => ..., 'x' => ..., 'y' => ..., 'size' => ...]`, one per button. At most one option's `exportValue` should match `$checkedExportValue`; the rest start unchecked, and the group enforces mutual exclusion natively (no JavaScript).
 
-Text fields rely on `/NeedsAppearances` so the PDF reader regenerates
-the visible text itself from the field's value and appearance string —
-this is standard, reader-supported behavior. Checkboxes and radio
-buttons instead carry their own small on/off appearance streams (drawn
-with `ContentStream`, `MarkStyle::Check` and `MarkStyle::Dot` by
-default respectively), since readers are less consistent about
-regenerating button appearances automatically.
+`addListBox(string $name, array $options, float $x, float $y, float $width, float $height, ?string $value = null, StandardFont $font = StandardFont::Helvetica, float $fontSizePt = 10.0)` and `addDropdown(...)` (same signature) — `$options` is a plain list of strings; a dropdown is a list box with the spec's "Combo" flag set, which is the only difference between the two.
+
+`addSignatureField(string $name, float $x, float $y, float $width, float $height)` — reserves a `/Rect` and an `/AcroForm` entry for a signature to be added later by some other process. This library does not sign documents (hashing a byte range, embedding a certificate, and validating trust are a different feature this project doesn't touch anywhere else), so the field is always created unsigned, with no `/V`.
+
+Text fields, list boxes and dropdowns rely on `/NeedsAppearances` so the
+PDF reader regenerates the visible text itself from the field's value and
+appearance string — this is standard, reader-supported behavior.
+Checkboxes and radio buttons instead carry their own small on/off
+appearance streams (drawn with `ContentStream`, `MarkStyle::Check` and
+`MarkStyle::Dot` by default respectively), since readers are less
+consistent about regenerating button appearances automatically.
 
 ## Multi-page documents
 
@@ -561,9 +572,10 @@ for a runnable version.
 - **Text**: standard 14 fonts only, WinAnsi/CP1252 repertoire (no custom
   font embedding, no full Unicode).
 - **SVG**: see the "not supported" list above.
-- **Creating fields**: text fields, checkboxes and radio groups — no list
-  boxes, dropdowns or signature fields. (Existing list boxes and dropdowns
-  in a document you open can be *filled*; see `FormFiller`.)
+- **Signing**: `addSignatureField()` only reserves an unsigned placeholder
+  — this library has no code anywhere to hash a byte range, embed a
+  certificate, or validate one, so nothing in it can actually sign a
+  document.
 - **Merging**: form field widgets on a merged page are dropped (see
   "Merging PDFs" above), and the merged document always gets a fresh, flat
   page tree regardless of how the source files' own page trees were

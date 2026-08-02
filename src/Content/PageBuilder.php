@@ -7,8 +7,10 @@ namespace MightyPDF\Content;
 use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\DocumentContext;
 use MightyPDF\Assembler\Form\CheckboxField;
+use MightyPDF\Assembler\Form\ChoiceField;
 use MightyPDF\Assembler\Form\RadioButtonWidget;
 use MightyPDF\Assembler\Form\RadioGroupField;
+use MightyPDF\Assembler\Form\SignatureField;
 use MightyPDF\Assembler\Form\TextField;
 use MightyPDF\Assembler\PageContext;
 use MightyPDF\Assembler\Stream;
@@ -560,12 +562,100 @@ final class PageBuilder
     }
 
     /**
+     * A scrollable list of options, zero or one of which is selected.
+     * Same underlying /FT /Ch as addDropdown() -- see ChoiceField.
+     *
+     * @param list<string> $options
+     */
+    public function addListBox(
+        string $name,
+        array $options,
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        ?string $value = null,
+        StandardFont $font = StandardFont::Helvetica,
+        float $fontSizePt = 10.0,
+    ): static {
+        return $this->addChoiceField($name, $options, $x, $y, $width, $height, $value, $font, $fontSizePt, combo: false);
+    }
+
+    /**
+     * A dropdown ("combo box" in spec terms) with one selected option.
+     * Same underlying /FT /Ch as addListBox() -- see ChoiceField.
+     *
+     * @param list<string> $options
+     */
+    public function addDropdown(
+        string $name,
+        array $options,
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        ?string $value = null,
+        StandardFont $font = StandardFont::Helvetica,
+        float $fontSizePt = 10.0,
+    ): static {
+        return $this->addChoiceField($name, $options, $x, $y, $width, $height, $value, $font, $fontSizePt, combo: true);
+    }
+
+    /**
+     * @param list<string> $options
+     */
+    private function addChoiceField(
+        string $name,
+        array $options,
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        ?string $value,
+        StandardFont $font,
+        float $fontSizePt,
+        bool $combo,
+    ): static {
+        $resourceName = $this->formFontResourceName($font);
+
+        $field = new ChoiceField(
+            $this->document->allocate(),
+            $name,
+            new PdfRectangle($x, $y, $x + $width, $y + $height),
+            $resourceName,
+            $fontSizePt,
+            $options,
+            $value,
+            $combo,
+        );
+
+        $this->registerField($field);
+
+        return $this;
+    }
+
+    /**
+     * An unsigned signature field placeholder -- reserves a spot on the
+     * page and in /AcroForm for a signature to be added later by some
+     * other process. This library does not itself sign documents; see
+     * SignatureField's docblock.
+     */
+    public function addSignatureField(string $name, float $x, float $y, float $width, float $height): static
+    {
+        $field = new SignatureField($this->document->allocate(), $name, new PdfRectangle($x, $y, $x + $width, $y + $height));
+
+        $this->registerField($field);
+
+        return $this;
+    }
+
+    /**
      * Owns every side effect of "add this field to this page": register
      * it with the document, list it in the page's /Annots, and list it
      * in the document's single shared AcroForm /Fields. Same discipline
      * as fontResourceName()/placeImage().
      */
-    private function registerField(TextField|CheckboxField $field): void
+    private function registerField(TextField|CheckboxField|ChoiceField|SignatureField $field): void
     {
         $this->document->register($field);
         $this->page->addAnnotation($field->objectId());

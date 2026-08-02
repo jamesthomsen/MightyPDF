@@ -783,6 +783,97 @@ final class PageBuilderTest extends TestCase
         }
     }
 
+    public function testAddListBoxListsOptionsAndSelectedValue(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addListBox(
+            'Country',
+            ['USA', 'Canada', 'Mexico'],
+            72,
+            700,
+            150,
+            60,
+            value: 'Canada',
+        );
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/FT /Ch', $output);
+        self::assertStringContainsString('/Opt [(USA) (Canada) (Mexico)]', $output);
+        self::assertStringContainsString('/V (Canada)', $output);
+        self::assertStringNotContainsString('/Ff ', $output, 'a list box carries no flags unless read-only');
+    }
+
+    public function testAddDropdownSetsTheComboFlag(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addDropdown(
+            'Shipping',
+            ['Standard', 'Express'],
+            72,
+            700,
+            150,
+            20,
+            value: 'Express',
+        );
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/FT /Ch', $output);
+        // Table 230 bit 18, "Combo" -- 1 << 17.
+        self::assertStringContainsString('/Ff 131072', $output);
+        self::assertStringContainsString('/V (Express)', $output);
+    }
+
+    public function testChoiceFieldWiresFontIntoAcroFormDrNotPageResources(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addListBox('Country', ['USA', 'Canada'], 72, 700, 150, 60);
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/DR << /Font <<', $output);
+    }
+
+    public function testAddSignatureFieldHasNoValueAndIsAnAcroFormField(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addSignatureField('Signature', 72, 700, 200, 40);
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/FT /Sig', $output);
+        self::assertStringNotContainsString('/V ', $output);
+
+        preg_match('/\/Fields \[([^\]]*)\]/', $output, $fields);
+        self::assertSame(1, substr_count($fields[1], ' 0 R'));
+    }
+
+    public function testResultingPdfWithChoiceAndSignatureFieldsIsStructurallyValid(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))
+            ->addListBox('Country', ['USA', 'Canada'], 72, 700, 150, 60, value: 'USA')
+            ->addDropdown('Shipping', ['Standard', 'Express'], 72, 660, 150, 20, value: 'Standard')
+            ->addSignatureField('Signature', 72, 600, 200, 40);
+
+        $output = $document->save();
+
+        $objCount = preg_match_all('/\d+ 0 obj/', $output);
+        $endobjCount = preg_match_all('/endobj/', $output);
+        self::assertSame($objCount, $endobjCount);
+
+        preg_match_all('/^(\d{10}) \d{5} n \n/m', $output, $matches);
+        foreach ($matches[1] as $offsetString) {
+            self::assertMatchesRegularExpression('/^\d+ 0 obj/', substr($output, (int) $offsetString, 20));
+        }
+    }
+
     public function testDrawSvgRendersIntoThePageContentStream(): void
     {
         $document = new Document();

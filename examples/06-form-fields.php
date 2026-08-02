@@ -1,12 +1,16 @@
 <?php
 
 /**
- * AcroForm fields: text fields, checkboxes, and radio groups.
+ * AcroForm fields: text fields, checkboxes, radio groups, list boxes,
+ * dropdowns, and an unsigned signature-field placeholder.
  *
- * Fields use /NeedsAppearances so readers regenerate the text-field
+ * Fields use /NeedsAppearances so readers regenerate the text/choice
  * visuals themselves from /DA + /V; checkboxes and radio buttons carry
  * their own small on/off appearance streams (drawn with ContentStream)
  * since those appearances are less consistently reader-regenerated.
+ * The signature field is never signed -- this library reserves the spot
+ * but leaves the actual signing (hashing, certificates) to something
+ * else.
  *
  * Run: php examples/06-form-fields.php
  */
@@ -44,6 +48,15 @@ $content->addRadioGroup('plan', [
     ['exportValue' => 'Basic', 'x' => 200, 'y' => 522, 'size' => 12],
     ['exportValue' => 'Pro', 'x' => 260, 'y' => 522, 'size' => 12],
 ], checkedExportValue: 'Pro');
+
+$content->drawText(StandardFont::Helvetica, 11.0, 72, 480, 'Country:');
+$content->addListBox('country', ['USA', 'Canada', 'Mexico'], x: 200, y: 435, width: 150, height: 60, value: 'Canada');
+
+$content->drawText(StandardFont::Helvetica, 11.0, 72, 400, 'Shipping:');
+$content->addDropdown('shipping', ['Standard', 'Express'], x: 200, y: 395, width: 150, height: 20, value: 'Standard');
+
+$content->drawText(StandardFont::Helvetica, 11.0, 72, 350, 'Signature:');
+$content->addSignatureField('signature', x: 200, y: 320, width: 200, height: 40);
 
 @mkdir(__DIR__ . '/output', recursive: true);
 $document->saveToFile(__DIR__ . '/output/06-form-fields.pdf');
