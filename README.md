@@ -199,28 +199,36 @@ the exact scope.
 
 ## Form fields (AcroForm)
 
-Two field types are supported: single-line text fields and checkboxes.
-Adding either one lazily creates the document's single shared `/AcroForm`
-the first time it's needed — every field on every page ends up listed
-together in that one form.
+Three field types are supported: single-line text fields, checkboxes, and
+radio groups. Adding any of them lazily creates the document's single
+shared `/AcroForm` the first time it's needed — every field on every page
+ends up listed together in that one form.
 
 ```php
 $content->addTextField('first_name', x: 200, y: 665, width: 250, height: 20, value: 'Jane');
 $content->addTextField('comments', x: 200, y: 630, width: 250, height: 20, maxLength: 200);
 
 $content->addCheckbox('subscribe', x: 280, y: 592, size: 14, checked: true);
+
+$content->addRadioGroup('plan', [
+    ['exportValue' => 'Basic', 'x' => 200, 'y' => 560, 'size' => 12],
+    ['exportValue' => 'Pro', 'x' => 260, 'y' => 560, 'size' => 12],
+], checkedExportValue: 'Pro');
 ```
 
 `addTextField(string $name, float $x, float $y, float $width, float $height, ?string $value = null, StandardFont $font = StandardFont::Helvetica, float $fontSizePt = 10.0, ?int $maxLength = null)`
 
 `addCheckbox(string $name, float $x, float $y, float $size, bool $checked = false)`
 
+`addRadioGroup(string $name, array $options, ?string $checkedExportValue = null, MarkStyle $mark = MarkStyle::Dot)` — `$options` is a list of `['exportValue' => ..., 'x' => ..., 'y' => ..., 'size' => ...]`, one per button. At most one option's `exportValue` should match `$checkedExportValue`; the rest start unchecked, and the group enforces mutual exclusion natively (no JavaScript).
+
 Text fields rely on `/NeedsAppearances` so the PDF reader regenerates
 the visible text itself from the field's value and appearance string —
-this is standard, reader-supported behavior. Checkboxes instead carry
-their own small on/off appearance streams (a simple checkmark drawn with
-`ContentStream`), since readers are less consistent about regenerating
-checkbox appearances automatically.
+this is standard, reader-supported behavior. Checkboxes and radio
+buttons instead carry their own small on/off appearance streams (drawn
+with `ContentStream`, `MarkStyle::Check` and `MarkStyle::Dot` by
+default respectively), since readers are less consistent about
+regenerating button appearances automatically.
 
 ## Multi-page documents
 

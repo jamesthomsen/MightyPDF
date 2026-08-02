@@ -1,12 +1,12 @@
 <?php
 
 /**
- * AcroForm fields: text fields and checkboxes.
+ * AcroForm fields: text fields, checkboxes, and radio groups.
  *
  * Fields use /NeedsAppearances so readers regenerate the text-field
- * visuals themselves from /DA + /V; checkboxes carry their own small
- * on/off appearance streams (a checkmark drawn with ContentStream)
- * since checkbox appearances are less consistently reader-regenerated.
+ * visuals themselves from /DA + /V; checkboxes and radio buttons carry
+ * their own small on/off appearance streams (drawn with ContentStream)
+ * since those appearances are less consistently reader-regenerated.
  *
  * Run: php examples/06-form-fields.php
  */
@@ -36,6 +36,14 @@ $content->addCheckbox('subscribe', x: 280, y: 592, size: 14, checked: true);
 
 $content->drawText(StandardFont::Helvetica, 11.0, 72, 565, 'I accept the terms:');
 $content->addCheckbox('accept_terms', x: 280, y: 562, size: 14, checked: false);
+
+$content->drawText(StandardFont::Helvetica, 11.0, 72, 525, 'Preferred plan:');
+$content->drawText(StandardFont::Helvetica, 9.0, 218, 528, 'Basic');
+$content->drawText(StandardFont::Helvetica, 9.0, 278, 528, 'Pro');
+$content->addRadioGroup('plan', [
+    ['exportValue' => 'Basic', 'x' => 200, 'y' => 522, 'size' => 12],
+    ['exportValue' => 'Pro', 'x' => 260, 'y' => 522, 'size' => 12],
+], checkedExportValue: 'Pro');
 
 @mkdir(__DIR__ . '/output', recursive: true);
 $document->saveToFile(__DIR__ . '/output/06-form-fields.pdf');
