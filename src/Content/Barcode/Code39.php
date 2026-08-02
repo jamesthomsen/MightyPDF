@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Barcode;
 
+use MightyPDF\Content\Text\Utf8;
+
 /**
  * Code 39 (ISO/IEC 16388, aka "3 of 9") 1D barcode encoding.
  *
@@ -61,7 +63,7 @@ final class Code39
             throw new \InvalidArgumentException('Code 39 value must not contain "*" -- the start/stop character is added automatically.');
         }
 
-        $characters = [self::START_STOP, ...mb_str_split($value), self::START_STOP];
+        $characters = [self::START_STOP, ...Utf8::characters($value), self::START_STOP];
         $lastIndex = count($characters) - 1;
 
         $out = [];

@@ -14,6 +14,7 @@ use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfString;
 use MightyPDF\Assembler\Types\PdfValue;
+use MightyPDF\Content\Text\Utf8;
 use MightyPDF\Editor\PdfEditor;
 
 /**
@@ -163,13 +164,17 @@ final class FormFiller
         } else {
             $text = is_bool($value) ? ($value ? 'Yes' : 'No') : (string) $value;
 
-            if ($field->maxLength !== null && mb_strlen($text) > $field->maxLength) {
+            // /MaxLen counts characters, not bytes, so this has to be a
+            // code point count -- a 5-character limit must accept "café£".
+            $length = count(Utf8::codePoints($text));
+
+            if ($field->maxLength !== null && $length > $field->maxLength) {
                 throw new FormException(sprintf(
                     '"%s" holds at most %d characters and the value has %d. Truncating silently would '
                     . 'put data in the file that nobody asked for, so this is refused.',
                     $field->name,
                     $field->maxLength,
-                    mb_strlen($text),
+                    $length,
                 ));
             }
 
