@@ -2,7 +2,13 @@
     "name": "jthomsen/mightypdf",
     "description": "A from-scratch PDF library for PHP: raw PDF assembly plus a content layer for text, drawing, images, SVG, and AcroForm fields -- and a reader that can open an existing PDF and edit it in place.",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "James Thomsen",
+            "email": "james.thomsen@gmail.com"
+        }
+    ],
     "require": {
         "php": "^8.3",
         "ext-iconv": "*",
