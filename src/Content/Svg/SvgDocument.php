@@ -25,6 +25,8 @@ final class SvgDocument
     /** @var array<string, SvgGradient> */
     private readonly array $gradients;
 
+    private readonly SvgStylesheet $stylesheet;
+
     private function __construct(
         public readonly float $viewBoxX,
         public readonly float $viewBoxY,
@@ -37,6 +39,11 @@ final class SvgDocument
         // gradient may inherit from another. Neither can be resolved
         // while walking the tree in order.
         $this->gradients = SvgGradientParser::collect($root, $viewBoxWidth, $viewBoxHeight);
+
+        // Same reason, one step earlier: a rule in a <style> block
+        // applies to elements anywhere in the document, including ones
+        // already walked past by the time the block is reached.
+        $this->stylesheet = SvgStylesheet::parse($root);
     }
 
     public static function fromFile(string $path): self
@@ -98,6 +105,7 @@ final class SvgDocument
         $renderer = new SvgRenderer(
             $stream,
             $this->gradients,
+            $this->stylesheet,
             $extGStateResourceName,
             $shadingPatternResourceName,
             $imageResourceName,

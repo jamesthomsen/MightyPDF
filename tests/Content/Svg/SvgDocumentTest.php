@@ -328,6 +328,65 @@ final class SvgDocumentTest extends TestCase
         self::assertSame([2.0, 0.0, 0.0, 2.0, 6.0, 8.0], $seen);
     }
 
+    /**
+     * The cascade: a presentation attribute is the weakest styling
+     * there is, a rule in a style block beats it, and the inline style
+     * attribute beats both.
+     */
+    public function testStyleBlockRulesBeatPresentationAttributes(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10"><style>.brand { fill: #ff0000; }</style>'
+            . '<rect x="0" y="0" width="1" height="1" class="brand" fill="#00ff00"/></svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render($stream, $this->noExtGState());
+
+        self::assertStringContainsString('1 0 0 rg', $stream->bytes());
+        self::assertStringNotContainsString('0 1 0 rg', $stream->bytes());
+    }
+
+    public function testTheInlineStyleAttributeBeatsStyleBlockRules(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10"><style>.brand { fill: #ff0000; }</style>'
+            . '<rect x="0" y="0" width="1" height="1" class="brand" style="fill:#0000ff"/></svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render($stream, $this->noExtGState());
+
+        self::assertStringContainsString('0 0 1 rg', $stream->bytes());
+    }
+
+    /** A rule may be written after the elements it styles, or inside a group. */
+    public function testAStyleBlockAppliesToTheWholeDocumentWhereverItSits(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10"><rect x="0" y="0" width="1" height="1" class="brand"/>'
+            . '<style>.brand { fill: #ff0000; }</style></svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render($stream, $this->noExtGState());
+
+        self::assertStringContainsString('1 0 0 rg', $stream->bytes());
+    }
+
+    public function testStyleBlockRulesAreInheritedThroughGroups(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10"><style>.themed { fill: #ff0000; }</style>'
+            . '<g class="themed"><rect x="0" y="0" width="1" height="1"/></g></svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render($stream, $this->noExtGState());
+
+        self::assertStringContainsString('1 0 0 rg', $stream->bytes());
+    }
+
     public function testDrawsARasterImageCarriedInsideTheDrawing(): void
     {
         $svg = SvgDocument::fromString(

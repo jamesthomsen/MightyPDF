@@ -50,6 +50,7 @@ final class SvgRenderer
     public function __construct(
         private readonly ContentStream $stream,
         private readonly array $gradients,
+        private readonly SvgStylesheet $stylesheet,
         private readonly \Closure $extGStateResourceName,
         private readonly ?\Closure $shadingPatternResourceName,
         private readonly ?\Closure $imageResourceName = null,
@@ -78,7 +79,7 @@ final class SvgRenderer
             return;
         }
 
-        $style = $inheritedStyle->merge($element);
+        $style = $inheritedStyle->mergeAttributes($this->cascade($tag, self::attributesOfElement($element)));
         $matrices = SvgTransform::parse(isset($element['transform']) ? (string) $element['transform'] : null);
 
         if ($matrices !== []) {
@@ -375,7 +376,7 @@ final class SvgRenderer
                 continue;
             }
 
-            $childStyle = $style->mergeAttributes(self::attributesOf($node));
+            $childStyle = $style->mergeAttributes($this->cascade($node->localName, self::attributesOf($node)));
             $before = count($runs);
 
             $this->collectTextRuns($node, $childStyle, $runs);
@@ -519,6 +520,39 @@ final class SvgRenderer
 
         return $font->font->widthOfPt($run['text'], $style->fontSizePt)
             + $style->letterSpacing * count(Utf8::codePoints($run['text']));
+    }
+
+    /**
+     * An element's own attributes with any matching CSS rules laid over
+     * them.
+     *
+     * That order is the cascade's, not a convenience: a presentation
+     * attribute is the weakest kind of styling there is, and a rule in
+     * a <style> block beats it. The inline style attribute beats both,
+     * which SvgStyle::mergeAttributes() applies last of all.
+     *
+     * @param array<string, string> $attributes
+     * @return array<string, string>
+     */
+    private function cascade(string $tag, array $attributes): array
+    {
+        if ($this->stylesheet->isEmpty()) {
+            return $attributes;
+        }
+
+        return array_merge($attributes, $this->stylesheet->declarationsFor($tag, $attributes));
+    }
+
+    /** @return array<string, string> */
+    private static function attributesOfElement(\SimpleXMLElement $element): array
+    {
+        $attributes = [];
+
+        foreach ($element->attributes() as $name => $value) {
+            $attributes[(string) $name] = (string) $value;
+        }
+
+        return $attributes;
     }
 
     /** @return array<string, string> */

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120">
+  <style>
+    /* Shapes carry classes and no fills of their own -- what a drawing
+       tool exports. */
+    .panel  { fill: #eceff1; }
+    .accent { fill: #ef6c00; }
+    .accent.muted { fill: #ffcc80; }
+    #badge  { fill: #00695c; }
+    circle  { stroke: #37474f; stroke-width: 2; }
+    text    { font-family: Helvetica; font-size: 11px; fill: #263238; }
+    .title  { font-size: 15px; font-weight: bold; text-anchor: middle; }
+    @media print { .accent { fill: #000000; } }
+  </style>
+
+  <rect class="panel" x="0" y="0" width="200" height="120"/>
+  <circle class="accent" cx="40" cy="55" r="22"/>
+  <circle class="accent muted" cx="95" cy="55" r="22"/>
+  <circle id="badge" class="accent" cx="150" cy="55" r="22"/>
+  <text class="title" x="100" y="25">Styled by CSS</text>
+  <text x="100" y="105" text-anchor="middle">class, id and specificity</text>
+</svg>

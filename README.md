@@ -235,8 +235,9 @@ file can be drawn small and large with no quality loss.
 
 Supported: paths (lines, curves, arcs), basic shapes (`rect`, `circle`,
 `ellipse`, `line`, `polyline`, `polygon`), fill/stroke in flat colours or
-gradients, opacity, and simple transforms
-(`translate`/`scale`/`rotate`/`skew`/`matrix`).
+gradients, opacity, simple transforms
+(`translate`/`scale`/`rotate`/`skew`/`matrix`), text, embedded raster
+images, and styling from `<style>` blocks as well as attributes.
 
 **Gradients** — `<linearGradient>` and `<radialGradient>`, in either
 `objectBoundingBox` (the default, measured across the shape) or
@@ -286,10 +287,26 @@ $content->drawSvg($path, x: 72, y: 500, width: 200, height: 200,
     fontResolver: fn (string $family, bool $bold, bool $italic) => $bold ? $interBold : $inter);
 ```
 
+**CSS in `<style>` blocks** — which is how drawing tools actually write
+styling: a block of `.cls-1 { fill: #e74c3c }` rules and shapes carrying
+`class="cls-1"` rather than fills of their own. Type, class, id and
+universal selectors are matched, in any combination on a single element
+(`rect.cls-1`) and in comma-separated groups, with the usual specificity
+order and document order as the tiebreak. The cascade is honoured:
+presentation attributes lose to style-block rules, which lose to the
+inline `style` attribute.
+
+Selectors that describe an element's *surroundings* — descendant, child
+and sibling combinators — are ignored rather than approximated, as are
+pseudo-classes and attribute selectors; the rest of the sheet still
+applies. At-rules (`@media`, `@supports`, `@import`) are skipped whole:
+the rules inside one look exactly like ordinary rules, and a drawing's
+print styling is usually the opposite of its screen styling.
+
 **Not supported** (elements are skipped, not mis-rendered): patterns,
-filters, `<textPath>`, CSS cascading beyond a flat `style` attribute, and
-animation. A `fill="url(#…)"` naming anything that cannot be resolved
-paints nothing, rather than failing the document. See
+filters, `<textPath>`, and animation. A `fill="url(#…)"` naming
+anything that cannot be resolved paints nothing, rather than failing the
+document. See
 [`src/Content/Svg/SvgDocument.php`](src/Content/Svg/SvgDocument.php) for
 the exact scope.
 
@@ -681,7 +698,10 @@ for a runnable version.
   deliberate rather than pending: **filters** are a pixel operation, and
   supporting them would mean rasterizing the drawing — the opposite of
   what placing vector artwork is for — and **animation** has no meaning
-  in a page that does not move.
+  in a page that does not move. Within what *is* supported, two known
+  gaps: a gradient's `stop-opacity` is ignored (it needs a soft mask),
+  and CSS selectors describing an element's surroundings are not
+  matched.
 - **Signing**: `addSignatureField()` only reserves an unsigned placeholder
   — this library has no code anywhere to hash a byte range, embed a
   certificate, or validate one, so nothing in it can actually sign a

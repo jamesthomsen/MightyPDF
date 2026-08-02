@@ -46,6 +46,10 @@ $content->drawSvg($gradientFile, 240, 280, 220, 140);
 $content->drawText(StandardFont::Helvetica, 12.0, 72, 250, 'Text inside the drawing:');
 $content->drawSvg(__DIR__ . '/../tests/fixtures/svg/label.svg', 72, 100, 280, 140);
 
+// Styling written as CSS rather than as attributes -- which is how
+// drawing tools export: classes on the shapes, rules in a <style> block.
+$content->drawSvg(__DIR__ . '/../tests/fixtures/svg/styled.svg', 380, 100, 180, 108);
+
 @mkdir(__DIR__ . '/output', recursive: true);
 $document->saveToFile(__DIR__ . '/output/05-svg.pdf');
 
