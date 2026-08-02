@@ -1,6 +1,6 @@
 {
     "name": "jthomsen/mightypdf",
-    "description": "A from-scratch PDF writer for PHP: raw PDF assembly plus a content layer for text, drawing, images, and AcroForm fields.",
+    "description": "A from-scratch PDF library for PHP: raw PDF assembly plus a content layer for text, drawing, images, SVG, and AcroForm fields -- and a reader that can open an existing PDF and edit it in place.",
     "type": "library",
     "license": "proprietary",
     "require": {

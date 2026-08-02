@@ -43,6 +43,10 @@ output is written to `examples/output/`.
 | [05-svg.php](examples/05-svg.php) | SVG vector graphics |
 | [06-form-fields.php](examples/06-form-fields.php) | Text fields and checkboxes |
 | [07-combined-document.php](examples/07-combined-document.php) | Everything together, across multiple pages |
+| [08-editing-existing-pdf.php](examples/08-editing-existing-pdf.php) | Opening a PDF with `PdfEditor` and editing an object (page rotation) |
+| [09-encrypting-a-document.php](examples/09-encrypting-a-document.php) | AES-256 encryption with `Document::encrypt()` and `Permissions` |
+| [10-filling-an-existing-form.php](examples/10-filling-an-existing-form.php) | Filling an existing PDF's form fields with `FormFiller` |
+| [11-stamping-an-existing-page.php](examples/11-stamping-an-existing-page.php) | Stamping a page with `PageOverlay`, plus adding a field to an existing form |
 
 ## Core concepts
 
@@ -250,6 +254,8 @@ $document->saveToFile('protected.pdf');
 ```
 
 AES-256 only — there's no reason to write a broken cipher into a new file.
+See [`examples/09-encrypting-a-document.php`](examples/09-encrypting-a-document.php)
+for a runnable version.
 
 Be clear about what the two passwords do, because it's easy to expect more
 than PDF encryption gives you:
@@ -300,6 +306,9 @@ Appending rather than rewriting is what makes this safe on files
 MightyPDF didn't write: anything you don't touch is preserved because its
 bytes were never regenerated, not because the library understood it. It
 also leaves an existing signature over the original byte range intact.
+
+See [`examples/08-editing-existing-pdf.php`](examples/08-editing-existing-pdf.php)
+for a runnable version.
 
 **Reading is lenient where real files are damaged** — stale or missing
 xref offsets, wrong `/Length` values, junk between dictionary entries —
@@ -395,6 +404,9 @@ XFA forms are refused unless you pass `allowXfa: true` — Acrobat may
 honour the XFA description instead of the AcroForm fields, so the fill
 would look correct in every tool except the one most people use.
 
+See [`examples/10-filling-an-existing-form.php`](examples/10-filling-an-existing-form.php)
+for a runnable version.
+
 ## Drawing on an existing page
 
 `PageOverlay` gives you the same `PageBuilder` used for a fresh page,
@@ -457,6 +469,9 @@ isn't already using. `/NeedsAppearances` is left exactly as found, since
 turning it on would ask readers to redraw every field in the document and
 not just the new one; fill a new field through `FormFiller` and its
 appearance is drawn directly.
+
+See [`examples/11-stamping-an-existing-page.php`](examples/11-stamping-an-existing-page.php)
+for a runnable version covering both the stamp and the added field.
 
 ## Known limitations
 
