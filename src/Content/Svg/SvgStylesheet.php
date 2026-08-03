@@ -15,25 +15,34 @@ namespace MightyPDF\Content\Svg;
  * `class="cls-1"` and no fill of its own -- so a renderer that reads
  * only presentation attributes draws the whole drawing black.
  *
- * **Scope: selectors that name one element.** Type (`rect`), class
- * (`.cls-1`), id (`#logo`), the universal selector, and any combination
- * of those on a single element (`rect.cls-1`), plus comma-separated
- * groups of them. Anything that describes an element's *surroundings* --
- * descendant and child combinators, sibling selectors -- is ignored
- * rather than approximated, since matching those needs a view of the
- * tree that this deliberately does not take. Pseudo-classes and
- * attribute selectors are ignored for the same reason. An ignored
- * selector contributes nothing; the rest of the rule set still applies.
+ * **Scope.** Type (`rect`), class (`.cls-1`), id (`#logo`) and the
+ * universal selector, in any combination on one element (`rect.cls-1`),
+ * joined by any of CSS's four combinators -- descendant (`g .label`),
+ * child (`g > rect`), adjacent sibling (`rect + rect`) and general
+ * sibling (`rect ~ text`) -- and in comma-separated groups. Matching a
+ * combinator needs to know where the element sits, which is what
+ * SvgElementPath carries.
+ *
+ * Pseudo-classes and attribute selectors are still ignored: they ask
+ * questions about state and about attributes this renderer does not
+ * model. An ignored selector contributes nothing and the rest of the
+ * rule set still applies -- a selector understood in part would be
+ * worse, since it would match the wrong elements confidently.
  */
 final class SvgStylesheet
 {
+    /** The combinator joining one compound selector to the next. */
+    private const string DESCENDANT = ' ';
+    private const string CHILD = '>';
+    private const string ADJACENT = '+';
+    private const string SIBLING = '~';
+
     /**
      * @param list<array{
      *     specificity: int,
      *     order: int,
-     *     tag: string|null,
-     *     id: string|null,
-     *     classes: list<string>,
+     *     compounds: list<array{tag: string|null, id: string|null, classes: list<string>}>,
+     *     combinators: list<string>,
      *     declarations: array<string, string>
      * }> $rules
      */
@@ -75,23 +84,18 @@ final class SvgStylesheet
      * against each other: a more specific rule wins, and between two of
      * equal specificity the one written later does.
      *
-     * @param array<string, string> $attributes the element's own attributes
      * @return array<string, string>
      */
-    public function declarationsFor(string $tag, array $attributes): array
+    public function declarationsFor(SvgElementPath $element): array
     {
         if ($this->rules === []) {
             return [];
         }
 
-        $id = $attributes['id'] ?? null;
-        $classes = preg_split('/\s+/', trim($attributes['class'] ?? '')) ?: [];
-        $classes = array_filter($classes, static fn (string $class): bool => $class !== '');
-
         $matched = [];
 
         foreach ($this->rules as $rule) {
-            if (!self::matches($rule, $tag, $id, $classes)) {
+            if (!self::matches($rule, $element)) {
                 continue;
             }
 
@@ -116,21 +120,72 @@ final class SvgStylesheet
     }
 
     /**
-     * @param array{specificity: int, order: int, tag: string|null, id: string|null, classes: list<string>, declarations: array<string, string>} $rule
-     * @param list<string> $classes
+     * Matched right to left, which is both how browsers do it and the
+     * only order that terminates quickly: the element in hand either is
+     * the selector's subject or nothing else matters.
+     *
+     * @param array{specificity: int, order: int, compounds: list<array{tag: string|null, id: string|null, classes: list<string>}>, combinators: list<string>, declarations: array<string, string>} $rule
      */
-    private static function matches(array $rule, string $tag, ?string $id, array $classes): bool
+    private static function matches(array $rule, SvgElementPath $element): bool
     {
-        if ($rule['tag'] !== null && $rule['tag'] !== $tag) {
+        $last = count($rule['compounds']) - 1;
+
+        if (!self::compoundMatches($rule['compounds'][$last], $element)) {
             return false;
         }
 
-        if ($rule['id'] !== null && $rule['id'] !== $id) {
+        return self::matchesLeftOf($rule, $last - 1, $element);
+    }
+
+    /**
+     * Whether the part of the selector before compound $index + 1 is
+     * satisfied by $element's surroundings.
+     *
+     * Descendant and general-sibling combinators are the ones that need
+     * to try more than one candidate: "some ancestor" and "some earlier
+     * sibling" are both allowed to fail on the nearest one and succeed
+     * further out, which is why this recurses rather than walking.
+     *
+     * @param array{compounds: list<array{tag: string|null, id: string|null, classes: list<string>}>, combinators: list<string>, ...} $rule
+     */
+    private static function matchesLeftOf(array $rule, int $index, SvgElementPath $element): bool
+    {
+        if ($index < 0) {
+            return true;
+        }
+
+        $compound = $rule['compounds'][$index];
+        $candidates = match ($rule['combinators'][$index]) {
+            self::CHILD => $element->parent === null ? [] : [$element->parent],
+            self::DESCENDANT => $element->ancestors(),
+            self::ADJACENT => array_slice($element->precedingSiblings, -1),
+            default => array_reverse($element->precedingSiblings),
+        };
+
+        foreach ($candidates as $candidate) {
+            if (self::compoundMatches($compound, $candidate) && self::matchesLeftOf($rule, $index - 1, $candidate)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array{tag: string|null, id: string|null, classes: list<string>} $compound
+     */
+    private static function compoundMatches(array $compound, SvgElementPath $element): bool
+    {
+        if ($compound['tag'] !== null && $compound['tag'] !== $element->tag) {
             return false;
         }
 
-        foreach ($rule['classes'] as $required) {
-            if (!in_array($required, $classes, true)) {
+        if ($compound['id'] !== null && $compound['id'] !== $element->id) {
+            return false;
+        }
+
+        foreach ($compound['classes'] as $required) {
+            if (!in_array($required, $element->classes, true)) {
                 return false;
             }
         }
@@ -230,17 +285,90 @@ final class SvgStylesheet
     }
 
     /**
-     * @return array{specificity: int, tag: string|null, id: string|null, classes: list<string>}|null
+     * Splits a selector into the compounds it is made of and the
+     * combinators between them, subject last.
+     *
+     * @return array{specificity: int, compounds: list<array{tag: string|null, id: string|null, classes: list<string>}>, combinators: list<string>}|null
      *         null for a selector this does not match on -- see the
      *         class doc comment for which those are
      */
     private static function parseSelector(string $selector): ?array
     {
-        if ($selector === '' || preg_match('/[\s>+~\[\]:()]/', $selector) === 1) {
+        $selector = trim($selector);
+
+        if ($selector === '' || preg_match('/[\[\]:()]/', $selector) === 1) {
             return null;
         }
 
-        if (preg_match_all('/([.#]?)([A-Za-z0-9_-]+)|(\*)/', $selector, $parts, PREG_SET_ORDER) === 0) {
+        // Whitespace around an explicit combinator belongs to it, not to
+        // a descendant combinator of its own -- "g > rect" is two
+        // compounds, not four.
+        $pieces = preg_split('/\s*([>+~])\s*|\s+/', $selector, flags: PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+
+        if ($pieces === false || $pieces === []) {
+            return null;
+        }
+
+        $compounds = [];
+        $combinators = [];
+        $specificity = 0;
+
+        foreach ($pieces as $piece) {
+            if (in_array($piece, [self::CHILD, self::ADJACENT, self::SIBLING], true)) {
+                // Two combinators in a row, or one at either end, is
+                // syntax rather than structure.
+                if (count($combinators) >= count($compounds)) {
+                    return null;
+                }
+
+                $combinators[] = $piece;
+
+                continue;
+            }
+
+            $compound = self::parseCompound($piece);
+
+            if ($compound === null) {
+                return null;
+            }
+
+            // A compound following another with nothing between them was
+            // separated by whitespace, which is the descendant
+            // combinator spelled with nothing at all.
+            if (count($compounds) > count($combinators)) {
+                $combinators[] = self::DESCENDANT;
+            }
+
+            $compounds[] = $compound;
+            $specificity += $compound['specificity'];
+        }
+
+        if ($compounds === [] || count($combinators) !== count($compounds) - 1) {
+            return null;
+        }
+
+        return [
+            'specificity' => $specificity,
+            'compounds' => array_map(
+                static fn (array $compound): array => [
+                    'tag' => $compound['tag'],
+                    'id' => $compound['id'],
+                    'classes' => $compound['classes'],
+                ],
+                $compounds,
+            ),
+            'combinators' => $combinators,
+        ];
+    }
+
+    /**
+     * One element's worth of selector: "rect", ".cls-1", "rect#logo.a".
+     *
+     * @return array{specificity: int, tag: string|null, id: string|null, classes: list<string>}|null
+     */
+    private static function parseCompound(string $compound): ?array
+    {
+        if (preg_match_all('/([.#]?)([A-Za-z0-9_-]+)|(\*)/', $compound, $parts, PREG_SET_ORDER) === 0) {
             return null;
         }
 
@@ -266,7 +394,7 @@ final class SvgStylesheet
         // Anything left over is syntax this did not understand, and a
         // selector understood in part is a selector that matches the
         // wrong elements.
-        if ($consumed !== strlen($selector)) {
+        if ($consumed !== strlen($compound)) {
             return null;
         }
 

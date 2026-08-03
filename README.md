@@ -313,10 +313,15 @@ order and document order as the tiebreak. The cascade is honoured:
 presentation attributes lose to style-block rules, which lose to the
 inline `style` attribute.
 
-Selectors that describe an element's *surroundings* — descendant, child
-and sibling combinators — are ignored rather than approximated, as are
-pseudo-classes and attribute selectors; the rest of the sheet still
-applies. At-rules (`@media`, `@supports`, `@import`) are skipped whole:
+All four combinators are matched too — descendant (`g .label`), child
+(`g > rect`), adjacent sibling (`rect + text`) and general sibling
+(`rect ~ text`) — so a sheet can style by where an element sits and not
+only by what it is. Pseudo-classes and attribute selectors are still
+ignored rather than approximated: they ask about state and about
+attributes this renderer does not model, and a selector understood in
+part matches the wrong elements confidently. An ignored selector
+contributes nothing and the rest of the sheet still applies. At-rules
+(`@media`, `@supports`, `@import`) are skipped whole:
 the rules inside one look exactly like ordinary rules, and a drawing's
 print styling is usually the opposite of its screen styling.
 
@@ -756,9 +761,8 @@ for a runnable version.
   supporting them would mean rasterizing the drawing — the opposite of
   what placing vector artwork is for — and **animation** has no meaning
   in a page that does not move. Within what *is* supported, one known
-  gap: CSS selectors describing an element's surroundings (descendant,
-  child and sibling combinators, pseudo-classes, attribute selectors)
-  are not matched.
+  gap: CSS pseudo-classes and attribute selectors are not matched
+  (combinators are).
 - **Signing**: `addSignatureField()` only reserves an unsigned placeholder
   — this library has no code anywhere to hash a byte range, embed a
   certificate, or validate one, so nothing in it can actually sign a

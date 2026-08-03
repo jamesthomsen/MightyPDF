@@ -81,21 +81,26 @@ final class SvgRenderer
      */
     public function render(\SimpleXMLElement $root, array $baseMatrix): void
     {
-        $this->renderElement($root, new SvgStyle(), $baseMatrix);
+        $this->renderElement($root, new SvgStyle(), $baseMatrix, null);
     }
 
     /**
      * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix
      */
-    private function renderElement(\SimpleXMLElement $element, SvgStyle $inheritedStyle, array $matrix): void
-    {
+    private function renderElement(
+        \SimpleXMLElement $element,
+        SvgStyle $inheritedStyle,
+        array $matrix,
+        ?SvgElementPath $path,
+    ): void {
         $tag = $element->getName();
 
         if (in_array($tag, self::SKIPPED_TAGS, true)) {
             return;
         }
 
-        $style = $inheritedStyle->mergeAttributes($this->cascade($tag, self::attributesOfElement($element)));
+        $path ??= SvgElementPath::of($tag, self::attributesOfElement($element));
+        $style = $inheritedStyle->mergeAttributes($this->cascade($path, self::attributesOfElement($element)));
         $matrices = SvgTransform::parse(isset($element['transform']) ? (string) $element['transform'] : null);
 
         if ($matrices !== []) {
@@ -112,7 +117,7 @@ final class SvgRenderer
         }
 
         match ($tag) {
-            'g', 'svg' => $this->renderChildren($element, $style, $matrix),
+            'g', 'svg' => $this->renderChildren($element, $style, $matrix, $path),
             'path' => $this->renderPath($element, $style, $matrix),
             'rect' => $this->renderRect($element, $style, $matrix),
             'circle' => $this->renderCircle($element, $style, $matrix),
@@ -121,7 +126,7 @@ final class SvgRenderer
             'polyline' => $this->renderPoly($element, $style, $matrix, closed: false),
             'polygon' => $this->renderPoly($element, $style, $matrix, closed: true),
             'image' => $this->renderImage($element, $style),
-            'text' => $this->renderText($element, $style),
+            'text' => $this->renderText($element, $style, $path),
             default => null, // unrecognized element: skip, don't fail the whole document
         };
 
@@ -130,11 +135,26 @@ final class SvgRenderer
         }
     }
 
-    /** @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix */
-    private function renderChildren(\SimpleXMLElement $element, SvgStyle $style, array $matrix): void
+    /**
+     * Every child in turn, each told where it sits: a CSS combinator
+     * asks what contains an element and what came before it, and this
+     * walk is the only place both are known.
+     *
+     * The paths are built even where no stylesheet uses them, which is
+     * cheap -- a tag, an id and a class list per element -- and keeps
+     * the walk from having two shapes depending on the document.
+     *
+     * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix
+     */
+    private function renderChildren(\SimpleXMLElement $element, SvgStyle $style, array $matrix, ?SvgElementPath $path = null): void
     {
+        $siblings = [];
+
         foreach ($element->children() as $child) {
-            $this->renderElement($child, $style, $matrix);
+            $childPath = SvgElementPath::of($child->getName(), self::attributesOfElement($child), $path, $siblings);
+            $siblings[] = $childPath;
+
+            $this->renderElement($child, $style, $matrix, $childPath);
         }
     }
 
@@ -350,14 +370,14 @@ final class SvgRenderer
      * measuring a whole chunk before drawing any of it, which is why
      * the runs are collected first and emitted second.
      */
-    private function renderText(\SimpleXMLElement $element, SvgStyle $style): void
+    private function renderText(\SimpleXMLElement $element, SvgStyle $style, SvgElementPath $path): void
     {
         if ($this->textFontResourceName === null) {
             return;
         }
 
         $runs = [];
-        $this->collectTextRuns(dom_import_simplexml($element), $style, $runs);
+        $this->collectTextRuns(dom_import_simplexml($element), $style, $runs, $path);
         $runs = self::trimEnds($runs);
 
         $pen = [
@@ -376,8 +396,10 @@ final class SvgRenderer
      *
      * @param list<array{text: string, style: SvgStyle, x: float|null, y: float|null, dx: float, dy: float}> $runs
      */
-    private function collectTextRuns(\DOMElement $element, SvgStyle $style, array &$runs): void
+    private function collectTextRuns(\DOMElement $element, SvgStyle $style, array &$runs, SvgElementPath $path): void
     {
+        $siblings = [];
+
         foreach ($element->childNodes as $node) {
             if ($node instanceof \DOMText) {
                 $text = self::collapseWhitespace($node->textContent);
@@ -393,10 +415,13 @@ final class SvgRenderer
                 continue;
             }
 
-            $childStyle = $style->mergeAttributes($this->cascade($node->localName, self::attributesOf($node)));
+            $childPath = SvgElementPath::of($node->localName, self::attributesOf($node), $path, $siblings);
+            $siblings[] = $childPath;
+
+            $childStyle = $style->mergeAttributes($this->cascade($childPath, self::attributesOf($node)));
             $before = count($runs);
 
-            $this->collectTextRuns($node, $childStyle, $runs);
+            $this->collectTextRuns($node, $childStyle, $runs, $childPath);
 
             // The tspan's own positioning belongs to the first run it
             // produced -- a tspan that contains only another tspan
@@ -551,13 +576,13 @@ final class SvgRenderer
      * @param array<string, string> $attributes
      * @return array<string, string>
      */
-    private function cascade(string $tag, array $attributes): array
+    private function cascade(SvgElementPath $path, array $attributes): array
     {
         if ($this->stylesheet->isEmpty()) {
             return $attributes;
         }
 
-        return array_merge($attributes, $this->stylesheet->declarationsFor($tag, $attributes));
+        return array_merge($attributes, $this->stylesheet->declarationsFor($path));
     }
 
     /** @return array<string, string> */
