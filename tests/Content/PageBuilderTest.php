@@ -1095,6 +1095,41 @@ final class PageBuilderTest extends TestCase
         self::assertStringNotContainsString('/Pattern <<', $resources[1], 'the pattern lists itself');
     }
 
+    /**
+     * A PDF colour carries no transparency, so a gradient with a
+     * transparent stop is drawn twice: in colour as a shading pattern,
+     * and in greyscale as a luminosity mask on the graphics state.
+     */
+    public function testAFadingSvgGradientGetsASoftMaskOnThePage(): void
+    {
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs>'
+            . '<linearGradient id="fade"><stop offset="0" stop-color="#000000" stop-opacity="1"/>'
+            . '<stop offset="1" stop-color="#000000" stop-opacity="0"/></linearGradient></defs>'
+            . '<rect x="0" y="0" width="10" height="10" fill="url(#fade)"/></svg>';
+
+        $path = tempnam(sys_get_temp_dir(), 'mightypdf-svg') . '.svg';
+        file_put_contents($path, $svg);
+
+        try {
+            $document = new Document();
+            $page = $document->newPage();
+            (new PageBuilder($document, $page))->drawSvg($path, 0, 0, 200, 200);
+
+            $output = $document->save();
+
+            self::assertStringContainsString('/SMask << /Type /Mask /S /Luminosity', $output);
+            self::assertStringContainsString('/CS /DeviceGray', $output);
+
+            // Set inside the shape's own graphics state, so the mask does
+            // not survive into whatever is drawn next.
+            $bytes = $this->decompressedContentStreamBytes($page);
+            self::assertStringContainsString("q\n/GS1 gs", $bytes);
+            self::assertStringContainsString("f\nQ\n", $bytes);
+        } finally {
+            unlink($path);
+        }
+    }
+
     public function testARasterImageInsideAnSvgIsEmbeddedAsAnXObject(): void
     {
         $png = base64_encode((string) file_get_contents(self::FIXTURES . '/sample.png'));

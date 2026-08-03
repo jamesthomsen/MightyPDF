@@ -94,11 +94,21 @@ final class SvgShadingPattern
         return $gradient->userSpace || ($boundingBox[2] > 0.0 && $boundingBox[3] > 0.0);
     }
 
-    private static function shading(SvgGradient $gradient): Dictionary
+    /**
+     * The shading a gradient paints with.
+     *
+     * $luminosity asks for the greyscale twin instead: the same geometry
+     * carrying each stop's *opacity* as a grey level, which is what a
+     * soft mask reads transparency from. Built here rather than in
+     * SvgSoftMask so that the geometry -- axial or radial, the coords,
+     * the padding of stops to the whole domain -- is written once and
+     * cannot drift between the colour and its mask.
+     */
+    public static function shading(SvgGradient $gradient, bool $luminosity = false): Dictionary
     {
         $shading = new Dictionary();
-        $shading->set('ColorSpace', new PdfName('DeviceRGB'));
-        $shading->set('Function', self::colorFunction($gradient->paddedStops()));
+        $shading->set('ColorSpace', new PdfName($luminosity ? 'DeviceGray' : 'DeviceRGB'));
+        $shading->set('Function', self::colorFunction($gradient->paddedStops(), $luminosity));
 
         // Extend paints the space beyond each end of the gradient with
         // the colour at that end, which is what SVG's default "pad"
@@ -137,10 +147,12 @@ final class SvgShadingPattern
      *
      * @param list<SvgGradientStop> $stops
      */
-    private static function colorFunction(array $stops): Dictionary
+    private static function colorFunction(array $stops, bool $luminosity): Dictionary
     {
+        $components = static fn (SvgGradientStop $stop): array => $luminosity ? $stop->luminosity() : $stop->color;
+
         if (count($stops) === 2) {
-            return self::interpolation($stops[0]->color, $stops[1]->color);
+            return self::interpolation($components($stops[0]), $components($stops[1]));
         }
 
         $functions = [];
@@ -148,7 +160,7 @@ final class SvgShadingPattern
         $encode = [];
 
         for ($i = 0, $last = count($stops) - 1; $i < $last; ++$i) {
-            $functions[] = self::interpolation($stops[$i]->color, $stops[$i + 1]->color);
+            $functions[] = self::interpolation($components($stops[$i]), $components($stops[$i + 1]));
 
             // Each sub-function is written over 0 to 1 and used over the
             // slice between two offsets, which is what /Encode says.
@@ -173,8 +185,8 @@ final class SvgShadingPattern
     }
 
     /**
-     * @param array{0: float, 1: float, 2: float} $from
-     * @param array{0: float, 1: float, 2: float} $to
+     * @param list<float> $from one component for a grey ramp, three for a colour
+     * @param list<float> $to
      */
     private static function interpolation(array $from, array $to): Dictionary
     {

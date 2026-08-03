@@ -198,6 +198,52 @@ final class SvgGradientParserTest extends TestCase
         self::assertArrayHasKey('loose', $document->gradients());
     }
 
+    public function testReadsStopOpacityFromAnAttributeOrAStyle(): void
+    {
+        $gradient = self::gradient(
+            '<linearGradient id="g">'
+            . '<stop offset="0" stop-color="#000000" stop-opacity="0.25"/>'
+            . '<stop offset="0.5" stop-color="#000000" style="stop-opacity:50%"/>'
+            . '<stop offset="1" stop-color="#000000"/>'
+            . '</linearGradient>',
+        );
+
+        self::assertEqualsWithDelta(0.25, $gradient->stops[0]->opacity, 1e-9);
+        self::assertEqualsWithDelta(0.5, $gradient->stops[1]->opacity, 1e-9);
+        self::assertSame(1.0, $gradient->stops[2]->opacity);
+        self::assertTrue($gradient->hasTransparency());
+    }
+
+    /**
+     * "Black fading to nothing" is one colour with two opacities -- and
+     * painting it as a flat black would draw the whole shape at full
+     * strength.
+     */
+    public function testAGradientThatOnlyFadesIsNotAFlatFill(): void
+    {
+        $gradient = self::gradient(
+            '<linearGradient id="g">'
+            . '<stop offset="0" stop-color="#000000" stop-opacity="1"/>'
+            . '<stop offset="1" stop-color="#000000" stop-opacity="0"/>'
+            . '</linearGradient>',
+        );
+
+        self::assertNull($gradient->solidColor());
+    }
+
+    public function testAnOutOfRangeStopOpacityIsClamped(): void
+    {
+        $gradient = self::gradient(
+            '<linearGradient id="g">'
+            . '<stop offset="0" stop-color="#000000" stop-opacity="-2"/>'
+            . '<stop offset="1" stop-color="#000000" stop-opacity="7"/>'
+            . '</linearGradient>',
+        );
+
+        self::assertSame(0.0, $gradient->stops[0]->opacity);
+        self::assertSame(1.0, $gradient->stops[1]->opacity);
+    }
+
     private static function gradient(string $definition): SvgGradient
     {
         return self::document($definition)->gradients()['g'];

@@ -51,6 +51,10 @@ final class SvgRenderer
      *        turns a pattern's drawn content into a tiling pattern
      *        resource; called with the pattern, the operators filling one
      *        tile, the shape's transform and its bounding box
+     * @param (\Closure(SvgGradient, array, float): string)|null $softMaskResourceName
+     *        turns a gradient with transparent stops into the ExtGState
+     *        resource carrying its soft mask; null itself leaves
+     *        stop-opacity unhonoured, as before it was supported
      * @param list<string> $patternsBeingDrawn the ids whose content this
      *        renderer is already inside, so that a pattern painted with
      *        itself stops rather than recurring forever
@@ -65,6 +69,7 @@ final class SvgRenderer
         private readonly ?\Closure $textFontResourceName = null,
         private readonly array $patterns = [],
         private readonly ?\Closure $tilingPatternResourceName = null,
+        private readonly ?\Closure $softMaskResourceName = null,
         private readonly array $patternsBeingDrawn = [],
     ) {
     }
@@ -672,11 +677,20 @@ final class SvgRenderer
      */
     private function applyStyle(SvgStyle $style, array $matrix, \Closure $bounds): array
     {
-        $state = $style->fillOpacity < 1.0 || $style->strokeOpacity < 1.0;
+        $fading = $this->fadingGradient($style);
+        $translucent = $style->fillOpacity < 1.0 || $style->strokeOpacity < 1.0;
+        $state = $translucent || $fading !== null;
 
         if ($state) {
-            $this->stream->pushGraphicsState()
-                ->setExtGState(($this->extGStateResourceName)($style->fillOpacity, $style->strokeOpacity));
+            $this->stream->pushGraphicsState();
+        }
+
+        if ($translucent) {
+            $this->stream->setExtGState(($this->extGStateResourceName)($style->fillOpacity, $style->strokeOpacity));
+        }
+
+        if ($fading !== null) {
+            $this->stream->setExtGState(($this->softMaskResourceName)($fading, $bounds(), $style->strokeWidth));
         }
 
         return [
@@ -684,6 +698,35 @@ final class SvgRenderer
             'stroke' => $this->applyStroke($style, $matrix, $bounds),
             'state' => $state,
         ];
+    }
+
+    /**
+     * The gradient this shape is painted with that fades, if there is
+     * one -- a gradient with a transparent stop needs a soft mask, and
+     * the mask belongs to the whole shape rather than to one of its
+     * paints.
+     *
+     * A shape whose fill and stroke *both* fade is painted under the
+     * fill's mask: the graphics state has room for one soft mask, and
+     * drawing the two paints separately so each could have its own is a
+     * different rendering model than the one here. Rare enough to be
+     * worth naming rather than working around.
+     */
+    private function fadingGradient(SvgStyle $style): ?SvgGradient
+    {
+        if ($this->softMaskResourceName === null) {
+            return null;
+        }
+
+        foreach ([$style->fillReference, $style->strokeReference] as $reference) {
+            $gradient = $reference === null ? null : ($this->gradients[$reference] ?? null);
+
+            if ($gradient !== null && $gradient->hasTransparency() && $gradient->isPaintable()) {
+                return $gradient;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -821,6 +864,7 @@ final class SvgRenderer
             $this->textFontResourceName,
             $this->patterns,
             $this->tilingPatternResourceName,
+            $this->softMaskResourceName,
             [...$this->patternsBeingDrawn, $reference],
         );
 

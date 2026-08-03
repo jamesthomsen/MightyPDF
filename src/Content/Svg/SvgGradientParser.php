@@ -199,6 +199,7 @@ final class SvgGradientParser
             $stops[] = new SvgGradientStop(
                 $offset,
                 SvgColor::parse($attributes['stop-color'] ?? '#000000') ?? [0.0, 0.0, 0.0],
+                self::opacity($attributes['stop-opacity'] ?? null),
             );
         }
 
@@ -252,6 +253,26 @@ final class SvgGradientParser
         }
 
         return $elements[substr($href, 1)] ?? null;
+    }
+
+    /**
+     * A stop's opacity: a number from 0 to 1, or a percentage of one.
+     * Out-of-range values are clamped rather than refused, since the
+     * only thing they can mean is "as opaque as possible" either way.
+     */
+    private static function opacity(?string $value): float
+    {
+        $value = trim($value ?? '');
+
+        if ($value === '') {
+            return 1.0;
+        }
+
+        $opacity = str_ends_with($value, '%')
+            ? (float) substr($value, 0, -1) / 100.0
+            : (float) $value;
+
+        return max(0.0, min(1.0, $opacity));
     }
 
     /**

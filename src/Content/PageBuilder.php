@@ -32,6 +32,7 @@ use MightyPDF\Content\Svg\SvgGradient;
 use MightyPDF\Content\Svg\SvgPattern;
 use MightyPDF\Content\Svg\SvgRasterImage;
 use MightyPDF\Content\Svg\SvgShadingPattern;
+use MightyPDF\Content\Svg\SvgSoftMask;
 use MightyPDF\Content\Svg\SvgStyle;
 use MightyPDF\Content\Svg\SvgTextFont;
 use MightyPDF\Content\Svg\SvgTilingPattern;
@@ -488,6 +489,7 @@ final class PageBuilder
             $this->svgImageResource(...),
             fn (SvgStyle $style): ?SvgTextFont => $this->svgTextFont($style, $fontResolver),
             $this->tilingPatternResourceName(...),
+            $this->softMaskResourceName(...),
         );
 
         $operators->popGraphicsState();
@@ -727,6 +729,33 @@ final class PageBuilder
         return $resourceName;
     }
 
+    /**
+     * The ExtGState carrying a fading gradient's soft mask, named in
+     * this page's /Resources /ExtGState.
+     *
+     * Not cached the way a plain alpha state is: a mask is drawn in the
+     * coordinates of the shape it masks, so two shapes with the same
+     * gradient need two of them -- the same reason a shading pattern is
+     * built per shape.
+     *
+     * @param array{0: float, 1: float, 2: float, 3: float} $boundingBox
+     */
+    private function softMaskResourceName(SvgGradient $gradient, array $boundingBox, float $strokeWidth): string
+    {
+        [$group, $state] = SvgSoftMask::build(
+            $this->document->allocate(),
+            $this->document->allocate(),
+            $gradient,
+            $boundingBox,
+            $strokeWidth,
+        );
+
+        $this->document->register($group);
+        $this->document->register($state);
+
+        return $this->nameExtGState(new PdfReference($state->objectId()));
+    }
+
     private function extGStateResourceName(float $fillAlpha, float $strokeAlpha): string
     {
         $key = "$fillAlpha:$strokeAlpha";
@@ -740,15 +769,19 @@ final class PageBuilder
         $gsDict->set('CA', new PdfReal($strokeAlpha));
         $this->document->register($gsDict);
 
+        return $this->extGStateResourceNames[$key] = $this->nameExtGState(new PdfReference($gsDict->objectId()));
+    }
+
+    private function nameExtGState(PdfReference $state): string
+    {
         $resourceName = 'GS' . $this->nextExtGStateResourceNumber++;
-        $this->extGStateResourceNames[$key] = $resourceName;
 
         $extGStates = $this->page->resources()->get('ExtGState');
         if (!$extGStates instanceof Dictionary) {
             $extGStates = new Dictionary();
             $this->page->resources()->set('ExtGState', $extGStates);
         }
-        $extGStates->set($resourceName, new PdfReference($gsDict->objectId()));
+        $extGStates->set($resourceName, $state);
 
         return $resourceName;
     }

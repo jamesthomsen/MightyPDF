@@ -46,6 +46,21 @@ final class SvgGradient
     }
 
     /**
+     * Whether any stop is less than opaque, and the gradient therefore
+     * needs a soft mask as well as a shading.
+     */
+    public function hasTransparency(): bool
+    {
+        foreach ($this->stops as $stop) {
+            if ($stop->opacity < 1.0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Whether this gradient can be drawn at all.
      *
      * A gradient with no stops paints nothing -- the SVG spec says as
@@ -64,13 +79,18 @@ final class SvgGradient
      * depending on the reader. Two stops of the same colour are the same
      * situation written differently.
      *
+     * A gradient with any transparency in it is never a solid colour,
+     * even where every stop is the same colour: "black fading to
+     * nothing" is written exactly that way, and painting it as black
+     * would draw the whole shape at full strength.
+     *
      * @return array{0: float, 1: float, 2: float}|null
      */
     public function solidColor(): ?array
     {
         $first = $this->stops[0] ?? null;
 
-        if ($first === null) {
+        if ($first === null || $this->hasTransparency()) {
             return null;
         }
 
@@ -107,11 +127,11 @@ final class SvgGradient
         $last = $stops[count($stops) - 1];
 
         if ($first->offset > 0.0) {
-            array_unshift($stops, new SvgGradientStop(0.0, $first->color));
+            array_unshift($stops, new SvgGradientStop(0.0, $first->color, $first->opacity));
         }
 
         if ($last->offset < 1.0) {
-            $stops[] = new SvgGradientStop(1.0, $last->color);
+            $stops[] = new SvgGradientStop(1.0, $last->color, $last->opacity);
         }
 
         return $stops;

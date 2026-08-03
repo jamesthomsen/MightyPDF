@@ -5,15 +5,14 @@ declare(strict_types=1);
 namespace MightyPDF\Content\Svg;
 
 /**
- * One colour stop of a gradient: a position from 0 to 1 along it, and
- * the colour there.
+ * One colour stop of a gradient: a position from 0 to 1 along it, the
+ * colour there, and how opaque it is.
  *
- * stop-opacity is deliberately absent. A partly transparent stop is not
- * a property of the colour in PDF: it needs a second shading, of
- * greyscale luminosity, attached as a soft mask to the graphics state --
- * a whole parallel object graph for an effect that, in the icons and
- * logos this SVG support is aimed at, is rare. The colour is honoured
- * and the transparency is not; see the README.
+ * The opacity is carried separately because PDF carries it separately.
+ * A colour has no transparency in a shading; a gradient that fades out
+ * is drawn as a second shading in greyscale, attached to the graphics
+ * state as a luminosity soft mask, where white means opaque and black
+ * means invisible. See SvgSoftMask.
  */
 final class SvgGradientStop
 {
@@ -21,6 +20,13 @@ final class SvgGradientStop
     public function __construct(
         public readonly float $offset,
         public readonly array $color,
+        public readonly float $opacity = 1.0,
     ) {
+    }
+
+    /** The stop's opacity as the grey a luminosity mask reads it from. */
+    public function luminosity(): array
+    {
+        return [$this->opacity];
     }
 }

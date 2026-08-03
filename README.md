@@ -248,15 +248,17 @@ images, and styling from `<style>` blocks as well as attributes.
 stops. They become PDF shading patterns, which stay vector: a gradient
 scales with the drawing rather than being rasterized into it.
 
-Two things about them are worth knowing:
+`stop-opacity` is honoured, including the common "colour fading to
+nothing" written as one colour with two opacities. A PDF colour carries
+no transparency, so such a gradient is drawn twice — once in colour as
+the shading, once in greyscale as a luminosity soft mask on the graphics
+state, where white means opaque and black means invisible. A shape whose
+fill *and* stroke both fade is painted under the fill's mask: the
+graphics state has room for one.
 
-- **`stop-opacity` is ignored** — the colour is honoured, the
-  transparency is not. A partly transparent stop is not a property of
-  the colour in PDF; it needs a second, greyscale shading attached to
-  the graphics state as a soft mask.
-- **`spreadMethod="reflect"` and `"repeat"` are drawn as `pad`**, the
-  default: the end colours are held flat beyond the ends of the
-  gradient rather than bouncing or tiling.
+**`spreadMethod="reflect"` and `"repeat"` are drawn as `pad`**, the
+default: the end colours are held flat beyond the ends of the gradient
+rather than bouncing or tiling.
 
 **Patterns** — `<pattern>` becomes a PDF tiling pattern: the tile's
 contents are drawn once and repeated across the shape, still as vector
@@ -753,10 +755,10 @@ for a runnable version.
   deliberate rather than pending: **filters** are a pixel operation, and
   supporting them would mean rasterizing the drawing — the opposite of
   what placing vector artwork is for — and **animation** has no meaning
-  in a page that does not move. Within what *is* supported, two known
-  gaps: a gradient's `stop-opacity` is ignored (it needs a soft mask),
-  and CSS selectors describing an element's surroundings are not
-  matched.
+  in a page that does not move. Within what *is* supported, one known
+  gap: CSS selectors describing an element's surroundings (descendant,
+  child and sibling combinators, pseudo-classes, attribute selectors)
+  are not matched.
 - **Signing**: `addSignatureField()` only reserves an unsigned placeholder
   — this library has no code anywhere to hash a byte range, embed a
   certificate, or validate one, so nothing in it can actually sign a

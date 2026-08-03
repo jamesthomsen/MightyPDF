@@ -282,6 +282,21 @@ final class ContentStream implements PathSink
         return $this;
     }
 
+    /**
+     * Paints a named /Shading resource across the current clip.
+     *
+     * Unlike a pattern fill, this paints no shape: it floods everything
+     * the clip allows, which is what makes it the way to fill a form
+     * XObject's whole bounding box with a gradient -- a soft mask's
+     * group, here.
+     */
+    public function shade(string $resourceName): static
+    {
+        $this->buffer .= sprintf("/%s sh\n", $resourceName);
+
+        return $this;
+    }
+
     /** Activates a named ExtGState resource (e.g. for /ca, /CA alpha). */
     public function setExtGState(string $resourceName): static
     {

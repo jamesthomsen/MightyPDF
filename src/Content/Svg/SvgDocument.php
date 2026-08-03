@@ -106,6 +106,7 @@ final class SvgDocument
         ?\Closure $imageResourceName = null,
         ?\Closure $textFontResourceName = null,
         ?\Closure $tilingPatternResourceName = null,
+        ?\Closure $softMaskResourceName = null,
     ): void {
         $renderer = new SvgRenderer(
             $stream,
@@ -117,6 +118,7 @@ final class SvgDocument
             $textFontResourceName,
             $this->patterns,
             $tilingPatternResourceName,
+            $softMaskResourceName,
         );
 
         $renderer->render($this->root, $baseMatrix);
