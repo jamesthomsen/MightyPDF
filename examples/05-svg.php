@@ -3,9 +3,10 @@
 /**
  * Placing an SVG vector image on a page. Supports paths (lines, curves,
  * arcs), basic shapes (rect/circle/ellipse/line/polyline/polygon),
- * fill/stroke in flat colours or linear/radial gradients, opacity, and
- * simple transforms -- see src/Content/Svg/SvgDocument.php for the exact
- * scope (no patterns, filters, embedded images, text, or animation).
+ * fill/stroke in flat colours, gradients or patterns, opacity, text,
+ * embedded images and simple transforms -- see
+ * src/Content/Svg/SvgDocument.php for the exact scope (no filters,
+ * <textPath>, or animation).
  *
  * Run: php examples/05-svg.php
  */
@@ -38,7 +39,13 @@ $content->drawSvg($svgFile, 240, 480, 240, 240);
 // through whatever transforms they sit under.
 $content->drawText(StandardFont::Helvetica, 12.0, 72, 430, 'Linear and radial gradients, at two sizes:');
 $content->drawSvg($gradientFile, 72, 280, 140, 140);
-$content->drawSvg($gradientFile, 240, 280, 220, 140);
+$content->drawSvg($gradientFile, 240, 280, 150, 140);
+
+// A <pattern> becomes a PDF tiling pattern: the tile is drawn once and
+// repeated across the shape, still as vector artwork rather than a
+// rasterised swatch.
+$content->drawText(StandardFont::Helvetica, 12.0, 420, 430, 'A pattern fill:');
+$content->drawSvg(__DIR__ . '/../tests/fixtures/svg/pattern.svg', 420, 280, 140, 140);
 
 // Text in a drawing is drawn as text -- searchable and selectable, not
 // outlines. The font families an SVG names map onto the standard 14

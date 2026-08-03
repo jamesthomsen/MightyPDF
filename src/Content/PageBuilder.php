@@ -29,10 +29,12 @@ use MightyPDF\Content\Image\JpegImage;
 use MightyPDF\Content\Image\PngImage;
 use MightyPDF\Content\Svg\SvgDocument;
 use MightyPDF\Content\Svg\SvgGradient;
+use MightyPDF\Content\Svg\SvgPattern;
 use MightyPDF\Content\Svg\SvgRasterImage;
 use MightyPDF\Content\Svg\SvgShadingPattern;
 use MightyPDF\Content\Svg\SvgStyle;
 use MightyPDF\Content\Svg\SvgTextFont;
+use MightyPDF\Content\Svg\SvgTilingPattern;
 use MightyPDF\Content\Text\TextWrapper;
 
 /**
@@ -485,6 +487,7 @@ final class PageBuilder
             $placement,
             $this->svgImageResource(...),
             fn (SvgStyle $style): ?SvgTextFont => $this->svgTextFont($style, $fontResolver),
+            $this->tilingPatternResourceName(...),
         );
 
         $operators->popGraphicsState();
@@ -642,6 +645,76 @@ final class PageBuilder
         $pattern = SvgShadingPattern::build($this->document->allocate(), $gradient, $matrix, $boundingBox);
         $this->document->register($pattern);
 
+        return $this->namePattern($pattern->objectId());
+    }
+
+    /**
+     * The same for a <pattern>, whose content the SVG layer has already
+     * drawn -- this owns only the PDF object it becomes.
+     *
+     * The pattern's /Resources is a copy of the page's own, taken now.
+     * The tile's content was drawn through the same callbacks as the
+     * page's, so every font, image and gradient it names is already
+     * registered there under the name it used, and copying is what makes
+     * those names resolve inside a stream that is not the page's. It
+     * lists more than the tile uses, which costs a few entries and no
+     * objects; the alternative is a second set of resource bookkeeping
+     * for every nested scope. The copy is taken *before* this pattern is
+     * named on the page, so a pattern can never list itself.
+     *
+     * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix
+     * @param array{0: float, 1: float, 2: float, 3: float} $boundingBox
+     */
+    private function tilingPatternResourceName(SvgPattern $pattern, string $content, array $matrix, array $boundingBox): string
+    {
+        $resources = $this->snapshotResources();
+
+        $tiling = SvgTilingPattern::build(
+            $this->document->allocate(),
+            $pattern,
+            $content,
+            $resources,
+            $matrix,
+            $boundingBox,
+        );
+        $this->document->register($tiling);
+
+        return $this->namePattern($tiling->objectId());
+    }
+
+    /**
+     * The page's resources as they stand, two levels deep.
+     *
+     * Deep enough matters: /Resources holds a dictionary per category,
+     * and copying only the outer one would leave the copy sharing the
+     * page's /Pattern dictionary -- which this pattern is about to be
+     * added to. The pattern would then contain itself, and a reader
+     * following it reports a circular reference (Ghostscript does;
+     * poppler renders it and says nothing).
+     */
+    private function snapshotResources(): Dictionary
+    {
+        $snapshot = new Dictionary();
+
+        foreach ($this->page->resources()->entries() as $key => $value) {
+            if ($value instanceof Dictionary) {
+                $category = new Dictionary();
+
+                foreach ($value->entries() as $name => $resource) {
+                    $category->set((string) $name, $resource);
+                }
+
+                $value = $category;
+            }
+
+            $snapshot->set((string) $key, $value);
+        }
+
+        return $snapshot;
+    }
+
+    private function namePattern(int $objectId): string
+    {
         $resourceName = 'P' . $this->nextPatternResourceNumber++;
 
         $patterns = $this->page->resources()->get('Pattern');
@@ -649,7 +722,7 @@ final class PageBuilder
             $patterns = new Dictionary();
             $this->page->resources()->set('Pattern', $patterns);
         }
-        $patterns->set($resourceName, new PdfReference($pattern->objectId()));
+        $patterns->set($resourceName, new PdfReference($objectId));
 
         return $resourceName;
     }

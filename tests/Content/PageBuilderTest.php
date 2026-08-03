@@ -1054,6 +1054,47 @@ final class PageBuilderTest extends TestCase
         self::assertStringContainsString('/Pattern cs', $this->decompressedContentStreamBytes($page));
     }
 
+    public function testAnSvgPatternBecomesATilingPatternResourceOnThePage(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+
+        (new PageBuilder($document, $page))->drawSvg(self::FIXTURES . '/../svg/pattern.svg', 0, 0, 200, 200);
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/PatternType 1', $output);
+        self::assertStringContainsString('/XStep 20', $output);
+        self::assertStringContainsString('/Pattern cs', $this->decompressedContentStreamBytes($page));
+    }
+
+    /**
+     * A tiling pattern's operators live in a stream of their own, so the
+     * names they use have to resolve in that stream's /Resources rather
+     * than the page's -- and the copy must not include the pattern
+     * itself, which would be a dictionary containing itself. Ghostscript
+     * reports that as a circular reference; poppler renders it and says
+     * nothing.
+     */
+    public function testATilingPatternCarriesItsOwnResourcesWithoutContainingItself(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+
+        $builder = new PageBuilder($document, $page);
+        // An image on the page first, so the page has resources worth
+        // copying by the time the pattern is built.
+        $builder->drawPng(self::FIXTURES . '/sample.png', 0, 0, 10, 10);
+        $builder->drawSvg(self::FIXTURES . '/../svg/pattern.svg', 0, 0, 200, 200);
+
+        $output = $document->save();
+
+        preg_match('/\/PatternType 1[^>]*\/Resources << (.*?) >> \/Matrix/s', $output, $resources);
+        self::assertNotEmpty($resources, 'the tiling pattern has no /Resources');
+        self::assertStringContainsString('/XObject', $resources[1], 'the page\'s resources came across');
+        self::assertStringNotContainsString('/Pattern <<', $resources[1], 'the pattern lists itself');
+    }
+
     public function testARasterImageInsideAnSvgIsEmbeddedAsAnXObject(): void
     {
         $png = base64_encode((string) file_get_contents(self::FIXTURES . '/sample.png'));

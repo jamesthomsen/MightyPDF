@@ -258,6 +258,19 @@ Two things about them are worth knowing:
   default: the end colours are held flat beyond the ends of the
   gradient rather than bouncing or tiling.
 
+**Patterns** — `<pattern>` becomes a PDF tiling pattern: the tile's
+contents are drawn once and repeated across the shape, still as vector
+artwork. `patternUnits` and `patternContentUnits` (each
+`objectBoundingBox` or `userSpaceOnUse`), `patternTransform`, a
+`viewBox` with `preserveAspectRatio`, and `href`/`xlink:href`
+inheritance are all honoured — a pattern can borrow another's tile, its
+contents, or both.
+
+Anything can go in a tile, gradients and images included, since it is
+drawn by the same renderer as the rest of the document. A pattern
+painted with itself paints nothing on the inner reference rather than
+tiling forever.
+
 **Embedded raster images** — an `<image>` element is drawn, with
 `preserveAspectRatio` (`meet`, `slice` including the clip, `none`, and
 the alignment keywords) honoured. PNG, JPEG and GIF are recognised from
@@ -305,10 +318,9 @@ applies. At-rules (`@media`, `@supports`, `@import`) are skipped whole:
 the rules inside one look exactly like ordinary rules, and a drawing's
 print styling is usually the opposite of its screen styling.
 
-**Not supported** (elements are skipped, not mis-rendered): patterns,
-filters, `<textPath>`, and animation. A `fill="url(#…)"` naming
-anything that cannot be resolved paints nothing, rather than failing the
-document. See
+**Not supported** (elements are skipped, not mis-rendered): filters,
+`<textPath>`, and animation. A `fill="url(#…)"` naming anything that
+cannot be resolved paints nothing, rather than failing the document. See
 [`src/Content/Svg/SvgDocument.php`](src/Content/Svg/SvgDocument.php) for
 the exact scope.
 

@@ -92,7 +92,7 @@ final class SvgGradientParser
             $coordinates,
             $stops,
             $userSpace,
-            self::composedTransform($attributes['gradientTransform'] ?? null),
+            SvgTransform::composed($attributes['gradientTransform'] ?? null),
         );
     }
 
@@ -252,31 +252,6 @@ final class SvgGradientParser
         }
 
         return $elements[substr($href, 1)] ?? null;
-    }
-
-    /**
-     * gradientTransform holds a transform list like any other, and the
-     * pattern it becomes takes a single matrix -- so unlike element
-     * transforms, which PDF concatenates one "cm" at a time, these have
-     * to be multiplied out here.
-     *
-     * @return array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float}|null
-     */
-    private static function composedTransform(?string $transform): ?array
-    {
-        $matrices = SvgTransform::parse($transform);
-
-        if ($matrices === []) {
-            return null;
-        }
-
-        $composed = array_shift($matrices);
-
-        foreach ($matrices as $matrix) {
-            $composed = SvgTransform::compose($matrix, $composed);
-        }
-
-        return $composed;
     }
 
     /**

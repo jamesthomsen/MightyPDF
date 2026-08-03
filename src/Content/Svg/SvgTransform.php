@@ -61,6 +61,35 @@ final class SvgTransform
         ];
     }
 
+    /**
+     * A whole transform list multiplied out into one matrix.
+     *
+     * Element transforms are concatenated one "cm" at a time, so they
+     * stay a list; a paint server's transform has to become a single
+     * matrix, because that is all a PDF pattern has room for.
+     *
+     * @return array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float}|null
+     *         null where there is no transform at all, which callers
+     *         treat as "leave the matrix alone" rather than composing an
+     *         identity into it
+     */
+    public static function composed(?string $transform): ?array
+    {
+        $matrices = self::parse($transform);
+
+        if ($matrices === []) {
+            return null;
+        }
+
+        $composed = array_shift($matrices);
+
+        foreach ($matrices as $matrix) {
+            $composed = self::compose($matrix, $composed);
+        }
+
+        return $composed;
+    }
+
     /** @return list<array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float}> */
     public static function parse(?string $transform): array
     {

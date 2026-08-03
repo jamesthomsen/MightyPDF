@@ -15,15 +15,18 @@ use MightyPDF\Content\ContentStream;
  * (lines/curves/arcs via SvgPathParser/SvgArc), basic shapes (rect,
  * circle, ellipse, line, polyline, polygon), fill/stroke in flat colours
  * or linear/radial gradients, opacity, and simple transforms
- * (translate/scale/rotate/skew/matrix via SvgTransform). No patterns,
- * filters, embedded raster images, text, CSS cascading beyond a flat
- * "style" attribute, or animation -- elements using those are skipped
- * rather than mis-rendered.
+ * (translate/scale/rotate/skew/matrix via SvgTransform), gradient and
+ * pattern paint servers, embedded raster images, text, and CSS from a
+ * <style> block. No filters, <textPath>, or animation -- elements using
+ * those are skipped rather than mis-rendered.
  */
 final class SvgDocument
 {
     /** @var array<string, SvgGradient> */
     private readonly array $gradients;
+
+    /** @var array<string, SvgPattern> */
+    private readonly array $patterns;
 
     private readonly SvgStylesheet $stylesheet;
 
@@ -39,6 +42,7 @@ final class SvgDocument
         // gradient may inherit from another. Neither can be resolved
         // while walking the tree in order.
         $this->gradients = SvgGradientParser::collect($root, $viewBoxWidth, $viewBoxHeight);
+        $this->patterns = SvgPatternParser::collect($root);
 
         // Same reason, one step earlier: a rule in a <style> block
         // applies to elements anywhere in the document, including ones
@@ -101,6 +105,7 @@ final class SvgDocument
         array $baseMatrix = SvgTransform::IDENTITY,
         ?\Closure $imageResourceName = null,
         ?\Closure $textFontResourceName = null,
+        ?\Closure $tilingPatternResourceName = null,
     ): void {
         $renderer = new SvgRenderer(
             $stream,
@@ -110,6 +115,8 @@ final class SvgDocument
             $shadingPatternResourceName,
             $imageResourceName,
             $textFontResourceName,
+            $this->patterns,
+            $tilingPatternResourceName,
         );
 
         $renderer->render($this->root, $baseMatrix);
@@ -119,6 +126,12 @@ final class SvgDocument
     public function gradients(): array
     {
         return $this->gradients;
+    }
+
+    /** @return array<string, SvgPattern> the patterns this document defines, by id */
+    public function patterns(): array
+    {
+        return $this->patterns;
     }
 
     /** @return array{0: float, 1: float, 2: float, 3: float} minX, minY, width, height */

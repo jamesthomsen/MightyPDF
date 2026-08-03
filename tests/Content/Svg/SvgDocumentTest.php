@@ -6,7 +6,9 @@ namespace MightyPDF\Tests\Content\Svg;
 
 use MightyPDF\Content\ContentStream;
 use MightyPDF\Content\Svg\SvgDocument;
+use MightyPDF\Content\Svg\SvgPattern;
 use MightyPDF\Content\Svg\SvgRasterImage;
+use MightyPDF\Content\Svg\SvgTransform;
 use PHPUnit\Framework\TestCase;
 
 final class SvgDocumentTest extends TestCase
@@ -457,6 +459,94 @@ final class SvgDocumentTest extends TestCase
         $svg->render($stream, $this->noExtGState());
 
         self::assertSame('', $stream->bytes());
+    }
+
+    /**
+     * A pattern's content is drawn by the renderer itself, since drawing
+     * it needs everything the renderer has: the caller is handed the
+     * finished operators and only has to make a resource of them.
+     */
+    public function testAPatternsContentIsDrawnAndHandedToTheCaller(): void
+    {
+        $tile = null;
+
+        $bytes = self::renderWithPattern(
+            '<pattern id="p" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">'
+            . '<circle cx="2" cy="2" r="1" fill="#ff0000"/></pattern>',
+            '<rect x="0" y="0" width="10" height="10" fill="url(#p)"/>',
+            $tile,
+        );
+
+        self::assertStringContainsString('/Pattern cs', $bytes);
+        self::assertStringContainsString('/P1 scn', $bytes);
+
+        self::assertIsString($tile);
+        self::assertStringContainsString('1 0 0 rg', $tile, 'the tile carries its own drawing');
+        self::assertStringContainsString("f\n", $tile);
+    }
+
+    /**
+     * A pattern whose own content is painted with it would draw a tile
+     * to draw a tile to draw a tile.
+     */
+    public function testAPatternPaintedWithItselfStopsRatherThanRecurring(): void
+    {
+        $tile = null;
+
+        $bytes = self::renderWithPattern(
+            '<pattern id="p" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">'
+            . '<rect x="0" y="0" width="4" height="4" fill="url(#p)"/></pattern>',
+            '<rect x="0" y="0" width="10" height="10" fill="url(#p)"/>',
+            $tile,
+        );
+
+        self::assertStringContainsString('/P1 scn', $bytes);
+        self::assertIsString($tile);
+        self::assertStringNotContainsString('scn', $tile, 'the inner reference paints nothing');
+    }
+
+    /**
+     * A caller with nowhere to put pattern resources gets the behaviour
+     * from before patterns were supported.
+     */
+    public function testPatternsPaintNothingWhenTheCallerCannotSupplyThem(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10"><defs>'
+            . '<pattern id="p" width="0.5" height="0.5"><circle r="1"/></pattern></defs>'
+            . '<rect x="0" y="0" width="10" height="10" fill="url(#p)"/></svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render($stream, $this->noExtGState());
+
+        self::assertStringNotContainsString('scn', $stream->bytes());
+        self::assertStringContainsString("n\n", $stream->bytes());
+    }
+
+    private static function renderWithPattern(string $defs, string $body, ?string &$tile): string
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10"><defs>' . $defs . '</defs>' . $body . '</svg>',
+        );
+
+        $stream = new ContentStream();
+
+        $svg->render(
+            $stream,
+            static fn (): never => throw new \LogicException('No opacity < 1 expected in this test.'),
+            static fn (): string => 'S1',
+            SvgTransform::IDENTITY,
+            null,
+            null,
+            static function (SvgPattern $pattern, string $content) use (&$tile): string {
+                $tile ??= $content;
+
+                return 'P1';
+            },
+        );
+
+        return $stream->bytes();
     }
 
     private static function renderWithGradients(string $body): string

@@ -70,6 +70,48 @@ final class SvgAspectRatio
     }
 
     /**
+     * The matrix fitting a viewBox into a viewport, which is the same
+     * question place() answers for an image and a different answer: no
+     * flip is involved here, because both rectangles are already in SVG
+     * coordinates. A <pattern> with a viewBox is the case -- its tile is
+     * a viewport like <svg>'s own.
+     *
+     * @param array{0: float, 1: float, 2: float, 3: float} $viewBox minX, minY, width, height
+     * @param array{0: float, 1: float, 2: float, 3: float} $viewport x, y, width, height
+     * @return array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float}
+     */
+    public static function fit(?string $specification, array $viewBox, array $viewport): array
+    {
+        [$boxX, $boxY, $boxWidth, $boxHeight] = $viewBox;
+        [$portX, $portY, $portWidth, $portHeight] = $viewport;
+
+        $specification = trim($specification ?? '') ?: 'xMidYMid meet';
+        $alignment = strtok($specification, " \t\r\n") ?: 'xMidYMid';
+
+        if ($boxWidth <= 0.0 || $boxHeight <= 0.0) {
+            return SvgTransform::IDENTITY;
+        }
+
+        $scaleX = $portWidth / $boxWidth;
+        $scaleY = $portHeight / $boxHeight;
+
+        if (strtolower($alignment) !== 'none') {
+            $scaleX = $scaleY = str_contains($specification, 'slice')
+                ? max($scaleX, $scaleY)
+                : min($scaleX, $scaleY);
+        }
+
+        return [
+            $scaleX,
+            0.0,
+            0.0,
+            $scaleY,
+            $portX + self::offset($alignment, 'x', $portWidth - $boxWidth * $scaleX) - $boxX * $scaleX,
+            $portY + self::offset($alignment, 'y', $portHeight - $boxHeight * $scaleY) - $boxY * $scaleY,
+        ];
+    }
+
+    /**
      * How far along the leftover space the image sits: not at all for
      * Min, half of it for Mid, all of it for Max.
      */

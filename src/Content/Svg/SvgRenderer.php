@@ -33,6 +33,7 @@ final class SvgRenderer
 
     /**
      * @param array<string, SvgGradient> $gradients
+     * @param array<string, SvgPattern> $patterns
      * @param \Closure(float, float): string $extGStateResourceName
      * @param (\Closure(SvgGradient, array, array): string)|null $shadingPatternResourceName
      *        null where the caller cannot provide pattern resources, in
@@ -46,6 +47,13 @@ final class SvgRenderer
      *        resource, or returns null for bytes it cannot decode; null
      *        itself where the caller cannot embed images at all, in
      *        which case <image> elements are skipped
+     * @param (\Closure(SvgPattern, string, array, array): ?string)|null $tilingPatternResourceName
+     *        turns a pattern's drawn content into a tiling pattern
+     *        resource; called with the pattern, the operators filling one
+     *        tile, the shape's transform and its bounding box
+     * @param list<string> $patternsBeingDrawn the ids whose content this
+     *        renderer is already inside, so that a pattern painted with
+     *        itself stops rather than recurring forever
      */
     public function __construct(
         private readonly ContentStream $stream,
@@ -55,6 +63,9 @@ final class SvgRenderer
         private readonly ?\Closure $shadingPatternResourceName,
         private readonly ?\Closure $imageResourceName = null,
         private readonly ?\Closure $textFontResourceName = null,
+        private readonly array $patterns = [],
+        private readonly ?\Closure $tilingPatternResourceName = null,
+        private readonly array $patternsBeingDrawn = [],
     ) {
     }
 
@@ -670,7 +681,7 @@ final class SvgRenderer
     private function applyFill(SvgStyle $style, array $matrix, \Closure $bounds): bool
     {
         if ($style->fillReference !== null) {
-            return $this->applyGradient(
+            return $this->applyPaintServer(
                 $style->fillReference,
                 $matrix,
                 $bounds,
@@ -695,7 +706,7 @@ final class SvgRenderer
     private function applyStroke(SvgStyle $style, array $matrix, \Closure $bounds): bool
     {
         if ($style->strokeReference !== null) {
-            $painted = $this->applyGradient(
+            $painted = $this->applyPaintServer(
                 $style->strokeReference,
                 $matrix,
                 $bounds,
@@ -715,6 +726,101 @@ final class SvgRenderer
         }
 
         $this->stream->setStrokeColorRgb(...$style->stroke)->setLineWidth($style->strokeWidth);
+
+        return true;
+    }
+
+    /**
+     * Paints with a url(#id) reference, whichever kind of paint server
+     * it names, reporting whether anything was painted at all.
+     *
+     * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix
+     * @param \Closure(): array{0: float, 1: float, 2: float, 3: float} $bounds
+     * @param \Closure(float, float, float): mixed $setColor
+     * @param \Closure(string): mixed $setPattern
+     */
+    private function applyPaintServer(
+        string $reference,
+        array $matrix,
+        \Closure $bounds,
+        \Closure $setColor,
+        \Closure $setPattern,
+    ): bool {
+        if (isset($this->patterns[$reference])) {
+            return $this->applyPattern($reference, $matrix, $bounds, $setPattern);
+        }
+
+        return $this->applyGradient($reference, $matrix, $bounds, $setColor, $setPattern);
+    }
+
+    /**
+     * Paints with a <pattern>, drawing one tile's worth of its content
+     * and handing that to the caller to make a resource of.
+     *
+     * The content is rendered here rather than by the caller because
+     * everything it takes to render is here: the pattern's children are
+     * ordinary elements, drawn with the same gradients, stylesheet and
+     * resource callbacks as the rest of the drawing.
+     *
+     * The base matrix for that nested drawing is the identity, not the
+     * shape's: a pattern's contents are measured in the pattern's own
+     * space, and PDF composes that with the pattern matrix itself. A
+     * gradient inside a pattern would otherwise be positioned as though
+     * the pattern matrix applied to it twice.
+     *
+     * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix
+     * @param \Closure(): array{0: float, 1: float, 2: float, 3: float} $bounds
+     * @param \Closure(string): mixed $setPattern
+     */
+    private function applyPattern(
+        string $reference,
+        array $matrix,
+        \Closure $bounds,
+        \Closure $setPattern,
+    ): bool {
+        $pattern = $this->patterns[$reference];
+
+        // A pattern whose own content is painted with it would otherwise
+        // draw a tile to draw a tile to draw a tile.
+        if ($this->tilingPatternResourceName === null || in_array($reference, $this->patternsBeingDrawn, true)) {
+            return false;
+        }
+
+        $box = $bounds();
+
+        if (!$pattern->canPaint($box)) {
+            return false;
+        }
+
+        $contentMatrix = $pattern->contentMatrix($box);
+        $tile = new ContentStream();
+
+        if ($contentMatrix !== null) {
+            $tile->concatMatrix(...$contentMatrix);
+        }
+
+        $nested = new SvgRenderer(
+            $tile,
+            $this->gradients,
+            $this->stylesheet,
+            $this->extGStateResourceName,
+            $this->shadingPatternResourceName,
+            $this->imageResourceName,
+            $this->textFontResourceName,
+            $this->patterns,
+            $this->tilingPatternResourceName,
+            [...$this->patternsBeingDrawn, $reference],
+        );
+
+        $nested->renderChildren($pattern->content, new SvgStyle(), $contentMatrix ?? SvgTransform::IDENTITY);
+
+        $name = ($this->tilingPatternResourceName)($pattern, $tile->bytes(), $matrix, $box);
+
+        if ($name === null) {
+            return false;
+        }
+
+        $setPattern($name);
 
         return true;
     }
