@@ -151,6 +151,46 @@ final class SvgDocumentTest extends TestCase
         self::assertStringContainsString('/GS1 gs', $stream->bytes());
     }
 
+    /**
+     * PDF has no "back to opaque" operator, so a partly transparent
+     * shape has to be drawn inside its own graphics state. Without that,
+     * every shape drawn after it in the file inherits its transparency
+     * -- and only the ones after it, which makes the drawing depend on
+     * the order it happens to be written in.
+     */
+    public function testTransparencyDoesNotLeakIntoTheNextShape(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10">'
+            . '<rect x="0" y="0" width="4" height="4" fill="red" opacity="0.5"/>'
+            . '<rect x="5" y="0" width="4" height="4" fill="blue"/>'
+            . '</svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render($stream, static fn (): string => 'GS1');
+
+        $bytes = $stream->bytes();
+
+        self::assertStringContainsString("q\n/GS1 gs", $bytes);
+        self::assertStringContainsString("f\nQ\n", $bytes);
+        self::assertStringEndsWith("0 0 1 rg\n5 0 4 4 re\nf\n", $bytes, 'the opaque rect is drawn outside that state');
+    }
+
+    /** A line's stroke-opacity is a graphics state like any other's. */
+    public function testALineIsDrawnUnderItsOwnGraphicsState(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10"><line x1="0" y1="0" x2="9" y2="9" stroke="red" stroke-opacity="0.25"/></svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render($stream, static fn (): string => 'GS1');
+
+        self::assertStringContainsString("q\n/GS1 gs", $stream->bytes());
+        self::assertStringContainsString("S\nQ\n", $stream->bytes());
+    }
+
     public function testOpacityOfOneDoesNotRequestAnExtGStateResource(): void
     {
         $svg = SvgDocument::fromString(

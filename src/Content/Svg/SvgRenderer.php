@@ -231,18 +231,19 @@ final class SvgRenderer
         $x2 = (float) ($element['x2'] ?? 0);
         $y2 = (float) ($element['y2'] ?? 0);
 
-        $painted = $this->applyStroke($style, $matrix, static fn (): array => [
+        // Through applyStyle() like every other shape, rather than
+        // straight to applyStroke(): a line with stroke-opacity needs
+        // the same graphics state, and skipping it left the line drawn
+        // under whatever state the shape before it had set.
+        $painted = $this->applyStyle($style, $matrix, static fn (): array => [
             min($x1, $x2),
             min($y1, $y2),
             abs($x2 - $x1),
             abs($y2 - $y1),
         ]);
 
-        if (!$painted) {
-            return;
-        }
-
-        $this->stream->moveTo($x1, $y1)->lineTo($x2, $y2)->stroke();
+        $this->stream->moveTo($x1, $y1)->lineTo($x2, $y2);
+        $this->finishPainting($painted, $style, fillable: false);
     }
 
     /** @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix */
@@ -658,19 +659,30 @@ final class SvgRenderer
      * path's box means parsing it a second time, and only a gradient in
      * objectBoundingBox units ever asks.
      *
+     * A shape needing partial opacity is wrapped in its own graphics
+     * state, and finishPainting() closes it. Otherwise the state outlives
+     * the shape that asked for it: PDF has no "back to opaque" operator,
+     * so one half-transparent shape would leave every shape drawn after
+     * it half-transparent too -- and only where the drawing happened to
+     * be written in that order.
+     *
      * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix
      * @param \Closure(): array{0: float, 1: float, 2: float, 3: float} $bounds
-     * @return array{fill: bool, stroke: bool}
+     * @return array{fill: bool, stroke: bool, state: bool}
      */
     private function applyStyle(SvgStyle $style, array $matrix, \Closure $bounds): array
     {
-        if ($style->fillOpacity < 1.0 || $style->strokeOpacity < 1.0) {
-            $this->stream->setExtGState(($this->extGStateResourceName)($style->fillOpacity, $style->strokeOpacity));
+        $state = $style->fillOpacity < 1.0 || $style->strokeOpacity < 1.0;
+
+        if ($state) {
+            $this->stream->pushGraphicsState()
+                ->setExtGState(($this->extGStateResourceName)($style->fillOpacity, $style->strokeOpacity));
         }
 
         return [
             'fill' => $this->applyFill($style, $matrix, $bounds),
             'stroke' => $this->applyStroke($style, $matrix, $bounds),
+            'state' => $state,
         ];
     }
 
@@ -876,7 +888,7 @@ final class SvgRenderer
         return true;
     }
 
-    /** @param array{fill: bool, stroke: bool} $painted */
+    /** @param array{fill: bool, stroke: bool, state: bool} $painted */
     private function finishPainting(array $painted, SvgStyle $style, bool $fillable = true): void
     {
         $hasFill = $fillable && $painted['fill'];
@@ -889,6 +901,10 @@ final class SvgRenderer
             $this->stream->stroke();
         } else {
             $this->stream->endPathNoOp();
+        }
+
+        if ($painted['state']) {
+            $this->stream->popGraphicsState();
         }
     }
 
