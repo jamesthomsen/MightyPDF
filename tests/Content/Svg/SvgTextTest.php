@@ -222,6 +222,91 @@ final class SvgTextTest extends TestCase
         return $path;
     }
 
+    /**
+     * Every glyph on a path gets its own matrix: on a curve each sits at
+     * its own point, turned to face its own direction, so a run cannot
+     * be one operator the way a straight line of text is.
+     */
+    public function testTextOnAPathIsPlacedGlyphByGlyph(): void
+    {
+        $bytes = self::render(
+            '<defs><path id="road" d="M 0 100 L 200 100"/></defs>'
+            . '<text font-size="10"><textPath href="#road">Hi</textPath></text>',
+        );
+
+        self::assertSame(2, substr_count($bytes, ' Tj'), 'one operator per glyph');
+        self::assertStringContainsString('(H) Tj', $bytes);
+        self::assertStringContainsString('(i) Tj', $bytes);
+    }
+
+    /**
+     * On a straight horizontal path the matrix has to come out as the
+     * ordinary text one -- the flip against the placement and nothing
+     * else. That is the check that the rotation is the right way round
+     * rather than its mirror.
+     */
+    public function testOnAStraightPathTheMatrixIsTheOrdinaryTextMatrix(): void
+    {
+        $bytes = self::render(
+            '<defs><path id="road" d="M 0 100 L 200 100"/></defs>'
+            . '<text font-size="10"><textPath href="#road">H</textPath></text>',
+        );
+
+        self::assertStringContainsString('1 0 0 -1 0 100 Tm', $bytes);
+    }
+
+    public function testStartOffsetMovesTheTextAlongThePath(): void
+    {
+        $bytes = self::render(
+            '<defs><path id="road" d="M 0 100 L 200 100"/></defs>'
+            . '<text font-size="10"><textPath href="#road" startOffset="25%">H</textPath></text>',
+        );
+
+        self::assertStringContainsString('1 0 0 -1 50 100 Tm', $bytes);
+    }
+
+    public function testTextAnchorMeasuresTheWholeStringAgainstTheOffset(): void
+    {
+        $bytes = self::render(
+            '<defs><path id="road" d="M 0 100 L 200 100"/></defs>'
+            . '<text font-size="10" text-anchor="middle"><textPath href="#road" startOffset="100">Hi</textPath></text>',
+        );
+
+        // "Hi" is 9.44pt wide in Helvetica at 10pt, so the string
+        // straddles the offset rather than starting at it.
+        self::assertStringContainsString('1 0 0 -1 95.28 100 Tm', $bytes);
+    }
+
+    /** A glyph turned by the path carries the turn in its matrix. */
+    public function testAGlyphOnAVerticalPathIsTurnedToFaceIt(): void
+    {
+        $bytes = self::render(
+            '<defs><path id="road" d="M 100 0 L 100 200"/></defs>'
+            . '<text font-size="10"><textPath href="#road">H</textPath></text>',
+        );
+
+        // Heading straight down the page: the glyph's own x-axis points
+        // that way, and its y-axis off to the left of it.
+        self::assertMatchesRegularExpression('/0 1 1 -?0 100 /', $bytes);
+    }
+
+    public function testGlyphsPastTheEndOfThePathAreNotDrawn(): void
+    {
+        $bytes = self::render(
+            '<defs><path id="road" d="M 0 100 L 12 100"/></defs>'
+            . '<text font-size="10"><textPath href="#road">Hello world</textPath></text>',
+        );
+
+        self::assertSame(2, substr_count($bytes, ' Tj'), 'only what fits on the path');
+    }
+
+    public function testATextPathNamingNothingDrawsNothing(): void
+    {
+        $bytes = self::render('<text font-size="10"><textPath href="#absent">Hi</textPath></text>');
+
+        self::assertStringNotContainsString('Tj', $bytes);
+    }
+
     private static function render(string $body, ?\Closure $fontResolver = null): string
     {
         $svg = SvgDocument::fromString('<svg viewBox="0 0 200 200">' . $body . '</svg>');

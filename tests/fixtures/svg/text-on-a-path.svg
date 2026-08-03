@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 300 200">
+  <defs>
+    <path id="arc" d="M 20 140 C 60 40, 240 40, 280 140"/>
+    <path id="ring" d="M 150 180 m -60 0 a 60 60 0 1 1 120 0 a 60 60 0 1 1 -120 0"/>
+  </defs>
+
+  <path d="M 20 140 C 60 40, 240 40, 280 140" fill="none" stroke="#dee2e6" stroke-width="1"/>
+
+  <text font-family="Helvetica" font-size="18" fill="#1971c2" text-anchor="middle">
+    <textPath xlink:href="#arc" startOffset="50%">Text along a curve</textPath>
+  </text>
+
+  <text font-family="Times" font-size="12" fill="#c2255c">
+    <textPath href="#ring" startOffset="10">around and around it goes</textPath>
+  </text>
+</svg>

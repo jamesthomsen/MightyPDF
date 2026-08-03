@@ -237,9 +237,10 @@ file can be drawn small and large with no quality loss.
 
 Supported: paths (lines, curves, arcs), basic shapes (`rect`, `circle`,
 `ellipse`, `line`, `polyline`, `polygon`), fill/stroke in flat colours or
-gradients, opacity, simple transforms
-(`translate`/`scale`/`rotate`/`skew`/`matrix`), text, embedded raster
-images, and styling from `<style>` blocks as well as attributes.
+gradients and patterns, opacity, simple transforms
+(`translate`/`scale`/`rotate`/`skew`/`matrix`), text — including text on
+a path — embedded raster images, and styling from `<style>` blocks as
+well as attributes.
 
 **Gradients** — `<linearGradient>` and `<radialGradient>`, in either
 `objectBoundingBox` (the default, measured across the shape) or
@@ -292,6 +293,14 @@ fill colours and the `x`/`y`/`dx`/`dy` positioning a span can carry.
 Whitespace is collapsed the way SVG specifies, so indented markup does
 not turn into indented text.
 
+**`<textPath>`** lays a run of text along a path the drawing already
+contains, with `startOffset` (a length or a percentage) and
+`text-anchor`. Each glyph is placed at its own point along the path and
+turned to face its own direction, which is what a curve requires — and
+means text on a path is a glyph per operator, so copying it out of the
+reader gives the characters without the word breaks. Glyphs that run off
+the end of the path are not drawn, as SVG specifies.
+
 A drawing names its font the way CSS does — a list of preferences ending
 in a generic name — and there is no font catalogue here to look those up
 in. By default they map onto the standard 14: anything serif-ish becomes
@@ -325,9 +334,9 @@ contributes nothing and the rest of the sheet still applies. At-rules
 the rules inside one look exactly like ordinary rules, and a drawing's
 print styling is usually the opposite of its screen styling.
 
-**Not supported** (elements are skipped, not mis-rendered): filters,
-`<textPath>`, and animation. A `fill="url(#…)"` naming anything that
-cannot be resolved paints nothing, rather than failing the document. See
+**Not supported** (elements are skipped, not mis-rendered): filters and
+animation. A `fill="url(#…)"` naming anything that cannot be resolved
+paints nothing, rather than failing the document. See
 [`src/Content/Svg/SvgDocument.php`](src/Content/Svg/SvgDocument.php) for
 the exact scope.
 

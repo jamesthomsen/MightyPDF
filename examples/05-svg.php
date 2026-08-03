@@ -3,10 +3,10 @@
 /**
  * Placing an SVG vector image on a page. Supports paths (lines, curves,
  * arcs), basic shapes (rect/circle/ellipse/line/polyline/polygon),
- * fill/stroke in flat colours, gradients or patterns, opacity, text,
- * embedded images and simple transforms -- see
- * src/Content/Svg/SvgDocument.php for the exact scope (no filters,
- * <textPath>, or animation).
+ * fill/stroke in flat colours, gradients or patterns, opacity, text
+ * (including text on a path), embedded images and simple transforms --
+ * see src/Content/Svg/SvgDocument.php for the exact scope (no filters
+ * or animation).
  *
  * Run: php examples/05-svg.php
  */
@@ -56,6 +56,10 @@ $content->drawSvg(__DIR__ . '/../tests/fixtures/svg/label.svg', 72, 170, 280, 14
 // Styling written as CSS rather than as attributes -- which is how
 // drawing tools export: classes on the shapes, rules in a <style> block.
 $content->drawSvg(__DIR__ . '/../tests/fixtures/svg/styled.svg', 380, 195, 180, 108);
+
+// <textPath>: text laid along a path, a glyph at a time, each turned to
+// face the direction the path is going at that point.
+$content->drawSvg(__DIR__ . '/../tests/fixtures/svg/text-on-a-path.svg', 330, 40, 230, 150);
 
 // stop-opacity: a gradient that fades out rather than changing colour.
 // PDF colours carry no transparency, so this is drawn twice -- once in

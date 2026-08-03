@@ -28,6 +28,9 @@ final class SvgDocument
     /** @var array<string, SvgPattern> */
     private readonly array $patterns;
 
+    /** @var array<string, string> id => the "d" of a path anything may lay text along */
+    private readonly array $paths;
+
     private readonly SvgStylesheet $stylesheet;
 
     private function __construct(
@@ -43,6 +46,10 @@ final class SvgDocument
         // while walking the tree in order.
         $this->gradients = SvgGradientParser::collect($root, $viewBoxWidth, $viewBoxHeight);
         $this->patterns = SvgPatternParser::collect($root);
+
+        // Same reason again: a <textPath> may name a path defined after
+        // it, and usually names one inside <defs> that is never drawn.
+        $this->paths = self::collectPaths($root);
 
         // Same reason, one step earlier: a rule in a <style> block
         // applies to elements anywhere in the document, including ones
@@ -119,6 +126,7 @@ final class SvgDocument
             $this->patterns,
             $tilingPatternResourceName,
             $softMaskResourceName,
+            paths: $this->paths,
         );
 
         $renderer->render($this->root, $baseMatrix);
@@ -134,6 +142,22 @@ final class SvgDocument
     public function patterns(): array
     {
         return $this->patterns;
+    }
+
+    /** @return array<string, string> */
+    private static function collectPaths(\SimpleXMLElement $root): array
+    {
+        $paths = [];
+
+        foreach ($root->xpath("//*[local-name()='path']") ?: [] as $element) {
+            $id = isset($element['id']) ? (string) $element['id'] : '';
+
+            if ($id !== '' && isset($element['d'])) {
+                $paths[$id] = (string) $element['d'];
+            }
+        }
+
+        return $paths;
     }
 
     /** @return array{0: float, 1: float, 2: float, 3: float} minX, minY, width, height */
