@@ -119,19 +119,37 @@ final class Type0Font extends Dictionary implements Finalizable, FontWriter
         $font->set('DescendantFonts', new PdfArray(new PdfReference($cidFont->objectId())));
         $font->set('ToUnicode', new PdfReference($toUnicode->objectId()));
 
+        // The outline format decides the shape of the descendant font.
+        // TrueType outlines go under /FontFile2 in a CIDFontType2, whose
+        // character ids are glyph numbers -- hence an identity
+        // /CIDToGIDMap. PostScript outlines go under /FontFile3 in a
+        // CIDFontType0, which has no such entry at all: a CIDFontType0
+        // built on a font that is not itself CID-keyed uses its
+        // character ids as glyph indices directly (ISO 32000-2 §9.7.4.2),
+        // which is the arrangement this writes and why a CID-keyed CFF
+        // is refused rather than embedded (see EmbeddedFont).
+        $cff = $file->hasCffOutlines();
+
         $cidFont->set('Type', new PdfName('Font'));
-        $cidFont->set('Subtype', new PdfName('CIDFontType2'));
+        $cidFont->set('Subtype', new PdfName($cff ? 'CIDFontType0' : 'CIDFontType2'));
         $cidFont->set('FontDescriptor', new PdfReference($descriptor->objectId()));
         $cidFont->set('DW', new PdfInteger(self::DEFAULT_WIDTH));
 
-        // The character ids written into the content stream are glyph
-        // numbers of the embedded program, so the mapping between them
-        // is the identity one and needs no table.
-        $cidFont->set('CIDToGIDMap', new PdfName('Identity'));
+        if (!$cff) {
+            $cidFont->set('CIDToGIDMap', new PdfName('Identity'));
+        }
+
         $cidFont->set('CIDSystemInfo', self::identitySystemInfo());
 
         $descriptor->set('Type', new PdfName('FontDescriptor'));
-        $descriptor->set('FontFile2', new PdfReference($fontFile->objectId()));
+        $descriptor->set($cff ? 'FontFile3' : 'FontFile2', new PdfReference($fontFile->objectId()));
+
+        if ($cff) {
+            // The whole OpenType file is embedded, not the bare CFF table
+            // sliced out of it -- /Subtype /OpenType is what says so, and
+            // it keeps the font's own cmap and metrics with it.
+            $fontFile->set('Subtype', new PdfName('OpenType'));
+        }
 
         foreach ([$fontFile, $descriptor, $cidFont, $toUnicode, $encoding, $font] as $object) {
             if ($object !== null) {
@@ -228,10 +246,13 @@ final class Type0Font extends Dictionary implements Finalizable, FontWriter
 
         $this->fontFile->replaceBytes($program);
 
-        // /Length1 is the program's length before compression. A reader
-        // that inflates the stream and finds a different length has been
-        // handed a font it cannot trust.
-        $this->fontFile->set('Length1', new PdfInteger(strlen($program)));
+        // /Length1 is the program's length before compression, and only
+        // a /FontFile2 takes it: for a /FontFile3 the /Subtype says what
+        // the stream holds, and a reader that finds a length it did not
+        // expect there has been handed a font it cannot trust.
+        if (!$this->file->hasCffOutlines()) {
+            $this->fontFile->set('Length1', new PdfInteger(strlen($program)));
+        }
 
         $baseFont = new PdfName($this->baseFontName());
         $this->set('BaseFont', $baseFont);

@@ -309,6 +309,60 @@ final class EmbeddedFontTest extends TestCase
         self::assertStringContainsString('<0001> <D83DDE00>', $cmap);
     }
 
+    /**
+     * PostScript outlines are embedded whole, in the shape PDF has for
+     * them: a CIDFontType0 descendant, the program under /FontFile3 as a
+     * whole OpenType file, and no /CIDToGIDMap -- a CIDFontType0 has no
+     * such entry, and a font that is not itself CID-keyed uses its
+     * character ids as glyph indices directly.
+     */
+    public function testAnOpenTypeFontIsEmbeddedAsACidFontType0(): void
+    {
+        $document = new Document();
+        $content = new PageBuilder($document, $document->newPage());
+        $content->drawText(self::openType(), 12.0, 72, 700, 'A');
+
+        $pdf = $document->save();
+
+        self::assertStringContainsString('/Subtype /CIDFontType0', $pdf);
+        self::assertStringContainsString('/FontFile3', $pdf);
+        self::assertStringContainsString('/Subtype /OpenType', $pdf);
+        self::assertStringNotContainsString('/CIDToGIDMap', $pdf);
+        self::assertStringNotContainsString('/FontFile2', $pdf);
+        self::assertStringNotContainsString('/Length1', $pdf, 'only a /FontFile2 states its length');
+    }
+
+    /**
+     * Subsetting a CFF font means taking its charstrings apart, which is
+     * a second subsetter's worth of work. Refused by name rather than
+     * quietly embedding more than was asked for.
+     */
+    public function testSubsettingAnOpenTypeFontIsRefused(): void
+    {
+        $this->expectException(FontException::class);
+        $this->expectExceptionMessageMatches('/subset: false/');
+
+        EmbeddedFont::fromBytes(SyntheticTrueTypeFont::withPostScriptOutlines());
+    }
+
+    /**
+     * A CID-keyed CFF's glyphs are not addressed by index at all, so
+     * embedding one and writing glyph indices would draw the wrong
+     * glyphs -- which looks like a font, just the wrong one.
+     */
+    public function testACidKeyedOpenTypeFontIsRefused(): void
+    {
+        $this->expectException(FontException::class);
+        $this->expectExceptionMessageMatches('/CID-keyed/');
+
+        EmbeddedFont::fromBytes(SyntheticTrueTypeFont::withPostScriptOutlines(cidKeyed: true), subset: false);
+    }
+
+    private static function openType(): EmbeddedFont
+    {
+        return EmbeddedFont::fromBytes(SyntheticTrueTypeFont::withPostScriptOutlines(), subset: false);
+    }
+
     private static function font(bool $subset = true): EmbeddedFont
     {
         return EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build(), $subset);

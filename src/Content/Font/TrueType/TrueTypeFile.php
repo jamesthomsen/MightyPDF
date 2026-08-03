@@ -9,14 +9,21 @@ namespace MightyPDF\Content\Font\TrueType;
  * descriptor has to state, and the two questions drawing text asks --
  * which glyph draws this character, and how wide is it.
  *
- * Scope, in this project's "explicitly unsupported rather than silently
- * wrong" spirit: TrueType outlines only, i.e. a file with a 'glyf' table.
- * OpenType fonts with PostScript outlines (an 'OTTO' file, glyphs in a
- * 'CFF ' table) are a different embedding path in PDF -- a different
- * descendant font type and a different subsetter, since CFF has its own
- * charstring format -- and are refused by name rather than half-read.
- * Font collections (.ttc) are refused for the same reason: the file holds
- * several fonts and nothing here would say which one was meant.
+ * Two outline formats, and the difference runs through everything built
+ * on this: TrueType outlines in a 'glyf' table, and PostScript ones in a
+ * 'CFF ' table (an 'OTTO' file, usually named .otf). Everything *around*
+ * the outlines -- the metrics, the character map, the widths -- is the
+ * same sfnt container in both, which is why one parser reads both.
+ *
+ * What differs is what can be done with them. A 'glyf' font can be
+ * subset here, glyph by glyph; a CFF font can only be embedded whole,
+ * because CFF has its own charstring format and its own index structures
+ * and subsetting it is a second subsetter's worth of work. See
+ * hasCffOutlines(), and EmbeddedFont, which refuses the combination
+ * rather than quietly embedding more than was asked for.
+ *
+ * Font collections (.ttc) are refused outright: the file holds several
+ * fonts and nothing here would say which one was meant.
  *
  * Units: everything a font file states about geometry is in font design
  * units, of which there are unitsPerEm() to the em (1000 and 2048 are
@@ -154,6 +161,38 @@ final class TrueTypeFile
     public function hasCharacterMap(): bool
     {
         return $this->cmap !== null;
+    }
+
+    /**
+     * Whether this font's outlines are PostScript ones in a 'CFF ' table
+     * rather than TrueType ones in 'glyf'.
+     *
+     * The answer decides the whole shape of the embedded font: which
+     * descendant font type PDF wants, which /FontFile key the program
+     * goes under, and whether it can be subset at all. See Type0Font.
+     */
+    public function hasCffOutlines(): bool
+    {
+        return $this->table('glyf') === null && $this->table('CFF ') !== null;
+    }
+
+    /**
+     * Whether the CFF inside is CID-keyed -- a font whose glyphs are
+     * addressed by character id through a charset of its own rather than
+     * by glyph index.
+     *
+     * It matters because embedding one whole and addressing it by glyph
+     * index, which is what this library does, would draw the wrong
+     * glyphs: the numbers mean different things in the two schemes. The
+     * marker is the Top DICT's ROS operator (12 30), and finding it
+     * needs only the front of the table -- the header, the name index,
+     * and the first Top DICT.
+     */
+    public function hasCidKeyedCff(): bool
+    {
+        $cff = $this->table('CFF ');
+
+        return $cff !== null && CffHeader::isCidKeyed($cff);
     }
 
     /**
@@ -383,21 +422,14 @@ final class TrueTypeFile
 
         $version = $this->reader->tag(0);
 
-        if ($version === self::VERSION_CFF) {
-            throw new FontException(
-                'This is an OpenType/CFF font (PostScript outlines). Only TrueType outlines can be embedded here -- '
-                . 'use the .ttf build of the font.',
-            );
-        }
-
         if ($version === self::VERSION_COLLECTION) {
             throw new FontException(
                 'This is a TrueType collection (.ttc) holding several fonts. Extract the single font you want first.',
             );
         }
 
-        if ($this->reader->uint32(0) !== self::VERSION_1_0 && $version !== self::VERSION_TRUE) {
-            throw new FontException('This file is not a TrueType font.');
+        if ($this->reader->uint32(0) !== self::VERSION_1_0 && $version !== self::VERSION_TRUE && $version !== self::VERSION_CFF) {
+            throw new FontException('This file is not a TrueType or OpenType font.');
         }
 
         $tableCount = $this->reader->uint16(4);
@@ -424,10 +456,10 @@ final class TrueTypeFile
             $directory[$tag] = ['offset' => $offset, 'length' => $length];
         }
 
-        if (!isset($directory['glyf'])) {
+        if (!isset($directory['glyf']) && !isset($directory['CFF '])) {
             throw new FontException(
-                'Font has no "glyf" table, so its glyphs are not TrueType outlines. Only TrueType outlines can be '
-                . 'embedded here.',
+                'Font has neither a "glyf" nor a "CFF " table, so it carries no outlines this can embed. A bitmap '
+                . 'or colour font is not something a PDF can draw text with.',
             );
         }
 

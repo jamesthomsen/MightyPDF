@@ -35,9 +35,12 @@ use MightyPDF\Content\Text\Utf8;
  * per-document part -- which glyphs were used, and what they were
  * renumbered to -- lives in Type0Font, where it belongs.
  *
- * Scope: TrueType outlines only, per TrueTypeFile. A character the font
- * has no glyph for is refused rather than drawn as an empty box; see
- * missingCharacters().
+ * Scope: TrueType (.ttf) or OpenType/CFF (.otf) outlines, per
+ * TrueTypeFile -- but a CFF font can only be embedded whole, since
+ * subsetting one means taking its charstrings apart, and a CID-keyed CFF
+ * is refused outright because its glyphs are not addressed by index at
+ * all. A character the font has no glyph for is refused rather than
+ * drawn as an empty box; see missingCharacters().
  */
 final class EmbeddedFont implements Font
 {
@@ -46,6 +49,24 @@ final class EmbeddedFont implements Font
         private readonly string $cacheKey,
         private readonly bool $subset,
     ) {
+        if (!$file->hasCffOutlines()) {
+            return;
+        }
+
+        if ($subset) {
+            throw new FontException(
+                'This is an OpenType/CFF font, whose PostScript outlines this library can embed but not subset. '
+                . 'Load it with EmbeddedFont::load($path, subset: false) to embed the file whole.',
+            );
+        }
+
+        if ($file->hasCidKeyedCff()) {
+            throw new FontException(
+                'This OpenType/CFF font is CID-keyed: its glyphs are addressed through a character collection of '
+                . 'its own rather than by glyph index, which is not something this library can map text onto. '
+                . 'Use a TrueType (.ttf) build of the font.',
+            );
+        }
     }
 
     public static function load(string $path, bool $subset = true): self

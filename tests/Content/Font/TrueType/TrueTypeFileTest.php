@@ -101,12 +101,42 @@ final class TrueTypeFileTest extends TestCase
         self::assertNotSame('', $font->glyphData(SyntheticTrueTypeFont::GLYPH_A));
     }
 
-    public function testRefusesOpenTypeFontsWithPostScriptOutlines(): void
+    /**
+     * Everything around the outlines is the same sfnt container in both
+     * formats, which is why one parser reads both -- what differs is
+     * where the outlines are and what can be done with them.
+     */
+    public function testReadsAnOpenTypeFontWithPostScriptOutlines(): void
+    {
+        $font = TrueTypeFile::fromBytes(SyntheticTrueTypeFont::withPostScriptOutlines());
+
+        self::assertTrue($font->hasCffOutlines());
+        self::assertFalse($font->hasCidKeyedCff());
+        self::assertSame(SyntheticTrueTypeFont::POSTSCRIPT_NAME, $font->postScriptName());
+        self::assertSame(SyntheticTrueTypeFont::GLYPH_A, $font->glyphForCodePoint(0x41));
+        self::assertSame(SyntheticTrueTypeFont::ADVANCES[SyntheticTrueTypeFont::GLYPH_B], $font->advanceWidth(SyntheticTrueTypeFont::GLYPH_B));
+    }
+
+    /**
+     * A CID-keyed CFF addresses its glyphs through a character
+     * collection of its own rather than by index, so embedding one and
+     * addressing it by index would draw the wrong glyphs -- both
+     * numbering schemes being dense small integers, it would look like a
+     * font, just the wrong one.
+     */
+    public function testFindsWhetherACffIsCidKeyed(): void
+    {
+        $font = TrueTypeFile::fromBytes(SyntheticTrueTypeFont::withPostScriptOutlines(cidKeyed: true));
+
+        self::assertTrue($font->hasCidKeyedCff());
+    }
+
+    public function testRefusesAFontWithNoOutlinesAtAll(): void
     {
         $this->expectException(FontException::class);
-        $this->expectExceptionMessageMatches('/OpenType\/CFF/');
+        $this->expectExceptionMessageMatches('/no outlines/');
 
-        TrueTypeFile::fromBytes('OTTO' . substr(SyntheticTrueTypeFont::build(), 4));
+        TrueTypeFile::fromBytes(SyntheticTrueTypeFont::withoutOutlines());
     }
 
     public function testRefusesFontCollections(): void
@@ -115,14 +145,6 @@ final class TrueTypeFileTest extends TestCase
         $this->expectExceptionMessageMatches('/collection/');
 
         TrueTypeFile::fromBytes('ttcf' . substr(SyntheticTrueTypeFont::build(), 4));
-    }
-
-    public function testRefusesAFontWithNoOutlineTable(): void
-    {
-        $this->expectException(FontException::class);
-        $this->expectExceptionMessageMatches('/glyf/');
-
-        TrueTypeFile::fromBytes(SyntheticTrueTypeFont::withoutOutlines());
     }
 
     public function testRefusesSomethingThatIsNotAFont(): void

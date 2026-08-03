@@ -120,15 +120,70 @@ final class SyntheticTrueTypeFont
         ]);
     }
 
-    /** A font with no 'glyf' table at all, i.e. one this library must refuse. */
+    /** A font carrying no outlines at all, i.e. one this library must refuse. */
     public static function withoutOutlines(): string
     {
         return self::serialize([
             'head' => self::head(),
             'hhea' => self::hhea(1),
             'maxp' => self::maxp(1),
-            'CFF ' => str_repeat("\x00", 16),
+            'EBDT' => str_repeat("\x00", 16),
         ]);
+    }
+
+    /**
+     * The same font with PostScript outlines instead of TrueType ones:
+     * an 'OTTO' file whose glyphs live in a 'CFF ' table.
+     *
+     * The CFF is structurally real -- a header, a name INDEX and a top
+     * DICT -- but holds no charstrings, because nothing in this library
+     * reads them: a CFF font is embedded exactly as it arrived. What is
+     * read is the top DICT, to find out whether the font is CID-keyed.
+     *
+     * @param bool $cidKeyed give the top DICT a ROS operator, making it
+     *        the kind of font that is addressed through a character
+     *        collection rather than by glyph index
+     */
+    public static function withPostScriptOutlines(bool $cidKeyed = false): string
+    {
+        return self::serialize(
+            [
+                'head' => self::head(),
+                'hhea' => self::hhea(count(self::ADVANCES)),
+                'maxp' => self::maxp(count(self::ADVANCES)),
+                'hmtx' => self::hmtx(),
+                'cmap' => self::cmap(self::CHARACTERS),
+                'name' => self::name(),
+                'post' => self::post(),
+                'OS/2' => self::os2(),
+                'CFF ' => self::cff($cidKeyed),
+            ],
+            version: 'OTTO',
+        );
+    }
+
+    private static function cff(bool $cidKeyed): string
+    {
+        // Operands come before their operator. A CID-keyed font is known
+        // by ROS (12 30); anything else will do for one that is not, and
+        // "CharStrings 100" (operator 17) is the least surprising.
+        $topDict = $cidKeyed
+            ? pack('CNCNCN', 29, 391, 29, 392, 29, 0) . pack('CC', 12, 30)
+            : pack('CN', 29, 100) . pack('C', 17);
+
+        return pack('CCCC', 1, 0, 4, 1)              // header: version, its own size, offset size
+            . self::cffIndex(self::POSTSCRIPT_NAME)  // name INDEX
+            . self::cffIndex($topDict);              // top DICT INDEX
+    }
+
+    /**
+     * A CFF INDEX holding one entry: a count, the width of the offsets
+     * that follow, then count + 1 of them, then the data. Offsets are
+     * one-based, counted from the byte before the data begins.
+     */
+    private static function cffIndex(string $entry): string
+    {
+        return pack('n', 1) . pack('C', 1) . pack('C', 1) . pack('C', 1 + strlen($entry)) . $entry;
     }
 
     /** A three-point triangle: the smallest thing that is unambiguously an outline. */
@@ -315,7 +370,7 @@ final class SyntheticTrueTypeFont
     }
 
     /** @param array<string, string> $tables */
-    private static function serialize(array $tables): string
+    private static function serialize(array $tables, string $version = "\x00\x01\x00\x00"): string
     {
         ksort($tables);
 
@@ -323,7 +378,7 @@ final class SyntheticTrueTypeFont
         $entrySelector = (int) floor(log($count, 2));
         $searchRange = 2 ** $entrySelector * 16;
 
-        $directory = pack('Nnnnn', 0x00010000, $count, $searchRange, $entrySelector, $count * 16 - $searchRange);
+        $directory = $version . pack('nnnn', $count, $searchRange, $entrySelector, $count * 16 - $searchRange);
         $offset = 12 + $count * 16;
         $body = '';
 

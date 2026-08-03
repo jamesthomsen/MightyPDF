@@ -1,12 +1,14 @@
 <?php
 
 /**
- * Embedding a TrueType font, which is what text outside the WinAnsi
- * repertoire needs: Greek, Cyrillic, CJK, or simply a typeface that
- * isn't one of the standard 14.
+ * Embedding a font, which is what text outside the WinAnsi repertoire
+ * needs: Greek, Cyrillic, CJK, or simply a typeface that isn't one of
+ * the standard 14.
  *
- * Only the glyphs this document draws are embedded, so the font costs a
- * few kilobytes rather than the few hundred the file on disk weighs.
+ * A TrueType (.ttf) font is subset as it is drawn, so it costs a few
+ * kilobytes rather than the few hundred the file on disk weighs. An
+ * OpenType/CFF (.otf) font is embedded whole -- see the bottom of this
+ * file -- as is any font a form field points at.
  *
  * Run: php examples/14-embedding-a-font.php
  */
@@ -102,6 +104,25 @@ $formFont = EmbeddedFont::load($path, subset: false);
 
 $content->drawText($font, 11.0, 72, 220, 'Type anything here, in any language the font covers:');
 $content->addTextField('notes', x: 72, y: 190, width: 440, height: 24, font: $formFont, fontSizePt: 12.0);
+
+// An OpenType font with PostScript outlines (.otf) goes in whole, as a
+// CIDFontType0. Optional: the example still runs without one installed.
+$openType = null;
+foreach ([
+    '/usr/share/fonts/opentype/urw-base35/NimbusRoman-Regular.otf',
+    '/usr/share/fonts/opentype/freefont/FreeSerif.otf',
+    '/usr/share/fonts/OTF/DejaVuSans.otf',
+] as $candidate) {
+    if (is_file($candidate)) {
+        $openType = EmbeddedFont::load($candidate, subset: false);
+        break;
+    }
+}
+
+if ($openType !== null) {
+    echo "Embedding {$openType->name()} whole (PostScript outlines)\n";
+    $content->drawText($openType, 14.0, 72, 150, 'And a line in an OpenType/CFF font: ' . $openType->name());
+}
 
 @mkdir(__DIR__ . '/output', recursive: true);
 $document->saveToFile(__DIR__ . '/output/14-embedding-a-font.pdf');

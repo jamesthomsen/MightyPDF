@@ -155,10 +155,16 @@ $missing = $font->missingCharacters($text); // ['字', '한'] — each one once
 $font->supports($text);                     // or just: can it draw this?
 ```
 
-Scope: TrueType outlines, i.e. a `.ttf` file with a `glyf` table.
-OpenType/CFF fonts (`.otf` with PostScript outlines) and font
-collections (`.ttc`) are refused by name — both are a different
-embedding path in PDF, not a variation on this one.
+**OpenType/CFF (`.otf`) works too, embedded whole.** A font with
+PostScript outlines goes into the document as a `CIDFontType0` with the
+whole OpenType file under `/FontFile3` — so it must be loaded with
+`subset: false`, since subsetting one means taking its charstrings
+apart. A *CID-keyed* CFF (the shape a CJK OpenType font usually takes)
+is refused by name: its glyphs are addressed through a character
+collection of its own rather than by index, and embedding one anyway
+would draw the wrong glyphs rather than fail. Font collections (`.ttc`)
+are refused too — the file holds several fonts and nothing here would
+say which one was meant.
 
 See [`examples/14-embedding-a-font.php`](examples/14-embedding-a-font.php)
 for a runnable version.
@@ -760,8 +766,10 @@ for a runnable version.
 ## Known limitations
 
 - **Fonts**: the standard 14, plus any TrueType (`.ttf`) file, embedded
-  and subset. OpenType/CFF (`.otf`) and font collections (`.ttc`) are
-  refused rather than half-embedded. Text drawn in a *standard* font is
+  and subset, plus any OpenType/CFF (`.otf`) file embedded whole —
+  subsetting PostScript outlines is not implemented, and a CID-keyed CFF
+  or a font collection (`.ttc`) is refused rather than half-embedded.
+  Text drawn in a *standard* font is
   still limited to WinAnsi/CP1252 and transliterated outside it; text in
   an embedded font is not. One gap in a font embedded whole (`subset:
   false`): characters past the Basic Multilingual Plane render correctly
