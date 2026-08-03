@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace MightyPDF\Tests\Editor\Form;
 
 use MightyPDF\Assembler\Dictionary;
+use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\Stream;
+use MightyPDF\Content\Font\EmbeddedFont;
 use MightyPDF\Content\Font\StandardFont;
+use MightyPDF\Content\PageBuilder;
 use MightyPDF\Editor\Form\FormFiller;
 use MightyPDF\Editor\PdfEditor;
+use MightyPDF\Tests\Support\SyntheticTrueTypeFont;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -198,6 +202,70 @@ final class TextAppearanceBuilderTest extends TestCase
         $fonts = $resources->get('Font');
         self::assertInstanceOf(Dictionary::class, $fonts);
         self::assertNotNull($fonts->get('Helv'));
+    }
+
+    /**
+     * A field created with an embedded font gets a drawn appearance like
+     * any other. Its codes are the font's own -- UTF-16 here, which is
+     * how a font embedded whole is addressed -- and finding them means
+     * reading the document's own /ToUnicode CMap backwards, exactly as a
+     * reader does to lay out a typed value.
+     */
+    public function testDrawsAValueInAFieldsEmbeddedFont(): void
+    {
+        $content = self::content(self::fill(self::embeddedFontForm(), 'name', 'AB'));
+
+        self::assertStringContainsString('<00410042> Tj', $content);
+    }
+
+    /**
+     * Measured from the descendant font's /W array: the synthetic font's
+     * "A" is 600 and its "B" 700, so "AB" is 13pt at 10pt -- and a
+     * right-aligned field puts it 13pt plus the padding from the right
+     * edge.
+     */
+    public function testMeasuresACompositeFontFromItsWidthArray(): void
+    {
+        $content = self::content(self::fill(self::embeddedFontForm(quadding: 2), 'name', 'AB'));
+
+        self::assertEqualsWithDelta(200.0 - 13.0 - 2.0, self::textOrigin($content), 0.01);
+    }
+
+    /**
+     * A value with a character the font cannot write is left to the
+     * reader rather than drawn with the character missing: an appearance
+     * that disagrees with the value is worse than none, because it looks
+     * finished.
+     */
+    public function testAValueTheEmbeddedFontCannotWriteIsLeftToTheReader(): void
+    {
+        // The synthetic font has no "C".
+        $editor = PdfEditor::fromBytes(self::embeddedFontForm());
+        (new FormFiller($editor))->set('name', 'AC');
+
+        self::assertNull(self::appearanceOf($editor, 'name'));
+
+        $acroForm = $editor->resolveDictionary($editor->catalog()->get('AcroForm'));
+        self::assertTrue($acroForm?->get('NeedAppearances')?->value());
+    }
+
+    /** A form this library wrote, whose field points at an embedded font. */
+    private static function embeddedFontForm(int $quadding = 0): string
+    {
+        $document = new Document();
+        $content = new PageBuilder($document, $document->newPage());
+
+        $content->addTextField(
+            'name',
+            x: 100,
+            y: 100,
+            width: 200,
+            height: 20,
+            font: EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build(), subset: false),
+            align: $quadding,
+        );
+
+        return $document->save();
     }
 
     private static function fill(string $pdf, string $field, string $value): ?Stream

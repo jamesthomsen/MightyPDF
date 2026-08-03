@@ -22,10 +22,11 @@ use MightyPDF\Content\Font\FontMetrics;
  * - wrapUtf8() measures through a Font -- any font, embedded ones
  *   included -- and returns text, which is what a caller then draws.
  * - wrap() measures through a standard font's width table and returns
- *   WinAnsi-encoded bytes, which is what a form field's appearance
- *   stream is built from (see Editor\Form\TextAppearanceBuilder, where
- *   the font is whatever the form's own /DA named and there is no Font
- *   object in sight).
+ *   WinAnsi-encoded bytes, for a caller working in encoded text.
+ * - wrapBy() measures through whatever closure it is handed and returns
+ *   the text as given, for a caller whose font is neither -- a form
+ *   field's, read back out of a file, which is a width table only after
+ *   several lookups (see Editor\Form\FieldFont).
  */
 final class TextWrapper
 {
@@ -65,15 +66,16 @@ final class TextWrapper
      * Wrapping proper, over whatever measures a string.
      *
      * Measurement is a callback rather than a width table because the
-     * two callers above disagree about what a string even is: one is
-     * measuring characters a font will encode for itself, the other
-     * bytes that are already encoded. Both agree about where a line can
-     * break, which is all this needs to know.
+     * callers disagree about what a string even is: one is measuring
+     * characters a font will encode for itself, another bytes that are
+     * already encoded, another a form font read back out of a file.
+     * All three agree about where a line can break, which is all this
+     * needs to know.
      *
      * @param \Closure(string): float $widthOf
-     * @return list<string>
+     * @return list<string> one UTF-8 line per element
      */
-    private static function wrapBy(string $text, \Closure $widthOf, float $maxWidthPt): array
+    public static function wrapBy(string $text, \Closure $widthOf, float $maxWidthPt): array
     {
         $lines = [];
 

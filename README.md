@@ -599,15 +599,24 @@ multiline wrapping, comb fields and auto-sizing (`0 Tf`) are all handled.
 Checkboxes and radio buttons keep their existing appearance streams and
 are switched with `/AS`.
 
-Where a form doesn't say enough to draw with — no `/DA`, or a font whose
-widths aren't in the file — the stale stream is removed and
-`/NeedAppearances` set instead, so a good reader still renders it and a
-poor one shows an empty box rather than the previous value.
+The font can be either kind. A standard font, or any font in the file
+with a `/Widths` array, is measured directly; a composite (`/Type0`)
+font — what a field created with an embedded font points at — is read
+back out of its own CMaps and `/W` array, mapping the value's characters
+to codes by reading the document's `/ToUnicode` backwards. That is the
+same route a reader takes to lay out a typed value, so the appearance
+drawn here agrees with the one it would have drawn.
+
+Where a form doesn't say enough to draw with — no `/DA`, a font whose
+widths aren't in the file, or a value with a character the font cannot
+write at all — the stale stream is removed and `/NeedAppearances` set
+instead, so a good reader still renders it and a poor one shows an empty
+box rather than the previous value.
 
 The drawing is only a picture of the value. `/V` keeps the text exactly
-as you gave it, in full Unicode; the appearance transliterates whatever
-the form's font can't represent, so `values()` round-trips losslessly
-even when the rendering can't.
+as you gave it, in full Unicode; a standard font's appearance
+transliterates what it can't represent, so `values()` round-trips
+losslessly even when the rendering can't.
 
 XFA forms are refused unless you pass `allowXfa: true` — Acrobat may
 honour the XFA description instead of the AcroForm fields, so the fill
@@ -761,10 +770,11 @@ for a runnable version.
   throughout. Drawn in a subset font — the default — they copy out fine.
 - **Form fields**: a field's font must be one of the standard 14 or a
   TrueType file embedded whole; a subset is refused, since it holds only
-  the characters this document already drew. Filling such a field
-  through `FormFiller` leaves the visible text to the reader
-  (`/NeedAppearances`) rather than drawing it here, which is what
-  happens for any font this library cannot measure from the file.
+  the characters this document already drew. Filling a field falls back
+  to `/NeedAppearances` where the form says too little to draw with — no
+  `/DA`, a font with no widths in the file, or a predefined CJK CMap
+  encoding, whose character-id mapping is not in the document to be
+  read.
 - **SVG**: see the "not supported" list above. Two of those are
   deliberate rather than pending: **filters** are a pixel operation, and
   supporting them would mean rasterizing the drawing — the opposite of

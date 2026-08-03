@@ -15,7 +15,6 @@ use MightyPDF\Assembler\Types\PdfRectangle;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfString;
 use MightyPDF\Assembler\Types\PdfValue;
-use MightyPDF\Assembler\Types\WinAnsiEncoding;
 use MightyPDF\Content\Font\FontMetrics;
 use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\Text\TextWrapper;
@@ -34,10 +33,12 @@ use MightyPDF\Editor\PdfEditor;
  * readers that *do* honour the flag free to redraw it anyway.
  *
  * What it deliberately does not do is change the value. /V keeps the text
- * exactly as given, in full Unicode; this draws an approximation of it
- * using whatever font the form specified, transliterating what that font
- * cannot represent. The stored data stays right even where the picture of
- * it cannot be.
+ * exactly as given, in full Unicode; this draws it with whatever font the
+ * form specified, which for a standard font means transliterating what
+ * that font cannot represent and for a composite one means leaving the
+ * whole field to the reader rather than dropping characters (see
+ * FieldFont). The stored data stays right even where the picture of it
+ * cannot be.
  */
 final class TextAppearanceBuilder
 {
@@ -85,21 +86,28 @@ final class TextAppearanceBuilder
             return null;
         }
 
-        [$fontObject, $metrics] = $font;
-        $encoded = WinAnsiEncoding::encode($text);
+        [$fontObject, $fieldFont] = $font;
+
+        // A value the font cannot write is left to the reader rather
+        // than drawn with characters missing: an appearance that
+        // disagrees with the value is worse than none, because it looks
+        // finished.
+        if (!$fieldFont->canShow($text)) {
+            return null;
+        }
 
         $multiline = $field->isMultiline();
         $comb = $this->combCells($field);
 
         $appearance = $appearance->isAutoSized()
-            ? $appearance->withSize($this->autoSize($encoded, $metrics, $width, $height, $multiline, $comb))
+            ? $appearance->withSize($this->autoSize($text, $fieldFont, $width, $height, $multiline, $comb))
             : $appearance;
 
         $body = $multiline
-            ? $this->multilineBody($text, $encoded, $appearance, $metrics, $width, $height)
+            ? $this->multilineBody($text, $appearance, $fieldFont, $width, $height)
             : ($comb !== null
-                ? $this->combBody($encoded, $appearance, $metrics, $width, $height, $comb)
-                : $this->singleLineBody($encoded, $appearance, $metrics, $field, $width, $height));
+                ? $this->combBody($text, $appearance, $fieldFont, $width, $height, $comb)
+                : $this->singleLineBody($text, $appearance, $fieldFont, $field, $width, $height));
 
         return $this->wrap($body, $appearance->fontResourceName, $fontObject, $width, $height);
     }
@@ -140,29 +148,32 @@ final class TextAppearanceBuilder
     }
 
     private function singleLineBody(
-        string $encoded,
+        string $text,
         DefaultAppearance $appearance,
-        FontMetrics $metrics,
+        FieldFont $font,
         Field $field,
         float $width,
         float $height,
     ): string {
-        $textWidth = $metrics->widthOf($encoded, $appearance->fontSizePt);
+        $textWidth = $font->widthOfPt($text, $appearance->fontSizePt);
         $x = $this->alignedX($field, $textWidth, $width);
         $y = ($height - $appearance->fontSizePt * self::CAP_HEIGHT_RATIO) / 2.0;
 
-        return $this->textBlock($appearance, [[$x, $y, $encoded]]);
+        return $this->textBlock($appearance, $font, [[$x, $y, $text]]);
     }
 
     private function multilineBody(
         string $text,
-        string $encoded,
         DefaultAppearance $appearance,
-        FontMetrics $metrics,
+        FieldFont $font,
         float $width,
         float $height,
     ): string {
-        $lines = TextWrapper::wrap($text, $metrics, $appearance->fontSizePt, max(1.0, $width - self::PADDING * 2));
+        $lines = TextWrapper::wrapBy(
+            $text,
+            static fn (string $line): float => $font->widthOfPt($line, $appearance->fontSizePt),
+            max(1.0, $width - self::PADDING * 2),
+        );
         $leading = $appearance->fontSizePt * self::LINE_SPACING;
 
         // Multiline text starts at the top and runs down, unlike a single
@@ -171,11 +182,11 @@ final class TextAppearanceBuilder
         $runs = [];
 
         foreach ($lines as $line) {
-            $runs[] = [self::PADDING, $y, WinAnsiEncoding::encode($line)];
+            $runs[] = [self::PADDING, $y, $line];
             $y -= $leading;
         }
 
-        return $this->textBlock($appearance, $runs);
+        return $this->textBlock($appearance, $font, $runs);
     }
 
     /**
@@ -185,9 +196,9 @@ final class TextAppearanceBuilder
      * running text it lines up with none of the printed boxes.
      */
     private function combBody(
-        string $encoded,
+        string $text,
         DefaultAppearance $appearance,
-        FontMetrics $metrics,
+        FieldFont $font,
         float $width,
         float $height,
         int $cells,
@@ -196,20 +207,19 @@ final class TextAppearanceBuilder
         $y = ($height - $appearance->fontSizePt * self::CAP_HEIGHT_RATIO) / 2.0;
         $runs = [];
 
-        for ($i = 0, $length = min(strlen($encoded), $cells); $i < $length; ++$i) {
-            $character = $encoded[$i];
-            $characterWidth = $metrics->widthOf($character, $appearance->fontSizePt);
+        foreach (array_slice($font->characters($text), 0, $cells) as $i => $character) {
+            $characterWidth = $font->widthOfPt($character, $appearance->fontSizePt);
 
             $runs[] = [$cellWidth * $i + ($cellWidth - $characterWidth) / 2.0, $y, $character];
         }
 
-        return $this->textBlock($appearance, $runs);
+        return $this->textBlock($appearance, $font, $runs);
     }
 
     /**
-     * @param list<array{0: float, 1: float, 2: string}> $runs x, y, WinAnsi bytes
+     * @param list<array{0: float, 1: float, 2: string}> $runs x, y, text
      */
-    private function textBlock(DefaultAppearance $appearance, array $runs): string
+    private function textBlock(DefaultAppearance $appearance, FieldFont $font, array $runs): string
     {
         if ($runs === []) {
             return '';
@@ -219,12 +229,12 @@ final class TextAppearanceBuilder
         // spacing the form's author set survives untouched.
         $out = "BT\n" . rtrim($appearance->operators) . "\n";
 
-        foreach ($runs as [$x, $y, $bytes]) {
+        foreach ($runs as [$x, $y, $text]) {
             $out .= sprintf(
                 "1 0 0 1 %s %s Tm\n%s Tj\n",
                 PdfNumberFormat::format($x),
                 PdfNumberFormat::format($y),
-                PdfString::latin1($bytes)->format(),
+                $font->show($text),
             );
         }
 
@@ -251,8 +261,8 @@ final class TextAppearanceBuilder
      * a reader clips both.
      */
     private function autoSize(
-        string $encoded,
-        FontMetrics $metrics,
+        string $text,
+        FieldFont $font,
         float $width,
         float $height,
         bool $multiline,
@@ -264,7 +274,7 @@ final class TextAppearanceBuilder
             ? 12.0
             : max(4.0, ($height - self::PADDING) / (self::CAP_HEIGHT_RATIO + 0.35));
 
-        if ($encoded === '' || $multiline) {
+        if ($text === '' || $multiline) {
             return min(12.0, $byHeight);
         }
 
@@ -272,7 +282,7 @@ final class TextAppearanceBuilder
             return min($byHeight, max(4.0, $width / $comb * 0.8));
         }
 
-        $widthAtOnePoint = $metrics->widthOf($encoded, 1.0);
+        $widthAtOnePoint = $font->widthOfPt($text, 1.0);
 
         $byWidth = $widthAtOnePoint > 0.0
             ? ($width - self::PADDING * 2) / $widthAtOnePoint
@@ -311,9 +321,9 @@ final class TextAppearanceBuilder
 
     /**
      * The font a /DA name refers to, from the AcroForm's /DR, together
-     * with something that can measure text in it.
+     * with something that can measure and write text in it.
      *
-     * @return ?array{0: PdfValue, 1: FontMetrics}
+     * @return ?array{0: PdfValue, 1: FieldFont}
      */
     private function resourceFont(string $resourceName): ?array
     {
@@ -331,21 +341,37 @@ final class TextAppearanceBuilder
             return null;
         }
 
-        $metrics = $this->metricsFor($font);
+        $fieldFont = $this->fieldFont($font);
 
-        return $metrics === null ? null : [$reference, $metrics];
+        return $fieldFont === null ? null : [$reference, $fieldFont];
     }
 
     /**
-     * Widths for a font dictionary.
+     * What a font dictionary can be measured and written with.
      *
-     * A form's font is usually one of the standard 14, for which the
-     * widths are built in. Otherwise they have to come from the font's own
-     * /Widths array -- and if there is neither, there is no way to know
-     * how wide the text will be, so nothing is drawn rather than something
-     * misaligned.
+     * Three cases, in the order they are worth trying. A form's font is
+     * usually one of the standard 14, for which the widths are built in.
+     * A composite font is read back out of its own CMaps and /W array
+     * (see CompositeFieldFont) -- that is what a field this library
+     * created with an embedded font points at. Anything else has to
+     * carry a /Widths array of its own; a font with none of the three
+     * says too little to draw with, and nothing is drawn rather than
+     * something misaligned.
      */
-    private function metricsFor(Dictionary $font): ?FontMetrics
+    private function fieldFont(Dictionary $font): ?FieldFont
+    {
+        $subtype = $this->editor->resolve($font->get('Subtype'));
+
+        if ($subtype instanceof PdfName && $subtype->value() === 'Type0') {
+            return CompositeFieldFont::read($this->editor, $font);
+        }
+
+        $metrics = $this->simpleMetrics($font);
+
+        return $metrics === null ? null : new SimpleFieldFont($metrics);
+    }
+
+    private function simpleMetrics(Dictionary $font): ?FontMetrics
     {
         $baseFont = $this->editor->resolve($font->get('BaseFont'));
 
