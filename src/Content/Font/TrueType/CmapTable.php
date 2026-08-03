@@ -170,6 +170,38 @@ final class CmapTable
         return ($glyph === null || $glyph === 0) ? null : $glyph;
     }
 
+    /**
+     * The whole mapping, as code point => glyph id, on the same terms
+     * glyphFor() answers single questions on: glyph 0 is absence, and a
+     * symbol font's characters are reachable at their ordinary code
+     * points as well as the Private Use ones the font files them under.
+     *
+     * The symbol aliases come first so that a caller keeping one code
+     * point per glyph keeps the same one glyphFor() would have handed it.
+     *
+     * @return array<int, int>
+     */
+    public function mappings(): array
+    {
+        $mappings = [];
+
+        if ($this->isSymbolic) {
+            foreach ($this->map as $codePoint => $glyph) {
+                if ($glyph !== 0 && $codePoint >= self::SYMBOL_RANGE_START && $codePoint <= self::SYMBOL_RANGE_START + 0xFF) {
+                    $mappings[$codePoint - self::SYMBOL_RANGE_START] = $glyph;
+                }
+            }
+        }
+
+        foreach ($this->map as $codePoint => $glyph) {
+            if ($glyph !== 0) {
+                $mappings[$codePoint] ??= $glyph;
+            }
+        }
+
+        return $mappings;
+    }
+
     /** @return array<int, int>|null */
     private static function parseSubtable(SfntReader $reader, int $offset): ?array
     {

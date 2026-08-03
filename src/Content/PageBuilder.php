@@ -19,9 +19,11 @@ use MightyPDF\Assembler\Types\PdfReal;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfRectangle;
 use MightyPDF\Content\Barcode\Code39;
+use MightyPDF\Content\Font\EmbeddedFont;
 use MightyPDF\Content\Font\Font;
 use MightyPDF\Content\Font\FontWriter;
 use MightyPDF\Content\Font\StandardFont;
+use MightyPDF\Content\Font\TrueType\FontException;
 use MightyPDF\Content\Image\GifImage;
 use MightyPDF\Content\Image\JpegImage;
 use MightyPDF\Content\Image\PngImage;
@@ -678,6 +680,13 @@ final class PageBuilder
         return $resourceName;
     }
 
+    /**
+     * A single- or multi-line text field.
+     *
+     * $font may be one of the standard 14 or an embedded TrueType font
+     * loaded with subset: false -- see formFontResourceName() for why a
+     * subset is refused.
+     */
     public function addTextField(
         string $name,
         float $x,
@@ -685,7 +694,7 @@ final class PageBuilder
         float $width,
         float $height,
         ?string $value = null,
-        StandardFont $font = StandardFont::Helvetica,
+        Font $font = StandardFont::Helvetica,
         float $fontSizePt = 10.0,
         ?int $maxLength = null,
         ?int $align = null,
@@ -814,7 +823,7 @@ final class PageBuilder
         float $width,
         float $height,
         ?string $value = null,
-        StandardFont $font = StandardFont::Helvetica,
+        Font $font = StandardFont::Helvetica,
         float $fontSizePt = 10.0,
     ): static {
         return $this->addChoiceField($name, $options, $x, $y, $width, $height, $value, $font, $fontSizePt, combo: false);
@@ -834,7 +843,7 @@ final class PageBuilder
         float $width,
         float $height,
         ?string $value = null,
-        StandardFont $font = StandardFont::Helvetica,
+        Font $font = StandardFont::Helvetica,
         float $fontSizePt = 10.0,
     ): static {
         return $this->addChoiceField($name, $options, $x, $y, $width, $height, $value, $font, $fontSizePt, combo: true);
@@ -851,7 +860,7 @@ final class PageBuilder
         float $width,
         float $height,
         ?string $value,
-        StandardFont $font,
+        Font $font,
         float $fontSizePt,
         bool $combo,
     ): static {
@@ -934,16 +943,27 @@ final class PageBuilder
      * by every page, so AcroForm owns both the naming and the dedupe --
      * see AcroForm::fontResourceName().
      *
-     * Standard fonts only, unlike the drawing methods above: a field's
-     * /DA names a font that the *reader* uses to lay out what someone
-     * types into it, so an embedded subset -- which contains only the
-     * glyphs this document already drew -- is the wrong thing to point
-     * a text field at. See the README's form-field section.
+     * A field's font is not used the way a drawn font is. Its /DA names
+     * the font a *reader* lays out what someone types with, and what
+     * they will type is not known here -- so a subset, which holds only
+     * the glyphs this document already drew, is the one thing it must
+     * not be. Hence the refusal below rather than a silent substitution:
+     * a subset points at a font whose missing characters only show up
+     * when someone fills the form in.
      */
-    private function formFontResourceName(StandardFont $font): string
+    private function formFontResourceName(Font $font): string
     {
+        if ($font instanceof EmbeddedFont && $font->isSubset()) {
+            throw new FontException(sprintf(
+                'The font "%s" is subset, so it holds only the characters this document draws -- a form field needs '
+                . 'every character someone might type into it. Load it with EmbeddedFont::load($path, subset: false) '
+                . 'to embed it whole.',
+                $font->name(),
+            ));
+        }
+
         return $this->document->acroForm()->fontResourceName(
-            $font->name,
+            $font->cacheKey(),
             $font->writerFor($this->document)->dictionary(),
         );
     }

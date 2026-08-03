@@ -160,16 +160,65 @@ final class EmbeddedFontTest extends TestCase
         self::assertSame('000200010002', bin2hex($writer->encode('ABA')));
     }
 
-    /** Embedding whole keeps the font's own numbering, since no glyph moves. */
-    public function testEmbeddingWholeUsesTheFontsOwnGlyphNumbers(): void
+    /**
+     * A font embedded whole is addressed by character rather than by
+     * glyph: its codes are the text's own UTF-16, which is what lets a
+     * reader write text in it that this document never drew. See
+     * UnicodeCMap.
+     */
+    public function testAFontEmbeddedWholeIsAddressedByCharacter(): void
     {
         $document = new Document();
         $writer = self::font(subset: false)->writerFor($document);
 
-        self::assertSame(
-            sprintf('%04x%04x', SyntheticTrueTypeFont::GLYPH_B, SyntheticTrueTypeFont::GLYPH_A),
-            bin2hex($writer->encode('BA')),
-        );
+        self::assertSame('00420041', bin2hex($writer->encode('BA')));
+        self::assertSame('d83dde00', bin2hex($writer->encode("\u{1F600}")));
+    }
+
+    public function testAFontEmbeddedWholeCarriesItsOwnEncodingCMap(): void
+    {
+        $pdf = self::documentDrawing('A', subset: false);
+
+        // Named after the font: two different CMaps sharing a name is
+        // how a reader that caches them by name draws one font's text
+        // through another's mapping.
+        self::assertStringContainsString('/CMapName /SyntheticTest-UTF16-H', $pdf);
+        self::assertStringContainsString('/Type /CMap', $pdf);
+        self::assertStringNotContainsString('/Encoding /Identity-H', $pdf);
+
+        $encoding = self::encodingCMap($pdf);
+        self::assertStringContainsString("<0041> <0042> 1\n", $encoding, '"A" and "B" are consecutive both ways');
+        self::assertStringContainsString('<D83DDE00> 5', $encoding, 'a character past the BMP is a four-byte code');
+        self::assertStringContainsString("<D800DC00> <DBFFDFFF>\n", $encoding, 'the surrogate half of the code space');
+    }
+
+    /**
+     * The two ends of a cidrange must agree on every byte but the last,
+     * so a run of characters is broken every 256 even where the font
+     * maps them without a gap.
+     *
+     * Ghostscript enforces this and poppler does not, which is the worst
+     * way for a document to be wrong: it renders perfectly in one reader
+     * and as empty boxes in the other.
+     */
+    public function testARangeIsNeverWrittenAcrossAHighByteBoundary(): void
+    {
+        // Two characters either side of the boundary, mapping to two
+        // consecutive glyphs -- one range, were it allowed.
+        $characters = [
+            0x00FF => SyntheticTrueTypeFont::GLYPH_A,
+            0x0100 => SyntheticTrueTypeFont::GLYPH_B,
+        ];
+
+        $document = new Document();
+        $content = new PageBuilder($document, $document->newPage());
+        $content->drawText(EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build($characters), subset: false), 12.0, 72, 700, "\u{00FF}");
+
+        $encoding = self::encodingCMap($document->save());
+
+        self::assertStringContainsString("<00FF> 1\n", $encoding);
+        self::assertStringContainsString("<0100> 2\n", $encoding);
+        self::assertStringNotContainsString('<00FF> <0100>', $encoding);
     }
 
     public function testTheWidthsArrayCoversEveryCharacterIdUsed(): void
@@ -181,17 +230,62 @@ final class EmbeddedFontTest extends TestCase
     }
 
     /**
+     * A subset is described by what the document drew, because that is
+     * all the file contains. A font embedded whole is described by what
+     * it can draw: the text it will show is not settled yet -- that is
+     * the only reason to embed one whole -- so the reader that settles it
+     * needs widths for characters this document never used.
+     */
+    public function testAFontEmbeddedWholeDescribesEveryCharacterItCanDraw(): void
+    {
+        // Only "A" is drawn, but the font maps six characters.
+        $pdf = self::documentDrawing('A', subset: false);
+
+        self::assertStringContainsString('/W [1 [600 700 300 600 800 250]]', $pdf);
+
+        $cmap = self::toUnicodeCMap($pdf);
+        self::assertStringContainsString('<0041> <0042> <0041>', $cmap, '"B" was never drawn but the font can draw it');
+    }
+
+    /**
+     * A /ToUnicode CMap takes one code width throughout: a reader handed
+     * a second one drops every entry that uses it. The four-byte codes
+     * standing for characters past the BMP are therefore written as the
+     * two surrogates they are made of, each standing for itself -- which
+     * costs nothing, since the codes are UTF-16 already.
+     */
+    public function testToUnicodeStaysTwoBytesWideEvenForAFontReachingPastTheBmp(): void
+    {
+        $cmap = self::toUnicodeCMap(self::documentDrawing('A', subset: false));
+
+        self::assertStringContainsString('<D800> <D8FF> <D800>', $cmap);
+        self::assertStringContainsString('<DE00> <DEFF> <DE00>', $cmap);
+        self::assertSame(
+            0,
+            preg_match('/^<[0-9A-F]{8}>/m', $cmap),
+            'a four-byte code in a two-byte CMap makes a reader drop the entry',
+        );
+    }
+
+    /**
      * A subset hands out consecutive ids, so its widths are one run. A
-     * font embedded whole keeps its own glyph numbers, and the glyphs
-     * the document never drew leave gaps that a single run would claim
-     * widths for.
+     * font embedded whole keeps its own glyph numbers, and a glyph no
+     * character maps to leaves a gap that a single run would claim a
+     * width for.
      */
     public function testTheWidthsArrayBreaksIntoRunsWhereIdsAreNotConsecutive(): void
     {
-        // "A" is glyph 1 and "Á" is glyph 4; glyphs 2 and 3 go undrawn.
-        $pdf = self::documentDrawing("A\u{00C1}", subset: false);
+        // A cmap reaching glyphs 1 and 4 only: 2 and 3 are unreachable.
+        $characters = [
+            0x0041 => SyntheticTrueTypeFont::GLYPH_A,
+            0x00C1 => SyntheticTrueTypeFont::GLYPH_A_ACUTE,
+        ];
 
-        self::assertStringContainsString('/W [1 [600] 4 [600]]', $pdf);
+        $document = new Document();
+        $content = new PageBuilder($document, $document->newPage());
+        $content->drawText(EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build($characters), subset: false), 12.0, 72, 700, 'A');
+
+        self::assertStringContainsString('/W [1 [600] 4 [600]]', $document->save());
     }
 
     public function testWritesAToUnicodeMapSoTheTextCanBeCopiedBackOut(): void
@@ -230,22 +324,42 @@ final class EmbeddedFontTest extends TestCase
     }
 
     /**
-     * The document's streams, inflated -- which for these documents is
-     * the content stream, the font program and the /ToUnicode CMap, and
-     * only the last of those is text.
+     * The /ToUnicode CMap alone -- a document with a font embedded whole
+     * holds a second CMap, its encoding, and the two say different things
+     * in the same syntax.
      */
     private static function toUnicodeCMap(string $pdf): string
     {
-        $streams = self::inflateStreams($pdf);
+        return self::cmap($pdf, 2);
+    }
 
-        self::assertStringContainsString('begincmap', $streams, 'no /ToUnicode CMap was written');
+    /** The /Encoding CMap alone; see toUnicodeCMap(). */
+    private static function encodingCMap(string $pdf): string
+    {
+        return self::cmap($pdf, 1);
+    }
 
-        return $streams;
+    /** $type is the CMap's own /CMapType: 1 an encoding, 2 a ToUnicode map. */
+    private static function cmap(string $pdf, int $type): string
+    {
+        foreach (self::inflatedStreams($pdf) as $stream) {
+            if (str_contains($stream, "/CMapType $type def")) {
+                return $stream;
+            }
+        }
+
+        self::fail("no CMap of type $type was written");
     }
 
     private static function inflateStreams(string $pdf): string
     {
-        $out = '';
+        return implode("\n", self::inflatedStreams($pdf));
+    }
+
+    /** @return list<string> */
+    private static function inflatedStreams(string $pdf): array
+    {
+        $out = [];
 
         if (preg_match_all('/stream\r?\n(.*?)\r?\nendstream/s', $pdf, $matches) === 0) {
             return $out;
@@ -255,7 +369,7 @@ final class EmbeddedFontTest extends TestCase
             $inflated = @gzuncompress($stream);
 
             if ($inflated !== false) {
-                $out .= $inflated . "\n";
+                $out[] = $inflated;
             }
         }
 

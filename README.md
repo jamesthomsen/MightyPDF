@@ -141,7 +141,9 @@ reader gives back the characters rather than glyph numbers.
 document is written and the program is built at save time, when the used
 set is finally known — a page of text typically costs a few kilobytes
 against a font file of several hundred. Pass `subset: false` to embed
-the file whole.
+the file whole, which is what a form field's font has to be (see below):
+a whole font is addressed by character rather than by glyph number, so a
+reader can draw text in it that this document never drew.
 
 **A font contains what it contains.** Drawing a character the font has
 no glyph for throws rather than drawing an empty box, since a box is
@@ -313,9 +315,7 @@ the exact scope.
 ## Form fields (AcroForm)
 
 Six field types are supported: single-line text fields, checkboxes, radio
-groups, list boxes, dropdowns, and signature-field placeholders. Field
-fonts are standard-14 only — see "Known limitations" for why an embedded
-font is the wrong thing to point a field at. Adding
+groups, list boxes, dropdowns, and signature-field placeholders. Adding
 any of them lazily creates the document's single shared `/AcroForm` the
 first time it's needed — every field on every page ends up listed
 together in that one form.
@@ -338,15 +338,36 @@ $content->addDropdown('shipping', ['Standard', 'Express'], x: 200, y: 440, width
 $content->addSignatureField('signature', x: 200, y: 390, width: 200, height: 40);
 ```
 
-`addTextField(string $name, float $x, float $y, float $width, float $height, ?string $value = null, StandardFont $font = StandardFont::Helvetica, float $fontSizePt = 10.0, ?int $maxLength = null)`
+`addTextField(string $name, float $x, float $y, float $width, float $height, ?string $value = null, Font $font = StandardFont::Helvetica, float $fontSizePt = 10.0, ?int $maxLength = null)`
 
 `addCheckbox(string $name, float $x, float $y, float $size, bool $checked = false)`
 
 `addRadioGroup(string $name, array $options, ?string $checkedExportValue = null, MarkStyle $mark = MarkStyle::Dot)` — `$options` is a list of `['exportValue' => ..., 'x' => ..., 'y' => ..., 'size' => ...]`, one per button. At most one option's `exportValue` should match `$checkedExportValue`; the rest start unchecked, and the group enforces mutual exclusion natively (no JavaScript).
 
-`addListBox(string $name, array $options, float $x, float $y, float $width, float $height, ?string $value = null, StandardFont $font = StandardFont::Helvetica, float $fontSizePt = 10.0)` and `addDropdown(...)` (same signature) — `$options` is a plain list of strings; a dropdown is a list box with the spec's "Combo" flag set, which is the only difference between the two.
+`addListBox(string $name, array $options, float $x, float $y, float $width, float $height, ?string $value = null, Font $font = StandardFont::Helvetica, float $fontSizePt = 10.0)` and `addDropdown(...)` (same signature) — `$options` is a plain list of strings; a dropdown is a list box with the spec's "Combo" flag set, which is the only difference between the two.
 
 `addSignatureField(string $name, float $x, float $y, float $width, float $height)` — reserves a `/Rect` and an `/AcroForm` entry for a signature to be added later by some other process. This library does not sign documents (hashing a byte range, embedding a certificate, and validating trust are a different feature this project doesn't touch anywhere else), so the field is always created unsigned, with no `/V`.
+
+### The font a field is filled in with
+
+A field's `$font` may be one of the standard 14 or a TrueType file of
+your own, which is how a form takes input a standard font cannot draw —
+Greek, Cyrillic, CJK:
+
+```php
+$formFont = EmbeddedFont::load('/path/to/NotoSans-Regular.ttf', subset: false);
+
+$content->addTextField('name', x: 72, y: 600, width: 300, height: 24, font: $formFont);
+```
+
+**`subset: false` is required here, and refused otherwise.** A field's
+`/DA` names the font a *reader* lays out what someone types with, and a
+subset holds only the glyphs this document already drew — pointing a
+field at one gives the reader a font missing exactly the characters it
+needs, a failure that surfaces when the form is filled in rather than
+when it is written. The whole font is therefore embedded, described
+character by character rather than glyph by glyph, and costs whatever
+the file on disk weighs.
 
 Text fields, list boxes and dropdowns rely on `/NeedAppearances` so the
 PDF reader regenerates the visible text itself from the field's value and
@@ -705,12 +726,17 @@ for a runnable version.
   and subset. OpenType/CFF (`.otf`) and font collections (`.ttc`) are
   refused rather than half-embedded. Text drawn in a *standard* font is
   still limited to WinAnsi/CP1252 and transliterated outside it; text in
-  an embedded font is not.
-- **Form fields**: a field's font is one of the standard 14. A field's
-  `/DA` names the font a *reader* uses to lay out what someone types
-  into it, and an embedded subset holds only the glyphs this document
-  already drew, so pointing a field at one would give the reader a font
-  without the characters it needs.
+  an embedded font is not. One gap in a font embedded whole (`subset:
+  false`): characters past the Basic Multilingual Plane render correctly
+  but do not reliably copy out of the page, because such a font is
+  addressed by UTF-16 code and a `/ToUnicode` map takes one code width
+  throughout. Drawn in a subset font — the default — they copy out fine.
+- **Form fields**: a field's font must be one of the standard 14 or a
+  TrueType file embedded whole; a subset is refused, since it holds only
+  the characters this document already drew. Filling such a field
+  through `FormFiller` leaves the visible text to the reader
+  (`/NeedAppearances`) rather than drawing it here, which is what
+  happens for any font this library cannot measure from the file.
 - **SVG**: see the "not supported" list above. Two of those are
   deliberate rather than pending: **filters** are a pixel operation, and
   supporting them would mean rasterizing the drawing — the opposite of

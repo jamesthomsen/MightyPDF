@@ -22,9 +22,12 @@ use MightyPDF\Content\Text\Utf8;
  *
  * By default only the glyphs the document actually draws are embedded
  * (see TrueTypeSubset for why that matters and what it costs). Pass
- * subset: false to embed the file whole -- worth it only for a document
- * whose text is not known until after it is written, which is not a case
- * this library can produce.
+ * subset: false to embed the file whole, which is what a document whose
+ * text is not settled when it is written needs -- a form field, where
+ * the reader draws whatever someone types. A whole font is also
+ * addressed differently: by character rather than by glyph number, since
+ * nothing can be assigned to text that does not exist yet. See
+ * Type0Font and UnicodeCMap.
  *
  * An EmbeddedFont is a value, not document state: loading the same file
  * twice gives two objects that behave identically and share one font

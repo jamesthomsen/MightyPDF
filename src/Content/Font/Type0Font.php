@@ -37,19 +37,26 @@ use MightyPDF\Content\Text\Utf8;
  *     ToUnicode       what each character id means as text, so the
  *                     document can be searched and copied out of
  *
- * The encoding is Identity-H: the two bytes in the content stream *are*
- * the glyph number, with no intervening character set. That is the only
- * arrangement that reaches an arbitrary glyph of an arbitrary font, and
- * it is why /ToUnicode is not optional here -- without it, a reader has
- * no way to know that glyph 7 was ever the letter "A", and selecting the
- * text copies gibberish. That failure is invisible in the rendered page,
- * which is exactly how it gets shipped.
+ * A subset font is addressed with Identity-H: the two bytes in the
+ * content stream *are* the glyph number, with no intervening character
+ * set. That is the only arrangement that reaches an arbitrary glyph of
+ * an arbitrary font, and it is why /ToUnicode is not optional -- without
+ * it, a reader has no way to know that glyph 7 was ever the letter "A",
+ * and selecting the text copies gibberish. That failure is invisible in
+ * the rendered page, which is exactly how it gets shipped.
  *
  * Glyph numbers are assigned as text is drawn, not as the font is
  * loaded: the first character drawn becomes glyph 1, and so on. That is
  * what lets the font program be subset down to only what was used -- the
  * used set is not known until the document is finished, which is what
  * finalize() is for (see Finalizable).
+ *
+ * A font embedded whole is addressed the other way, by character, with
+ * an encoding CMap of its own (UnicodeCMap) and a /W array covering
+ * every character it can draw rather than every one it did. Assigning
+ * numbers as text is drawn cannot work when the text will be written by
+ * someone else, which is the whole reason to embed a font whole: a form
+ * field's value is typed after the document is finished.
  */
 final class Type0Font extends Dictionary implements Finalizable, FontWriter
 {
@@ -76,6 +83,7 @@ final class Type0Font extends Dictionary implements Finalizable, FontWriter
         private readonly Dictionary $descriptor,
         private readonly Stream $fontFile,
         private readonly Stream $toUnicode,
+        private readonly ?Stream $encoding,
     ) {
         parent::__construct($objectId);
     }
@@ -96,11 +104,18 @@ final class Type0Font extends Dictionary implements Finalizable, FontWriter
         $cidFont = new Dictionary($document->allocate());
         $toUnicode = new Stream($document->allocate(), '');
 
-        $font = new self($document->allocate(), $file, $subset, $cidFont, $descriptor, $fontFile, $toUnicode);
+        // A font embedded whole is addressed by Unicode rather than by
+        // glyph number, which takes a CMap of its own -- see the class
+        // doc comment and UnicodeCMap.
+        $encoding = $subset ? null : new Stream($document->allocate(), '');
+
+        $font = new self($document->allocate(), $file, $subset, $cidFont, $descriptor, $fontFile, $toUnicode, $encoding);
 
         $font->set('Type', new PdfName('Font'));
         $font->set('Subtype', new PdfName('Type0'));
-        $font->set('Encoding', new PdfName('Identity-H'));
+        $font->set('Encoding', $encoding === null
+            ? new PdfName('Identity-H')
+            : new PdfReference($encoding->objectId()));
         $font->set('DescendantFonts', new PdfArray(new PdfReference($cidFont->objectId())));
         $font->set('ToUnicode', new PdfReference($toUnicode->objectId()));
 
@@ -118,8 +133,10 @@ final class Type0Font extends Dictionary implements Finalizable, FontWriter
         $descriptor->set('Type', new PdfName('FontDescriptor'));
         $descriptor->set('FontFile2', new PdfReference($fontFile->objectId()));
 
-        foreach ([$fontFile, $descriptor, $cidFont, $toUnicode, $font] as $object) {
-            $document->register($object);
+        foreach ([$fontFile, $descriptor, $cidFont, $toUnicode, $encoding, $font] as $object) {
+            if ($object !== null) {
+                $document->register($object);
+            }
         }
 
         return $font;
@@ -158,7 +175,13 @@ final class Type0Font extends Dictionary implements Finalizable, FontWriter
                 ));
             }
 
-            $bytes .= pack('n', $this->characterIdFor($glyph, $codePoint));
+            // Embedded whole, the codes are the text's own UTF-16 -- the
+            // font is addressed by character, and nothing has to be
+            // assigned. Subset, the code is a glyph number this document
+            // hands out as it goes.
+            $bytes .= $this->subset
+                ? pack('n', $this->characterIdFor($glyph, $codePoint))
+                : UnicodeCMap::encode(Utf8::fromCodePoint($codePoint));
         }
 
         return $bytes;
@@ -195,6 +218,10 @@ final class Type0Font extends Dictionary implements Finalizable, FontWriter
 
     public function finalize(): void
     {
+        if (!$this->subset) {
+            $this->coverWholeFont();
+        }
+
         $program = $this->subset
             ? TrueTypeSubset::build($this->file, $this->glyphOrder)
             : $this->file->bytes();
@@ -212,7 +239,69 @@ final class Type0Font extends Dictionary implements Finalizable, FontWriter
         $this->cidFont->set('W', $this->widths());
 
         $this->describeFont($baseFont);
-        $this->toUnicode->replaceBytes($this->buildToUnicodeCMap());
+        $this->writeCMaps();
+    }
+
+    /**
+     * The two CMaps, which differ by mode: a subset is addressed by glyph
+     * number and needs only to say what those numbers mean as text, while
+     * a font embedded whole is addressed by Unicode and has to carry the
+     * mapping from that to its glyphs.
+     */
+    private function writeCMaps(): void
+    {
+        if ($this->encoding === null) {
+            $this->toUnicode->replaceBytes($this->buildToUnicodeCMap());
+
+            return;
+        }
+
+        $cmap = new UnicodeCMap($this->file->characterMap(), self::encodingCMapName($this->file->postScriptName()));
+
+        $this->encoding->replaceBytes($cmap->encodingCMap());
+        $this->encoding->set('Type', new PdfName('CMap'));
+        $this->encoding->set('CMapName', new PdfName($cmap->name()));
+        $this->encoding->set('CIDSystemInfo', self::identitySystemInfo());
+        $this->encoding->set('WMode', new PdfInteger(0));
+
+        $this->toUnicode->replaceBytes($cmap->toUnicodeCMap());
+    }
+
+    /**
+     * A CMap is a named resource, and two different ones sharing a name
+     * is how a reader that caches them by name draws one font's text with
+     * another's mapping. Naming it after the font it belongs to keeps
+     * that from happening while staying the same on every save.
+     */
+    private static function encodingCMapName(string $postScriptName): string
+    {
+        return preg_replace('/[^A-Za-z0-9]/', '', $postScriptName) . '-UTF16-H';
+    }
+
+    /**
+     * Describes every character the font can draw, not just the ones
+     * this document drew.
+     *
+     * A subset font is described by what was used because that is all
+     * there is: the glyphs that went unused are not in the file. A font
+     * embedded whole is the other case -- it is embedded whole precisely
+     * because the text to be shown in it is not settled when the document
+     * is written, and the reader that settles it needs a width and a
+     * meaning for glyphs this document never asked for. A form field is
+     * that case: someone types into it afterwards, and the reader lays
+     * their text out by mapping it back through /ToUnicode. Characters
+     * missing from that map are the ones it cannot draw.
+     *
+     * Glyphs no character maps to are left out. They are reachable only
+     * through layout features this library does not use, and describing
+     * them would cost every reader a longer /W array for glyphs no text
+     * can name.
+     */
+    private function coverWholeFont(): void
+    {
+        foreach ($this->file->characterMap() as $codePoint => $glyph) {
+            $this->characterIdFor($glyph, $codePoint);
+        }
     }
 
     private function describeFont(PdfName $baseFont): void

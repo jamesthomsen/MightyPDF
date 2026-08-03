@@ -157,6 +157,21 @@ final class TrueTypeFile
     }
 
     /**
+     * Every character this font can draw, as code point => glyph id.
+     *
+     * What a caller wants this for is describing the font rather than
+     * drawing with it: /W and /ToUnicode for a font embedded whole have
+     * to cover characters the document itself never drew, because the
+     * text that will be shown in it does not exist yet. See Type0Font.
+     *
+     * @return array<int, int>
+     */
+    public function characterMap(): array
+    {
+        return $this->cmap?->mappings() ?? [];
+    }
+
+    /**
      * $glyph's advance width in font design units.
      *
      * 'hmtx' stops early on purpose: a font whose last glyphs all have

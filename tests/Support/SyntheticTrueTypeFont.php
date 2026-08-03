@@ -84,8 +84,16 @@ final class SyntheticTrueTypeFont
     {
     }
 
-    public static function build(): string
+    /**
+     * @param ?array<int, int> $characters code point => glyph id, for a
+     *        font whose cmap covers something other than every glyph --
+     *        the ids a font embedded whole describes come from its cmap,
+     *        so leaving a glyph out of it is how gaps in them are made.
+     *        Ascending by code point, as cmapFormat4() requires.
+     */
+    public static function build(?array $characters = null): string
     {
+        $characters ??= self::CHARACTERS;
         $glyphs = [
             0 => '',
             self::GLYPH_A => self::simpleGlyph(),
@@ -103,7 +111,7 @@ final class SyntheticTrueTypeFont
             'hhea' => self::hhea(count($glyphs)),
             'maxp' => self::maxp(count($glyphs)),
             'hmtx' => self::hmtx(),
-            'cmap' => self::cmap(),
+            'cmap' => self::cmap($characters),
             'loca' => $loca,
             'glyf' => $glyf,
             'name' => self::name(),
@@ -211,10 +219,11 @@ final class SyntheticTrueTypeFont
      * them is visibly wrong: format 4 alone cannot reach U+1F600, and
      * format 12 alone is not what most fonts offer.
      */
-    private static function cmap(): string
+    /** @param array<int, int> $characters */
+    private static function cmap(array $characters): string
     {
-        $format4 = self::cmapFormat4();
-        $format12 = self::cmapFormat12();
+        $format4 = self::cmapFormat4($characters);
+        $format12 = self::cmapFormat12($characters);
 
         $header = pack('nn', 0, 2)
             . pack('nnN', 3, 1, 4 + 2 * 8)
@@ -223,11 +232,12 @@ final class SyntheticTrueTypeFont
         return $header . $format4 . $format12;
     }
 
-    private static function cmapFormat4(): string
+    /** @param array<int, int> $characters */
+    private static function cmapFormat4(array $characters): string
     {
         $bmp = [];
 
-        foreach (self::CHARACTERS as $codePoint => $glyph) {
+        foreach ($characters as $codePoint => $glyph) {
             if ($codePoint <= 0xFFFF) {
                 $bmp[$codePoint] = $glyph;
             }
@@ -258,17 +268,18 @@ final class SyntheticTrueTypeFont
         return pack('nnn', 4, strlen($body) + 6, 0) . $body;
     }
 
-    private static function cmapFormat12(): string
+    /** @param array<int, int> $characters */
+    private static function cmapFormat12(array $characters): string
     {
         $groups = '';
 
-        foreach (self::CHARACTERS as $codePoint => $glyph) {
+        foreach ($characters as $codePoint => $glyph) {
             $groups .= pack('NNN', $codePoint, $codePoint, $glyph);
         }
 
         return pack('nn', 12, 0)
             . pack('NN', 16 + strlen($groups), 0)
-            . pack('N', count(self::CHARACTERS))
+            . pack('N', count($characters))
             . $groups;
     }
 

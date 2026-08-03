@@ -10,6 +10,7 @@ use MightyPDF\Assembler\Page;
 use MightyPDF\Content\ContentStream;
 use MightyPDF\Content\Font\EmbeddedFont;
 use MightyPDF\Content\Font\StandardFont;
+use MightyPDF\Content\Font\TrueType\FontException;
 use MightyPDF\Content\PageBuilder;
 use MightyPDF\Tests\Support\SyntheticTrueTypeFont;
 use PHPUnit\Framework\TestCase;
@@ -838,6 +839,66 @@ final class PageBuilderTest extends TestCase
         $output = $document->save();
 
         self::assertStringContainsString('/DR << /Font <<', $output);
+    }
+
+    /**
+     * A field's font need not be one of the standard 14 -- what it must
+     * be is complete, since the reader lays out text typed into it that
+     * this document never drew.
+     */
+    public function testAFieldCanUseAnEmbeddedFont(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        $font = EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build(), subset: false);
+
+        (new PageBuilder($document, $page))->addTextField('name', 72, 700, 200, 20, font: $font);
+
+        $output = $document->save();
+
+        self::assertStringContainsString('/DA (/F1 ', $output);
+        self::assertStringContainsString('/Subtype /Type0', $output);
+        self::assertStringContainsString('/BaseFont /SyntheticTest', $output);
+
+        // The /DR entry has to point at the font object itself, which is
+        // the one thing a field's /DA cannot resolve without.
+        preg_match('/\/DR << \/Font << \/F1 (\d+) 0 R/', $output, $dr);
+        self::assertNotEmpty($dr, 'the embedded font was not registered in /DR');
+        self::assertMatchesRegularExpression(
+            '/' . $dr[1] . ' 0 obj\s*<< \/Type \/Font \/Subtype \/Type0/',
+            $output,
+        );
+    }
+
+    /**
+     * A subset holds only what the document drew, so a field pointed at
+     * one is missing exactly the characters someone types into it. The
+     * failure would otherwise appear when the form is filled in, long
+     * after the document was written.
+     */
+    public function testAFieldRefusesASubsetFont(): void
+    {
+        $document = new Document();
+        $builder = new PageBuilder($document, $document->newPage());
+
+        $this->expectException(FontException::class);
+        $this->expectExceptionMessageMatches('/subset.*subset: false/s');
+
+        $builder->addTextField('name', 72, 700, 200, 20, font: EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build()));
+    }
+
+    public function testAnEmbeddedFieldFontIsSharedWithTheTextDrawnInIt(): void
+    {
+        $document = new Document();
+        $font = EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build(), subset: false);
+
+        (new PageBuilder($document, $document->newPage()))
+            ->drawText($font, 12.0, 72, 720, 'AB')
+            ->addTextField('name', 72, 700, 200, 20, font: $font);
+
+        // One font object, named in both the page's /Resources and the
+        // form's /DR -- the two namings are separate, the object is not.
+        self::assertSame(1, substr_count($document->save(), '/Subtype /Type0'));
     }
 
     public function testAddSignatureFieldHasNoValueAndIsAnAcroFormField(): void

@@ -92,6 +92,17 @@ $content->drawParagraph(
     align: 'J',
 );
 
+// A form field can use the font too, but not this copy of it: a field's
+// font is the one a reader lays out what someone *types* with, and a
+// subset holds only the characters this document already drew. Loading
+// the same file with subset: false embeds it whole, addressed by
+// character rather than by glyph number, so the reader can draw
+// anything in it.
+$formFont = EmbeddedFont::load($path, subset: false);
+
+$content->drawText($font, 11.0, 72, 220, 'Type anything here, in any language the font covers:');
+$content->addTextField('notes', x: 72, y: 190, width: 440, height: 24, font: $formFont, fontSizePt: 12.0);
+
 @mkdir(__DIR__ . '/output', recursive: true);
 $document->saveToFile(__DIR__ . '/output/14-embedding-a-font.pdf');
 
