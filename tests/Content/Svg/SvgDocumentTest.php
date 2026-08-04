@@ -389,6 +389,57 @@ final class SvgDocumentTest extends TestCase
         self::assertStringNotContainsString('0 1 0 rg', $stream->bytes());
     }
 
+    /**
+     * The combinators end to end, since where an element sits is
+     * something only the walk knows -- the stylesheet is handed it, and
+     * a walk that hands over the wrong surroundings matches the wrong
+     * elements while every unit test of the matcher still passes.
+     */
+    public function testSiblingCombinatorsMatchAgainstTheWalksOwnOrder(): void
+    {
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10">'
+            . '<style>rect + circle { fill: #ff0000; } rect ~ ellipse { fill: #00ff00; }</style>'
+            . '<g><rect x="0" y="0" width="1" height="1"/>'
+            . '<circle cx="2" cy="2" r="1"/>'
+            . '<ellipse cx="5" cy="5" rx="1" ry="2"/></g>'
+            . '<circle cx="8" cy="8" r="1"/></svg>',
+        );
+
+        $stream = new ContentStream();
+        $svg->render($stream, $this->noExtGState());
+        $bytes = $stream->bytes();
+
+        // The circle just after the rect is red; the ellipse two along
+        // is green; the circle in another group is neither.
+        self::assertStringContainsString('1 0 0 rg', $bytes);
+        self::assertStringContainsString('0 1 0 rg', $bytes);
+        self::assertSame(1, substr_count($bytes, '1 0 0 rg'), 'only the adjacent circle is red');
+    }
+
+    /**
+     * Where an element sits is carried as a chain, not as a copy of the
+     * siblings before it -- which cost an array per element of a length
+     * that grew with every one of them. An 813 KB drawing of plain
+     * rectangles took three gigabytes, and doubling the shapes
+     * quadrupled it.
+     */
+    public function testAFlatDrawingOfManyShapesCostsMemoryInProportion(): void
+    {
+        $shapes = 4000;
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10">'
+            . str_repeat('<rect x="0" y="0" width="1" height="1" fill="#ff0000"/>', $shapes)
+            . '</svg>',
+        );
+
+        $before = memory_get_usage();
+        $svg->render(new ContentStream(), $this->noExtGState());
+        $used = memory_get_usage() - $before;
+
+        self::assertLessThan(4 * 1024 * 1024, $used, 'the walk keeps no per-element list of its predecessors');
+    }
+
     public function testTheInlineStyleAttributeBeatsStyleBlockRules(): void
     {
         $svg = SvgDocument::fromString(
@@ -543,6 +594,47 @@ final class SvgDocumentTest extends TestCase
         self::assertStringContainsString('/P1 scn', $bytes);
         self::assertIsString($tile);
         self::assertStringNotContainsString('scn', $tile, 'the inner reference paints nothing');
+    }
+
+    /**
+     * A chain of patterns, each tile painted with the next one along, is
+     * not circular -- so the check above never fires -- and doubles the
+     * work at every link. A drawing of a few kilobytes used to make a
+     * document of a hundred megabytes out of most of a gigabyte of
+     * memory; see SvgTileBudget.
+     */
+    public function testAChainOfPatternsStopsRatherThanDoublingForever(): void
+    {
+        $defs = '';
+
+        for ($i = 0; $i < 16; ++$i) {
+            $fill = $i < 15 ? 'url(#p' . ($i + 1) . ')' : '#ff0000';
+            $defs .= '<pattern id="p' . $i . '" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">'
+                . '<rect x="0" y="0" width="4" height="4" fill="' . $fill . '"/>'
+                . '<rect x="0" y="0" width="2" height="2" fill="' . $fill . '"/></pattern>';
+        }
+
+        $svg = SvgDocument::fromString(
+            '<svg viewBox="0 0 10 10"><defs>' . $defs . '</defs>'
+            . '<rect x="0" y="0" width="10" height="10" fill="url(#p0)"/></svg>',
+        );
+
+        $tiles = 0;
+        $svg->render(
+            new ContentStream(),
+            $this->noExtGState(),
+            static fn (): string => 'S1',
+            SvgTransform::IDENTITY,
+            null,
+            null,
+            static function () use (&$tiles): string {
+                return 'P' . ++$tiles;
+            },
+        );
+
+        // Unbounded, sixteen links of two would be 65 535 tiles.
+        self::assertGreaterThan(0, $tiles, 'the outermost pattern is still painted');
+        self::assertLessThan(64, $tiles);
     }
 
     /**

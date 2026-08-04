@@ -16,9 +16,10 @@ use MightyPDF\Content\ContentStream;
  * circle, ellipse, line, polyline, polygon), fill/stroke in flat colours
  * or linear/radial gradients, opacity, and simple transforms
  * (translate/scale/rotate/skew/matrix via SvgTransform), gradient and
- * pattern paint servers, embedded raster images, text, and CSS from a
- * <style> block. No filters, <textPath>, or animation -- elements using
- * those are skipped rather than mis-rendered.
+ * pattern paint servers, embedded raster images, text -- including text
+ * laid along a path with <textPath> -- and CSS from a <style> block. No
+ * filters or animation: elements using those are skipped rather than
+ * mis-rendered.
  */
 final class SvgDocument
 {

@@ -1069,6 +1069,71 @@ final class PageBuilderTest extends TestCase
     }
 
     /**
+     * A pattern is painted per shape, and a tiling pattern object says
+     * only what its tile, its placement and its content are -- so shapes
+     * agreeing on all three want the one object rather than one each.
+     * Building one per shape cost an object and a copy of the page's
+     * resources every time: a thousand pattern-filled shapes made a
+     * seven-megabyte document out of fifty-seven kilobytes of SVG.
+     */
+    public function testShapesPaintedTheSameWayShareOneTilingPattern(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+
+        // Three shapes, one pattern, measured in user space -- so the
+        // tile is the same wherever the shape is and whatever size it is.
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs>'
+            . '<pattern id="dots" width="10" height="10" patternUnits="userSpaceOnUse">'
+            . '<circle cx="5" cy="5" r="4" fill="#3b5bdb"/></pattern></defs>'
+            . '<rect x="0" y="0" width="30" height="30" fill="url(#dots)"/>'
+            . '<rect x="40" y="0" width="50" height="20" fill="url(#dots)"/>'
+            . '<circle cx="50" cy="70" r="25" fill="url(#dots)"/></svg>';
+
+        $path = tempnam(sys_get_temp_dir(), 'mightypdf') . '.svg';
+        file_put_contents($path, $svg);
+
+        try {
+            (new PageBuilder($document, $page))->drawSvg($path, 0, 0, 200, 200);
+        } finally {
+            unlink($path);
+        }
+
+        $output = $document->save();
+
+        self::assertSame(1, substr_count($output, '/PatternType 1'), 'one object for three identical fills');
+        self::assertSame(3, substr_count($this->decompressedContentStreamBytes($page), '/P1 scn'));
+    }
+
+    /**
+     * The sharing is on what the tile *is*, not on which pattern it came
+     * from: in objectBoundingBox units the content is measured against
+     * the shape, so two shapes of different sizes need two tiles.
+     */
+    public function testShapesOfDifferentSizesStillGetTheirOwnTile(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs>'
+            . '<pattern id="dots" width="0.25" height="0.25" patternContentUnits="objectBoundingBox">'
+            . '<circle cx="0.1" cy="0.1" r="0.05" fill="#3b5bdb"/></pattern></defs>'
+            . '<rect x="0" y="0" width="30" height="30" fill="url(#dots)"/>'
+            . '<rect x="40" y="0" width="50" height="20" fill="url(#dots)"/></svg>';
+
+        $path = tempnam(sys_get_temp_dir(), 'mightypdf') . '.svg';
+        file_put_contents($path, $svg);
+
+        try {
+            (new PageBuilder($document, $page))->drawSvg($path, 0, 0, 200, 200);
+        } finally {
+            unlink($path);
+        }
+
+        self::assertSame(2, substr_count($document->save(), '/PatternType 1'));
+    }
+
+    /**
      * A tiling pattern's operators live in a stream of their own, so the
      * names they use have to resolve in that stream's /Resources rather
      * than the page's -- and the copy must not include the pattern

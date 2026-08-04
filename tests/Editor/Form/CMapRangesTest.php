@@ -91,4 +91,36 @@ final class CMapRangesTest extends TestCase
         self::assertTrue(CMapRanges::toUnicode('this is not a CMap at all')->isEmpty());
         self::assertTrue(CMapRanges::empty()->isEmpty());
     }
+
+    /**
+     * A CJK font's /ToUnicode runs to megabytes, which is past the point
+     * where PCRE gives up backtracking through a block. It used to give
+     * up silently -- the CMap read as empty, and the field it belonged to
+     * was left undrawn with nothing said.
+     */
+    public function testReadsACMapTooLargeForPcreToBacktrackThrough(): void
+    {
+        $entries = str_repeat("<0041> <0042>\n", 100_000);
+        $cmap = CMapRanges::toUnicode("100000 beginbfchar\n" . $entries . "endbfchar\n");
+
+        self::assertGreaterThan(1024 * 1024, strlen($entries), 'the block has to be past the backtrack limit');
+        self::assertFalse($cmap->isEmpty());
+        self::assertSame("\x00\x41", $cmap->codeFor(0x42));
+    }
+
+    /**
+     * The cap is on what is read, not on what is looked at afterwards:
+     * building every match of a hundred-megabyte stream before the first
+     * one is counted is the allocation this is here to avoid.
+     */
+    public function testStopsReadingAHostileNumberOfEntries(): void
+    {
+        $cmap = CMapRanges::toUnicode(
+            "1 beginbfchar\n" . str_repeat("<0041> <0042>\n", 200_000) . "endbfchar\n",
+        );
+
+        // The first entries are kept, and the ones past the cap are not
+        // reached at all -- which is only observable as this finishing.
+        self::assertSame("\x00\x41", $cmap->codeFor(0x42));
+    }
 }

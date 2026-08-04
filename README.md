@@ -276,9 +276,22 @@ inheritance are all honoured — a pattern can borrow another's tile, its
 contents, or both.
 
 Anything can go in a tile, gradients and images included, since it is
-drawn by the same renderer as the rest of the document. A pattern
-painted with itself paints nothing on the inner reference rather than
-tiling forever.
+drawn by the same renderer as the rest of the document.
+
+A pattern is painted per shape, but shapes painted the *same* way share
+one tile and one PDF pattern object — what a tile looks like depends on
+the pattern and on the matrix its contents are drawn under and on
+nothing else. Shapes of different sizes still get their own where the
+pattern is measured in `objectBoundingBox` units, since then the tile
+genuinely differs.
+
+A pattern painted with itself paints nothing on the inner reference
+rather than tiling forever, and a *chain* of patterns — each tile
+painted with the next one along, which is not circular and so gets past
+that check — stops at four deep or a thousand distinct tiles, whichever
+comes first. Both are far past what a drawing uses and far below the
+point where a few kilobytes of SVG turns into a document of hundreds of
+megabytes.
 
 **Embedded raster images** — an `<image>` element is drawn, with
 `preserveAspectRatio` (`meet`, `slice` including the clip, `none`, and
@@ -782,7 +795,10 @@ for a runnable version.
   to `/NeedAppearances` where the form says too little to draw with — no
   `/DA`, a font with no widths in the file, or a predefined CJK CMap
   encoding, whose character-id mapping is not in the document to be
-  read.
+  read. A composite font's `/W` array is read only for the character ids
+  that can exist (0 to 65535); anything it says outside that range is a
+  width no code can reach, and reading it is how a small hostile file
+  asks for a great deal of memory.
 - **SVG**: see the "not supported" list above. Two of those are
   deliberate rather than pending: **filters** are a pixel operation, and
   supporting them would mean rasterizing the drawing — the opposite of

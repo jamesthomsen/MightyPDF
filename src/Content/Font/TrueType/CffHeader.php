@@ -92,7 +92,11 @@ final class CffHeader
 
     private static function firstIndexEntry(string $cff, int $offset): ?string
     {
-        if ($offset + 2 > strlen($cff)) {
+        // Three bytes, not two: the count is two and the offset size a
+        // third, and both are read below. Checking for two left the
+        // offset size read one byte past the end of a truncated table,
+        // which PHP answers with a warning rather than a FontException.
+        if ($offset + 3 > strlen($cff)) {
             return null;
         }
 
@@ -129,9 +133,15 @@ final class CffHeader
 
         $count = (ord($cff[$offset]) << 8) | ord($cff[$offset + 1]);
 
-        // An empty INDEX is its count and nothing else.
+        // An empty INDEX is its count and nothing else, which is why the
+        // offset size is only reached -- and only worth a bounds check --
+        // once the count says there is one.
         if ($count === 0) {
             return $offset + 2;
+        }
+
+        if ($offset + 3 > strlen($cff)) {
+            return null;
         }
 
         $offsetSize = ord($cff[$offset + 2]);

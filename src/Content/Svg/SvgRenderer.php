@@ -31,6 +31,8 @@ final class SvgRenderer
         'filter', 'use', 'animate', 'animateTransform', 'animateMotion',
     ];
 
+    private readonly SvgTileCache $tiles;
+
     /**
      * @param array<string, SvgGradient> $gradients
      * @param array<string, SvgPattern> $patterns
@@ -60,6 +62,10 @@ final class SvgRenderer
      *        itself stops rather than recurring forever
      * @param array<string, string> $paths the "d" of every path with an
      *        id, for <textPath> to lay text along
+     * @param ?SvgTileCache $tiles the tiles this document has drawn and
+     *        how much drawing is left; shared with every nested
+     *        renderer, and made fresh where a caller starts a drawing of
+     *        its own
      */
     public function __construct(
         private readonly ContentStream $stream,
@@ -74,7 +80,9 @@ final class SvgRenderer
         private readonly ?\Closure $softMaskResourceName = null,
         private readonly array $patternsBeingDrawn = [],
         private readonly array $paths = [],
+        ?SvgTileCache $tiles = null,
     ) {
+        $this->tiles = $tiles ?? new SvgTileCache();
     }
 
     /**
@@ -151,11 +159,11 @@ final class SvgRenderer
      */
     private function renderChildren(\SimpleXMLElement $element, SvgStyle $style, array $matrix, ?SvgElementPath $path = null): void
     {
-        $siblings = [];
+        $previous = null;
 
         foreach ($element->children() as $child) {
-            $childPath = SvgElementPath::of($child->getName(), self::attributesOfElement($child), $path, $siblings);
-            $siblings[] = $childPath;
+            $childPath = SvgElementPath::of($child->getName(), self::attributesOfElement($child), $path, $previous);
+            $previous = $childPath;
 
             $this->renderElement($child, $style, $matrix, $childPath);
         }
@@ -584,7 +592,7 @@ final class SvgRenderer
      */
     private function collectTextRuns(\DOMElement $element, SvgStyle $style, array &$runs, SvgElementPath $path): void
     {
-        $siblings = [];
+        $previous = null;
 
         foreach ($element->childNodes as $node) {
             if ($node instanceof \DOMText) {
@@ -601,8 +609,8 @@ final class SvgRenderer
                 continue;
             }
 
-            $childPath = SvgElementPath::of($node->localName, self::attributesOf($node), $path, $siblings);
-            $siblings[] = $childPath;
+            $childPath = SvgElementPath::of($node->localName, self::attributesOf($node), $path, $previous);
+            $previous = $childPath;
 
             $childStyle = $style->mergeAttributes($this->cascade($childPath, self::attributesOf($node)));
             $before = count($runs);
@@ -1047,7 +1055,9 @@ final class SvgRenderer
         $pattern = $this->patterns[$reference];
 
         // A pattern whose own content is painted with it would otherwise
-        // draw a tile to draw a tile to draw a tile.
+        // draw a tile to draw a tile to draw a tile. The budget covers
+        // what that check does not: a chain of patterns is not circular,
+        // and doubles the work at every link -- see SvgTileCache.
         if ($this->tilingPatternResourceName === null || in_array($reference, $this->patternsBeingDrawn, true)) {
             return false;
         }
@@ -1059,6 +1069,52 @@ final class SvgRenderer
         }
 
         $contentMatrix = $pattern->contentMatrix($box);
+        $tile = $this->tileFor($reference, $pattern, $contentMatrix);
+
+        if ($tile === null) {
+            return false;
+        }
+
+        $name = ($this->tilingPatternResourceName)($pattern, $tile, $matrix, $box);
+
+        if ($name === null) {
+            return false;
+        }
+
+        $setPattern($name);
+
+        return true;
+    }
+
+    /**
+     * The operators filling one tile of $pattern, drawing them if this
+     * drawing has not already.
+     *
+     * A pattern is painted per *shape*, and what a tile looks like
+     * depends on the pattern and on the matrix its contents are drawn
+     * under and on nothing else -- so a drawing where five hundred
+     * shapes share one pattern draws one tile, not five hundred. Only a
+     * tile actually drawn is counted against the budget, which is what
+     * keeps a repeated pattern from exhausting it.
+     *
+     * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float}|null $contentMatrix
+     * @return ?string null where there was no budget left to draw it
+     */
+    private function tileFor(string $reference, SvgPattern $pattern, ?array $contentMatrix): ?string
+    {
+        // The matrix as it is written, so that "no matrix at all" -- which
+        // emits no "cm" -- is a different tile from an identity one.
+        $key = $reference . '|' . ($contentMatrix === null ? 'none' : implode(',', $contentMatrix));
+        $drawn = $this->tiles->drawn($key);
+
+        if ($drawn !== null) {
+            return $drawn;
+        }
+
+        if (!$this->tiles->take(count($this->patternsBeingDrawn))) {
+            return null;
+        }
+
         $tile = new ContentStream();
 
         if ($contentMatrix !== null) {
@@ -1078,19 +1134,15 @@ final class SvgRenderer
             $this->softMaskResourceName,
             [...$this->patternsBeingDrawn, $reference],
             $this->paths,
+            $this->tiles,
         );
 
         $nested->renderChildren($pattern->content, new SvgStyle(), $contentMatrix ?? SvgTransform::IDENTITY);
 
-        $name = ($this->tilingPatternResourceName)($pattern, $tile->bytes(), $matrix, $box);
+        $bytes = $tile->bytes();
+        $this->tiles->remember($key, $bytes);
 
-        if ($name === null) {
-            return false;
-        }
-
-        $setPattern($name);
-
-        return true;
+        return $bytes;
     }
 
     /**

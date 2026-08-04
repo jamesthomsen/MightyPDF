@@ -116,15 +116,18 @@ final class CMapRanges
     private static function rangesIn(string $cmap, string $keyword, bool $decimal): array
     {
         $destination = $decimal ? '(\d+)' : '<([0-9A-Fa-f]+)>';
+        $pattern = '/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*' . $destination . '/';
         $ranges = [];
 
         foreach (self::blocks($cmap, $keyword) as $block) {
-            preg_match_all('/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*' . $destination . '/', $block, $entries, PREG_SET_ORDER);
+            foreach (self::entriesIn($block, $pattern) as $entry) {
+                if (count($ranges) >= self::MAX_ENTRIES) {
+                    return $ranges;
+                }
 
-            foreach ($entries as $entry) {
                 $value = self::destination($entry[3], $decimal);
 
-                if ($value === null || count($ranges) >= self::MAX_ENTRIES) {
+                if ($value === null) {
                     continue;
                 }
 
@@ -148,15 +151,18 @@ final class CMapRanges
     private static function charsIn(string $cmap, string $keyword, bool $decimal): array
     {
         $destination = $decimal ? '(\d+)' : '<([0-9A-Fa-f]+)>';
+        $pattern = '/<([0-9A-Fa-f]+)>\s*' . $destination . '/';
         $chars = [];
 
         foreach (self::blocks($cmap, $keyword) as $block) {
-            preg_match_all('/<([0-9A-Fa-f]+)>\s*' . $destination . '/', $block, $entries, PREG_SET_ORDER);
+            foreach (self::entriesIn($block, $pattern) as $entry) {
+                if (count($chars) >= self::MAX_ENTRIES) {
+                    return $chars;
+                }
 
-            foreach ($entries as $entry) {
                 $value = self::destination($entry[2], $decimal);
 
-                if ($value === null || count($chars) >= self::MAX_ENTRIES) {
+                if ($value === null) {
                     continue;
                 }
 
@@ -172,6 +178,30 @@ final class CMapRanges
         }
 
         return $chars;
+    }
+
+    /**
+     * The entries of one block, one at a time.
+     *
+     * Lazily, which is the point: preg_match_all over a block builds an
+     * array of every match in it before the cap above can look at the
+     * first one, and a /ToUnicode stream may decode to a hundred
+     * megabytes. Handing them over one at a time lets the caller stop at
+     * MAX_ENTRIES and leave the rest of the block unread.
+     *
+     * @return \Generator<int, list<string>>
+     */
+    private static function entriesIn(string $block, string $pattern): \Generator
+    {
+        $offset = 0;
+
+        while (preg_match($pattern, $block, $entry, PREG_OFFSET_CAPTURE, $offset) === 1) {
+            // Past the whole match, so a pattern that could match the
+            // empty string still moves the scan forward.
+            $offset = $entry[0][1] + max(1, strlen($entry[0][0]));
+
+            yield array_map(static fn (array $capture): string => $capture[0], $entry);
+        }
     }
 
     /**
@@ -212,12 +242,37 @@ final class CMapRanges
         return 0x10000 + (($high - 0xD800) << 10) + ($low - 0xDC00);
     }
 
-    /** @return list<string> the body of every "N begin<keyword> ... end<keyword>" block */
+    /**
+     * @return list<string> the body of every "N begin<keyword> ...
+     *         end<keyword>" block
+     *
+     * Found by scanning rather than by a lazy regex. "begin(.*?)end"
+     * backtracks once per character of the block, so PCRE's default
+     * backtrack limit of a million stops it dead on any block past about
+     * a megabyte -- and stops it by returning false, which reads as "this
+     * CMap has no entries" and leaves a field silently undrawn. A CJK
+     * font's /ToUnicode is routinely bigger than that.
+     */
     private static function blocks(string $cmap, string $keyword): array
     {
-        preg_match_all('/begin' . $keyword . '(.*?)end' . $keyword . '/s', $cmap, $blocks);
+        $begin = 'begin' . $keyword;
+        $end = 'end' . $keyword;
+        $blocks = [];
+        $at = 0;
 
-        return $blocks[1];
+        while (($start = strpos($cmap, $begin, $at)) !== false) {
+            $start += strlen($begin);
+            $stop = strpos($cmap, $end, $start);
+
+            if ($stop === false) {
+                break;
+            }
+
+            $blocks[] = substr($cmap, $start, $stop - $start);
+            $at = $stop + strlen($end);
+        }
+
+        return $blocks;
     }
 
     private static function hexBytes(string $hex): string

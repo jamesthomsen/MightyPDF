@@ -190,10 +190,10 @@ final class SvgStylesheetTest extends TestCase
         $sheet = self::sheet('rect + text { fill: red; }');
 
         $rect = SvgElementPath::of('rect', []);
-        $circle = SvgElementPath::of('circle', [], null, [$rect]);
+        $circle = SvgElementPath::of('circle', [], null, $rect);
 
-        self::assertSame(['fill' => 'red'], $sheet->declarationsFor(SvgElementPath::of('text', [], null, [$rect])));
-        self::assertSame([], $sheet->declarationsFor(SvgElementPath::of('text', [], null, [$rect, $circle])));
+        self::assertSame(['fill' => 'red'], $sheet->declarationsFor(SvgElementPath::of('text', [], null, $rect)));
+        self::assertSame([], $sheet->declarationsFor(SvgElementPath::of('text', [], null, $circle)));
     }
 
     public function testTheGeneralSiblingSelectorLooksAtEveryElementBefore(): void
@@ -201,10 +201,10 @@ final class SvgStylesheetTest extends TestCase
         $sheet = self::sheet('rect ~ text { fill: red; }');
 
         $rect = SvgElementPath::of('rect', []);
-        $circle = SvgElementPath::of('circle', [], null, [$rect]);
+        $circle = SvgElementPath::of('circle', [], null, $rect);
 
-        self::assertSame(['fill' => 'red'], $sheet->declarationsFor(SvgElementPath::of('text', [], null, [$rect, $circle])));
-        self::assertSame([], $sheet->declarationsFor(SvgElementPath::of('text', [], null, [$circle])));
+        self::assertSame(['fill' => 'red'], $sheet->declarationsFor(SvgElementPath::of('text', [], null, $circle)));
+        self::assertSame([], $sheet->declarationsFor(SvgElementPath::of('text', [], null, SvgElementPath::of('circle', []))));
     }
 
     /**
@@ -232,6 +232,46 @@ final class SvgStylesheetTest extends TestCase
         $rect = SvgElementPath::of('rect', ['class' => 'brand'], SvgElementPath::of('g', []));
 
         self::assertSame('green', $sheet->declarationsFor($rect)['fill']);
+    }
+
+    /**
+     * A selector that fails only at its leftmost compound is the worst
+     * case for right-to-left matching: every ancestor satisfies every
+     * compound in the middle, so each one is a branch to follow, and
+     * following them independently is exponential in the number of
+     * combinators. Measured before this was memoised, a 441-byte drawing
+     * with ten of them took 48 seconds to place, and each further
+     * combinator multiplied that by about eighteen.
+     */
+    public function testADeeplyCombinedSelectorThatCannotMatchStillFinishes(): void
+    {
+        $sheet = self::sheet('#nowhere ' . str_repeat('g ', 16) . 'rect { fill: red; }');
+
+        $element = null;
+
+        for ($i = 0; $i < 60; ++$i) {
+            $element = SvgElementPath::of('g', [], $element);
+        }
+
+        $started = microtime(true);
+        $declarations = $sheet->declarationsFor(SvgElementPath::of('rect', [], $element));
+
+        self::assertSame([], $declarations);
+        self::assertLessThan(2.0, microtime(true) - $started);
+    }
+
+    /** The same shape of selector, matching -- the answer is unchanged. */
+    public function testADeeplyCombinedSelectorStillMatchesWhatItShould(): void
+    {
+        $sheet = self::sheet('#chart ' . str_repeat('g ', 16) . 'rect { fill: red; }');
+
+        $element = SvgElementPath::of('svg', ['id' => 'chart']);
+
+        for ($i = 0; $i < 60; ++$i) {
+            $element = SvgElementPath::of('g', [], $element);
+        }
+
+        self::assertSame(['fill' => 'red'], $sheet->declarationsFor(SvgElementPath::of('rect', [], $element)));
     }
 
     public function testADocumentWithNoStyleBlocksHasNoRules(): void

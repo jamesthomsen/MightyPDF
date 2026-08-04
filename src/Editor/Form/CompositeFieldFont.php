@@ -39,6 +39,20 @@ final class CompositeFieldFont implements FieldFont
     private const float DEFAULT_WIDTH = 1000.0;
 
     /**
+     * The largest character id there is: a CID is a 16-bit number
+     * (ISO 32000-2 §9.7.4), so a /W entry outside this range describes a
+     * character that cannot be addressed and is dropped.
+     *
+     * That is a bound as much as a rule. The "cFirst cLast w" form gives
+     * one width to a whole run in a few bytes, so a file full of disjoint
+     * runs asks for hundreds of millions of entries -- ten bytes of a
+     * hostile document bought two megabytes of heap, and a nine-kilobyte
+     * one exhausted a gigabyte before anything had been drawn. Clamping
+     * to the ids that can exist costs a real font nothing.
+     */
+    private const int MAX_CID = 65_535;
+
+    /**
      * @param array<int, float> $widths character id => width in glyph space
      */
     private function __construct(
@@ -179,9 +193,10 @@ final class CompositeFieldFont implements FieldFont
             if ($second instanceof PdfArray) {
                 foreach ($second->items() as $offset => $width) {
                     $width = self::asNumber($editor->resolve($width));
+                    $cid = (int) $first + $offset;
 
-                    if ($width !== null) {
-                        $widths[(int) $first + $offset] = $width;
+                    if ($width !== null && $cid >= 0 && $cid <= self::MAX_CID) {
+                        $widths[$cid] = $width;
                     }
                 }
 
@@ -197,7 +212,13 @@ final class CompositeFieldFont implements FieldFont
                 break;
             }
 
-            for ($cid = (int) $first; $cid <= (int) $last && $cid - $first < 65_536; ++$cid) {
+            // Clamped at both ends before the loop rather than tested
+            // inside it: a run written as "-1000000000 4000000000 500"
+            // would otherwise spend billions of iterations on ids that
+            // are discarded one at a time.
+            $end = min((int) $last, self::MAX_CID);
+
+            for ($cid = max((int) $first, 0); $cid <= $end; ++$cid) {
                 $widths[$cid] = $width;
             }
 

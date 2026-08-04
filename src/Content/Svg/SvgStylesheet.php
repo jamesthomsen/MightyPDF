@@ -134,7 +134,9 @@ final class SvgStylesheet
             return false;
         }
 
-        return self::matchesLeftOf($rule, $last - 1, $element);
+        $answered = [];
+
+        return self::matchesLeftOf($rule, $last - 1, $element, $answered);
     }
 
     /**
@@ -146,25 +148,47 @@ final class SvgStylesheet
      * sibling" are both allowed to fail on the nearest one and succeed
      * further out, which is why this recurses rather than walking.
      *
+     * $answered is what keeps that recursion affordable. The question
+     * asked here depends on nothing but the compound and the element, so
+     * an answer already worked out is the answer -- and without saying
+     * so, a selector that fails only at its leftmost end re-derives the
+     * same failures down every path through the tree, which is
+     * exponential in the number of combinators. Measured: a 441-byte
+     * drawing with ten of them took 48 seconds to place, and each
+     * further combinator multiplied that by about eighteen.
+     *
      * @param array{compounds: list<array{tag: string|null, id: string|null, classes: list<string>}>, combinators: list<string>, ...} $rule
+     * @param array<string, bool> $answered
      */
-    private static function matchesLeftOf(array $rule, int $index, SvgElementPath $element): bool
+    private static function matchesLeftOf(array $rule, int $index, SvgElementPath $element, array &$answered): bool
     {
         if ($index < 0) {
             return true;
+        }
+
+        $key = $index . ':' . spl_object_id($element);
+
+        if (isset($answered[$key])) {
+            return $answered[$key];
         }
 
         $compound = $rule['compounds'][$index];
         $candidates = match ($rule['combinators'][$index]) {
             self::CHILD => $element->parent === null ? [] : [$element->parent],
             self::DESCENDANT => $element->ancestors(),
-            self::ADJACENT => array_slice($element->precedingSiblings, -1),
-            default => array_reverse($element->precedingSiblings),
+            self::ADJACENT => $element->previousSibling === null ? [] : [$element->previousSibling],
+            default => $element->earlierSiblings(),
         };
 
+        // Recorded before the loop as well as after it: a path is a
+        // chain of distinct elements, so this cannot be reached again
+        // while it is being answered, and seeding it keeps a malformed
+        // chain from recurring even if one ever were.
+        $answered[$key] = false;
+
         foreach ($candidates as $candidate) {
-            if (self::compoundMatches($compound, $candidate) && self::matchesLeftOf($rule, $index - 1, $candidate)) {
-                return true;
+            if (self::compoundMatches($compound, $candidate) && self::matchesLeftOf($rule, $index - 1, $candidate, $answered)) {
+                return $answered[$key] = true;
             }
         }
 
@@ -201,7 +225,13 @@ final class SvgStylesheet
         // Comments first: they may sit anywhere, including between a
         // selector and its brace, and every pattern below would
         // otherwise have to allow for them.
-        $css = (string) preg_replace('!/\*.*?\*/!s', '', $css);
+        //
+        // Kept as it was where the match fails -- a comment megabytes
+        // long exhausts PCRE's backtrack limit, and preg_replace() says
+        // so by returning null. Casting that to a string would answer
+        // "this drawing has no styles at all", which is a whole
+        // stylesheet silently discarded over one unclosed comment.
+        $css = preg_replace('!/\*.*?\*/!s', '', $css) ?? $css;
         $css = self::withoutAtRules($css);
 
         $rules = [];
@@ -252,11 +282,20 @@ final class SvgStylesheet
      */
     private static function withoutAtRules(string $css): string
     {
-        while (($start = strpos($css, '@')) !== false) {
+        $length = strlen($css);
+        $kept = [];
+        $at = 0;
+
+        // The pieces are collected and joined once rather than the
+        // string being rebuilt around each at-rule, which copies all of
+        // it per rule and turns a stylesheet full of @media into
+        // quadratic work.
+        while (($start = strpos($css, '@', $at)) !== false) {
+            $kept[] = substr($css, $at, $start - $at);
             $depth = 0;
             $end = null;
 
-            for ($i = $start, $length = strlen($css); $i < $length; ++$i) {
+            for ($i = $start; $i < $length; ++$i) {
                 $character = $css[$i];
 
                 if ($character === '{') {
@@ -278,10 +317,12 @@ final class SvgStylesheet
                 }
             }
 
-            $css = substr($css, 0, $start) . substr($css, $end ?? strlen($css));
+            $at = $end ?? $length;
         }
 
-        return $css;
+        $kept[] = substr($css, $at);
+
+        return implode('', $kept);
     }
 
     /**

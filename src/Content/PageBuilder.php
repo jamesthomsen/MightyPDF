@@ -71,6 +71,14 @@ final class PageBuilder
     private array $extGStateResourceNames = [];
     private int $nextExtGStateResourceNumber = 1;
 
+    /**
+     * A tiling pattern is shared by every shape it paints the same way --
+     * see tilingPatternResourceName() for what "the same way" is.
+     *
+     * @var array<string, string> tile, matrix and content => resource name
+     */
+    private array $tilingPatternResourceNames = [];
+
     public function __construct(
         private readonly DocumentContext $document,
         private readonly PageContext $page,
@@ -664,11 +672,31 @@ final class PageBuilder
      * for every nested scope. The copy is taken *before* this pattern is
      * named on the page, so a pattern can never list itself.
      *
+     * Named once per distinct pattern rather than once per shape. What a
+     * tiling pattern object says is its tile rectangle, its placement
+     * matrix and its content -- so where two shapes agree on all three,
+     * the second wants the object the first already has, and building it
+     * again costs an object and a resource snapshot per shape. A drawing
+     * of a thousand pattern-filled shapes was a seven-megabyte document
+     * from fifty-seven kilobytes of SVG.
+     *
+     * Reusing the first object also reuses the snapshot taken with it,
+     * which is safe for the same reason the sharing is: identical
+     * content names identical resources, and those were registered
+     * before the first snapshot was taken because the first tile named
+     * them.
+     *
      * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix
      * @param array{0: float, 1: float, 2: float, 3: float} $boundingBox
      */
     private function tilingPatternResourceName(SvgPattern $pattern, string $content, array $matrix, array $boundingBox): string
     {
+        $key = implode('|', [...$pattern->tile($boundingBox), ...$matrix, $content]);
+
+        if (isset($this->tilingPatternResourceNames[$key])) {
+            return $this->tilingPatternResourceNames[$key];
+        }
+
         $resources = $this->snapshotResources();
 
         $tiling = SvgTilingPattern::build(
@@ -681,7 +709,7 @@ final class PageBuilder
         );
         $this->document->register($tiling);
 
-        return $this->namePattern($tiling->objectId());
+        return $this->tilingPatternResourceNames[$key] = $this->namePattern($tiling->objectId());
     }
 
     /**

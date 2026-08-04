@@ -145,7 +145,16 @@ final class UnicodeCMap
             // Every surrogate, high and low: which pairs of them a font
             // uses is not worth working out, since each stands for
             // itself either way.
-            $codes = array_merge($codes, range(0xD800, 0xDFFF));
+            //
+            // Sorted and deduplicated afterwards rather than appended
+            // blindly: the surrogates land in the middle of the code
+            // points already collected, and a font whose cmap maps one
+            // of them itself -- malformed, but files like that exist --
+            // would otherwise be written twice. Runs are built by
+            // comparing each code with the one before, so both leave a
+            // reader entries that overlap or run backwards.
+            $codes = array_values(array_unique(array_merge($codes, range(0xD800, 0xDFFF))));
+            sort($codes);
         }
 
         $runs = [];

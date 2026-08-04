@@ -23,27 +23,26 @@ final class SvgElementPath
 {
     /**
      * @param list<string> $classes
-     * @param list<self> $precedingSiblings in document order, so the
-     *        adjacent sibling is the last of them
+     * @param ?self $previousSibling the element immediately before this
+     *        one, which is a chain back through all of them
      */
     private function __construct(
         public readonly string $tag,
         public readonly ?string $id,
         public readonly array $classes,
         public readonly ?self $parent,
-        public readonly array $precedingSiblings,
+        public readonly ?self $previousSibling,
     ) {
     }
 
     /**
      * @param array<string, string> $attributes
-     * @param list<self> $precedingSiblings
      */
     public static function of(
         string $tag,
         array $attributes,
         ?self $parent = null,
-        array $precedingSiblings = [],
+        ?self $previousSibling = null,
     ): self {
         $classes = preg_split('/\s+/', trim($attributes['class'] ?? '')) ?: [];
 
@@ -52,7 +51,7 @@ final class SvgElementPath
             ($attributes['id'] ?? '') === '' ? null : $attributes['id'],
             array_values(array_filter($classes, static fn (string $class): bool => $class !== '')),
             $parent,
-            $precedingSiblings,
+            $previousSibling,
         );
     }
 
@@ -66,5 +65,28 @@ final class SvgElementPath
         }
 
         return $ancestors;
+    }
+
+    /**
+     * @return list<self> from the nearest earlier sibling backwards,
+     *         which is the order a general-sibling selector wants to try
+     *         them in
+     *
+     * Walked from a chain rather than kept as a list. Handing each
+     * element a copy of the siblings before it costs an array per
+     * element of a length that grows with every one of them: an 813 KB
+     * drawing of plain rectangles took three gigabytes, and doubling
+     * the shapes quadrupled it. The chain says the same thing for one
+     * reference each.
+     */
+    public function earlierSiblings(): array
+    {
+        $siblings = [];
+
+        for ($element = $this->previousSibling; $element !== null; $element = $element->previousSibling) {
+            $siblings[] = $element;
+        }
+
+        return $siblings;
     }
 }
