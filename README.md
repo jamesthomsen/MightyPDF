@@ -239,7 +239,17 @@ $content->drawSvg($path, x: 72, y: 560, width: 120, height: 120);
 
 The SVG is placed and scaled to fit the given rectangle. Because it's
 vector data (not a raster image), it stays crisp at any size — the same
-file can be drawn small and large with no quality loss.
+file can be drawn small and large with no quality loss. Anything reaching
+outside that rectangle is clipped, which is what SVG itself does: a root
+viewport is `overflow: hidden` by default.
+
+The drawing becomes a form XObject, so placing the same file the same way
+more than once — a logo on every page — costs one drawing rather than
+one per page. The file is read, parsed and rendered on the first
+placement and reused on the rest, gradients and patterns included. Reuse
+needs the placement to match as well as the file, since a gradient is
+painted through a pattern whose matrix has the placement folded into it;
+the same drawing placed elsewhere is genuinely a different one.
 
 Supported: paths (lines, curves, arcs), basic shapes (`rect`, `circle`,
 `ellipse`, `line`, `polyline`, `polygon`), fill/stroke in flat colours or

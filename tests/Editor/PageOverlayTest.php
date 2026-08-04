@@ -239,6 +239,49 @@ final class PageOverlayTest extends TestCase
         self::assertInstanceOf(Stream::class, $store->resolve($xObjects?->get('MPOverlay0')));
     }
 
+    /**
+     * A drawing is a form XObject of its own, and an overlay is another
+     * one, so stamping an SVG onto an existing page nests the two -- with
+     * the drawing named in the overlay's resources rather than in those
+     * of a page that has never heard of it.
+     *
+     * The gradient is what makes this worth pinning: it is painted
+     * through a pattern, which has to be reachable from the drawing's
+     * own /Resources for a reader to find it two levels down.
+     */
+    public function testAnSvgStampedOntoAnExistingPageNestsInsideTheOverlay(): void
+    {
+        $document = new Document();
+        (new PageBuilder($document, $document->newPage()))
+            ->drawText(StandardFont::Helvetica, 12.0, 72, 720, 'Original');
+
+        $editor = PdfEditor::fromBytes($document->save());
+        $overlay = new PageOverlay($editor, self::firstPage($editor));
+        $overlay->content()->drawSvg(__DIR__ . '/../fixtures/svg/gradient.svg', 100, 500, 150, 150);
+        $overlay->apply();
+
+        $store = new ObjectStore($editor->save());
+        $overlayForm = $store->resolve(
+            $store->resolveDictionary(
+                $store->resolveDictionary(self::firstPageOf($store)->get('Resources'))?->get('XObject'),
+            )?->get('MPOverlay0'),
+        );
+
+        self::assertInstanceOf(Stream::class, $overlayForm);
+
+        $drawing = $store->resolve(
+            $store->resolveDictionary(
+                $store->resolveDictionary($overlayForm->get('Resources'))?->get('XObject'),
+            )?->get('Im1'),
+        );
+
+        self::assertInstanceOf(Stream::class, $drawing, 'the drawing is not inside the overlay');
+        self::assertNotNull(
+            $store->resolveDictionary($drawing->get('Resources'))?->get('Pattern'),
+            'the drawing does not carry the gradient it paints with',
+        );
+    }
+
     /** @return array{0: PdfEditor, 1: PageOverlay} */
     /**
      * An embedded font's program cannot be built until the document has

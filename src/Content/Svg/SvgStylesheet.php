@@ -38,6 +38,28 @@ final class SvgStylesheet
     private const string SIBLING = '~';
 
     /**
+     * The rules that could possibly match an element, filed under
+     * something that element would have to be for them to.
+     *
+     * A rule's rightmost compound is the one the element in hand has to
+     * satisfy itself -- everything left of it is about the element's
+     * surroundings -- so whichever of an id, a class or a tag that
+     * compound demands is a fact about every element the rule can match,
+     * and rules demanding nothing go under '*'. Looking an element up
+     * then asks after its own id, its own classes and its own tag, and
+     * never sees the rest.
+     *
+     * @var array<string, list<array{
+     *     specificity: int,
+     *     order: int,
+     *     compounds: list<array{tag: string|null, id: string|null, classes: list<string>}>,
+     *     combinators: list<string>,
+     *     declarations: array<string, string>
+     * }>>
+     */
+    private readonly array $index;
+
+    /**
      * @param list<array{
      *     specificity: int,
      *     order: int,
@@ -48,6 +70,37 @@ final class SvgStylesheet
      */
     private function __construct(private readonly array $rules)
     {
+        $index = [];
+
+        foreach ($rules as $rule) {
+            $index[self::keyOf($rule['compounds'][count($rule['compounds']) - 1])][] = $rule;
+        }
+
+        $this->index = $index;
+    }
+
+    /**
+     * What an element must have for a rule ending in $compound to stand
+     * a chance: its id, failing that any one of its classes, failing
+     * that its tag, and '*' for a compound that demands none of the
+     * three.
+     *
+     * Any one class will do rather than all of them -- an element with
+     * the class is a superset of the elements the rule matches, which is
+     * what a first pass has to be. The prefixes keep the three kinds of
+     * name apart, since an element could perfectly well be a `text` with
+     * class `text`.
+     *
+     * @param array{tag: string|null, id: string|null, classes: list<string>} $compound
+     */
+    private static function keyOf(array $compound): string
+    {
+        return match (true) {
+            $compound['id'] !== null => '#' . $compound['id'],
+            $compound['classes'] !== [] => '.' . $compound['classes'][0],
+            $compound['tag'] !== null => 'tag:' . $compound['tag'],
+            default => '*',
+        };
     }
 
     public static function empty(): self
@@ -94,7 +147,14 @@ final class SvgStylesheet
 
         $matched = [];
 
-        foreach ($this->rules as $rule) {
+        // Only the rules filed under something this element actually is,
+        // rather than all of them. Testing every rule against every
+        // element costs their product, which is the shape of a real
+        // drawing rather than a contrived one: a chart of 3,000 shapes
+        // under a 300-rule stylesheet is 900,000 attempts, and took 200
+        // ms to place against 36 ms for the same drawing with its styles
+        // inlined. The lookups below find about two.
+        foreach ($this->candidatesFor($element) as $rule) {
             if (!self::matches($rule, $element)) {
                 continue;
             }
@@ -117,6 +177,36 @@ final class SvgStylesheet
         }
 
         return $declarations;
+    }
+
+    /**
+     * The rules worth trying against $element: those filed under its id,
+     * under any class it carries, under its tag, and those filed under
+     * nothing in particular.
+     *
+     * A rule sits in exactly one of those buckets, so nothing is
+     * returned twice however many of an element's classes are mentioned
+     * elsewhere in the stylesheet. The cascade is settled afterwards by
+     * sorting on specificity and document order, so the order these come
+     * back in does not matter.
+     *
+     * @return iterable<array{specificity: int, order: int, compounds: list<array{tag: string|null, id: string|null, classes: list<string>}>, combinators: list<string>, declarations: array<string, string>}>
+     */
+    private function candidatesFor(SvgElementPath $element): iterable
+    {
+        $keys = ['*', 'tag:' . $element->tag];
+
+        if ($element->id !== null) {
+            $keys[] = '#' . $element->id;
+        }
+
+        foreach ($element->classes as $class) {
+            $keys[] = '.' . $class;
+        }
+
+        foreach ($keys as $key) {
+            yield from $this->index[$key] ?? [];
+        }
     }
 
     /**

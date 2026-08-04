@@ -274,6 +274,65 @@ final class SvgStylesheetTest extends TestCase
         self::assertSame(['fill' => 'red'], $sheet->declarationsFor(SvgElementPath::of('rect', [], $element)));
     }
 
+    /**
+     * A rule is only tried against elements that could satisfy its
+     * rightmost compound, which is what keeps a big stylesheet from
+     * costing every rule on every element. These are the cases where
+     * filing a rule under the wrong thing would lose it silently: the
+     * lookup has to ask after *every* class an element carries, not just
+     * its first, and after the universal bucket whatever the element is.
+     */
+    public function testARuleIsFoundByAnyOfTheClassesItsSubjectCarries(): void
+    {
+        $sheet = self::sheet('.b { fill: red; } .c { stroke: blue; }');
+
+        self::assertSame(
+            ['fill' => 'red', 'stroke' => 'blue'],
+            self::applied($sheet, 'rect', ['class' => 'a b c']),
+        );
+    }
+
+    public function testARuleWithNothingToFileItUnderStillReachesEveryElement(): void
+    {
+        // The subject demands neither id, class nor tag, so no fact
+        // about an element rules it out -- including an element that has
+        // an id and classes of its own to be looked up by instead.
+        $sheet = self::sheet('g * { fill: red; }');
+
+        $group = SvgElementPath::of('g', []);
+        $child = SvgElementPath::of('circle', ['id' => 'hero', 'class' => 'x y'], $group);
+
+        self::assertSame(['fill' => 'red'], $sheet->declarationsFor($child));
+    }
+
+    public function testACompoundIsFoundByItsIdRatherThanItsTagOrClass(): void
+    {
+        $sheet = self::sheet('rect#hero.brand { fill: red; }');
+
+        self::assertSame(
+            ['fill' => 'red'],
+            self::applied($sheet, 'rect', ['id' => 'hero', 'class' => 'brand']),
+        );
+        self::assertSame([], self::applied($sheet, 'rect', ['id' => 'other', 'class' => 'brand']));
+    }
+
+    /**
+     * Tags, classes and ids share one lookup, so they have to be kept
+     * apart in it: a `text` element with class `text` must not pick up
+     * `.text`'s declarations, nor a `.text` element `text`'s.
+     */
+    public function testATagAndAClassOfTheSameNameDoNotCollide(): void
+    {
+        $sheet = self::sheet('text { fill: red; } .text { stroke: blue; }');
+
+        self::assertSame(['fill' => 'red'], self::applied($sheet, 'text', []));
+        self::assertSame(['stroke' => 'blue'], self::applied($sheet, 'rect', ['class' => 'text']));
+        self::assertSame(
+            ['fill' => 'red', 'stroke' => 'blue'],
+            self::applied($sheet, 'text', ['class' => 'text']),
+        );
+    }
+
     public function testADocumentWithNoStyleBlocksHasNoRules(): void
     {
         self::assertTrue(SvgStylesheet::parse(new \SimpleXMLElement('<svg><rect/></svg>'))->isEmpty());

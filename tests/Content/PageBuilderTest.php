@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace MightyPDF\Tests\Content;
 
+use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\Form\TextField;
 use MightyPDF\Assembler\Page;
+use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Content\ContentStream;
 use MightyPDF\Content\Font\EmbeddedFont;
 use MightyPDF\Content\Font\StandardFont;
@@ -937,7 +939,7 @@ final class PageBuilderTest extends TestCase
         }
     }
 
-    public function testDrawSvgRendersIntoThePageContentStream(): void
+    public function testDrawSvgRendersIntoAFormXObjectThePageInvokes(): void
     {
         $document = new Document();
         $page = $document->newPage();
@@ -945,10 +947,76 @@ final class PageBuilderTest extends TestCase
 
         $builder->drawSvg(__DIR__ . '/../fixtures/svg/sample.svg', 100, 100, 200, 200);
 
-        $bytes = $this->decompressedContentStreamBytes($page);
+        $output = $document->save();
+
+        // All the page says is "draw that one".
+        self::assertStringContainsString('/Im1 Do', $this->decompressedContentStreamBytes($page));
+
+        $bytes = $this->svgFormBytes($page, $output);
         self::assertStringContainsString('cm', $bytes);
         self::assertStringContainsString('re', $bytes);
         self::assertStringContainsString('1 0 0 rg', $bytes); // red rect
+    }
+
+    /**
+     * The case the XObject exists for: the same drawing placed the same
+     * way on page after page -- a logo, a letterhead -- is one drawing,
+     * not one per page. It used to be re-read, re-parsed and re-rendered
+     * every time, and to register a fresh set of gradient objects with
+     * each placement.
+     */
+    public function testTheSameSvgPlacedTheSameWayIsDrawnOnce(): void
+    {
+        $document = new Document();
+        $builder = null;
+
+        for ($i = 0; $i < 5; $i++) {
+            $builder = new PageBuilder($document, $document->newPage());
+            $builder->drawSvg(__DIR__ . '/../fixtures/svg/gradient.svg', 20, 20, 100, 100);
+        }
+
+        $output = $document->save();
+
+        self::assertSame(1, substr_count($output, '/Subtype /Form'), 'one drawing for five placements');
+        self::assertSame(1, substr_count($output, '/ShadingType 2'), 'and one gradient with it');
+    }
+
+    /**
+     * Reuse is on the placement as well as the file. A gradient is
+     * painted through a pattern, and pattern space is fixed to the page
+     * rather than to the CTM, so the placement is folded into the
+     * pattern matrices inside the drawing -- two placements that differ
+     * are two different drawings, and sharing them would put the second
+     * one's gradient where the first one's was.
+     */
+    public function testTheSameSvgPlacedElsewhereIsDrawnAgain(): void
+    {
+        $document = new Document();
+        $builder = new PageBuilder($document, $document->newPage());
+
+        $builder->drawSvg(__DIR__ . '/../fixtures/svg/gradient.svg', 20, 20, 100, 100);
+        $builder->drawSvg(__DIR__ . '/../fixtures/svg/gradient.svg', 300, 400, 100, 100);
+
+        self::assertSame(2, substr_count($document->save(), '/Subtype /Form'));
+    }
+
+    /**
+     * A drawing carries its own /Resources, which is what lets one
+     * XObject be placed on a page that never named the fonts, gradients
+     * or images inside it. The page names nothing but the drawing.
+     */
+    public function testAnSvgCarriesItsOwnResourcesRatherThanThePages(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+
+        (new PageBuilder($document, $page))->drawSvg(__DIR__ . '/../fixtures/svg/gradient.svg', 0, 0, 200, 200);
+
+        $document->save();
+
+        $pageResources = $page->resources();
+        self::assertNotNull($pageResources->get('XObject'), 'the page names the drawing');
+        self::assertNull($pageResources->get('Pattern'), 'and nothing from inside it');
     }
 
     public function testDrawSvgAndOtherDrawingShareOnePageContentStream(): void
@@ -1051,7 +1119,7 @@ final class PageBuilderTest extends TestCase
         self::assertStringContainsString('/Pattern << /P1', $output);
         self::assertStringContainsString('/PatternType 2', $output);
         self::assertStringContainsString('/ShadingType 2', $output);
-        self::assertStringContainsString('/Pattern cs', $this->decompressedContentStreamBytes($page));
+        self::assertStringContainsString('/Pattern cs', $this->svgFormBytes($page, $output));
     }
 
     public function testAnSvgPatternBecomesATilingPatternResourceOnThePage(): void
@@ -1065,7 +1133,7 @@ final class PageBuilderTest extends TestCase
 
         self::assertStringContainsString('/PatternType 1', $output);
         self::assertStringContainsString('/XStep 20', $output);
-        self::assertStringContainsString('/Pattern cs', $this->decompressedContentStreamBytes($page));
+        self::assertStringContainsString('/Pattern cs', $this->svgFormBytes($page, $output));
     }
 
     /**
@@ -1102,7 +1170,7 @@ final class PageBuilderTest extends TestCase
         $output = $document->save();
 
         self::assertSame(1, substr_count($output, '/PatternType 1'), 'one object for three identical fills');
-        self::assertSame(3, substr_count($this->decompressedContentStreamBytes($page), '/P1 scn'));
+        self::assertSame(3, substr_count($this->svgFormBytes($page, $output), '/P1 scn'));
     }
 
     /**
@@ -1136,27 +1204,51 @@ final class PageBuilderTest extends TestCase
     /**
      * A tiling pattern's operators live in a stream of their own, so the
      * names they use have to resolve in that stream's /Resources rather
-     * than the page's -- and the copy must not include the pattern
+     * than in the drawing's -- and the copy must not include the pattern
      * itself, which would be a dictionary containing itself. Ghostscript
      * reports that as a circular reference; poppler renders it and says
      * nothing.
+     *
+     * What comes across is the *drawing's* resources, not the page's:
+     * the tile was drawn inside a form XObject with a scope of its own,
+     * and the page's own fonts and images were never in scope to be
+     * copied. That is both narrower and more correct than copying the
+     * page -- a tile can only ever name what the drawing named.
      */
-    public function testATilingPatternCarriesItsOwnResourcesWithoutContainingItself(): void
+    public function testATilingPatternCarriesTheDrawingsResourcesWithoutContainingItself(): void
     {
+        $png = base64_encode((string) file_get_contents(self::FIXTURES . '/sample.png'));
+
+        // The tile itself uses an image, so there is something in the
+        // drawing's resources that the tile genuinely needs.
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100"><defs>'
+            . '<pattern id="tiles" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">'
+            . '<image x="0" y="0" width="20" height="20" xlink:href="data:image/png;base64,' . $png . '"/>'
+            . '</pattern></defs>'
+            . '<rect x="10" y="10" width="80" height="80" fill="url(#tiles)"/></svg>';
+
+        $path = tempnam(sys_get_temp_dir(), 'mightypdf') . '.svg';
+        file_put_contents($path, $svg);
+
         $document = new Document();
         $page = $document->newPage();
-
         $builder = new PageBuilder($document, $page);
-        // An image on the page first, so the page has resources worth
-        // copying by the time the pattern is built.
+
+        // An unrelated image on the page, which the tile must *not*
+        // inherit just by being drawn on the same page.
         $builder->drawPng(self::FIXTURES . '/sample.png', 0, 0, 10, 10);
-        $builder->drawSvg(self::FIXTURES . '/../svg/pattern.svg', 0, 0, 200, 200);
+
+        try {
+            $builder->drawSvg($path, 0, 0, 200, 200);
+        } finally {
+            unlink($path);
+        }
 
         $output = $document->save();
 
         preg_match('/\/PatternType 1[^>]*\/Resources << (.*?) >> \/Matrix/s', $output, $resources);
         self::assertNotEmpty($resources, 'the tiling pattern has no /Resources');
-        self::assertStringContainsString('/XObject', $resources[1], 'the page\'s resources came across');
+        self::assertStringContainsString('/XObject', $resources[1], 'the image the tile draws came across');
         self::assertStringNotContainsString('/Pattern <<', $resources[1], 'the pattern lists itself');
     }
 
@@ -1187,7 +1279,7 @@ final class PageBuilderTest extends TestCase
 
             // Set inside the shape's own graphics state, so the mask does
             // not survive into whatever is drawn next.
-            $bytes = $this->decompressedContentStreamBytes($page);
+            $bytes = $this->svgFormBytes($page, $output);
             self::assertStringContainsString("q\n/GS1 gs", $bytes);
             self::assertStringContainsString("f\nQ\n", $bytes);
         } finally {
@@ -1226,6 +1318,37 @@ final class PageBuilderTest extends TestCase
     {
         $rendered = $page->contentStreams()[0]->render(true);
         preg_match('/stream\n(.*)\nendstream/s', $rendered, $matches);
+
+        return gzuncompress($matches[1]);
+    }
+
+    /**
+     * The operators of the form XObject a drawSvg() call produced.
+     *
+     * A drawing is placed as an XObject rather than appended to the page
+     * (see PageBuilder::drawSvg(), and the reasons in its doc comment),
+     * so what a drawing put on the page is a single "Do" and everything
+     * worth asserting about is in here.
+     *
+     * Found by following the page's own /XObject rather than by looking
+     * for the first "/Subtype /Form" in the file, which is not
+     * necessarily this one -- a fading gradient's soft mask is a form
+     * XObject too, and is written before the drawing that uses it.
+     */
+    private function svgFormBytes(Page $page, string $output, string $name = 'Im1'): string
+    {
+        $xObjects = $page->resources()->get('XObject');
+        self::assertInstanceOf(Dictionary::class, $xObjects, 'the page names no XObject');
+
+        $reference = $xObjects->get($name);
+        self::assertInstanceOf(PdfReference::class, $reference, "the page has no /$name");
+
+        preg_match(
+            '/(?:^|\n)' . $reference->objectId() . ' 0 obj\n.*?stream\n(.*?)\nendstream/s',
+            $output,
+            $matches,
+        );
+        self::assertNotEmpty($matches, 'the drawing is not in the document');
 
         return gzuncompress($matches[1]);
     }
