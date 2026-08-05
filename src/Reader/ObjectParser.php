@@ -235,9 +235,10 @@ final class ObjectParser
      * entries are still perfectly readable, and throwing away a whole page
      * because one generator emitted a stray value is exactly the wrong
      * trade for a library whose job is editing files it did not write.
-     * This repo's own test.pdf is such a file: the 2012 writer emitted
+     * This project's own 2012 writer produced such files: it emitted
      * "/Resources" with nothing after it, so /Resources swallows the
      * following /MediaBox key and leaves its "[0 0 612 792]" dangling.
+     * (Sample output in git history at 9508591, test.pdf.)
      *
      * A composite has to be consumed whole -- skipping only the "[" would
      * resume parsing *inside* the array, where every element then looks

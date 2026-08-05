@@ -11,8 +11,11 @@
     ],
     "require": {
         "php": "^8.3",
+        "ext-dom": "*",
         "ext-iconv": "*",
+        "ext-libxml": "*",
         "ext-openssl": "*",
+        "ext-simplexml": "*",
         "ext-zlib": "*"
     },
     "require-dev": {

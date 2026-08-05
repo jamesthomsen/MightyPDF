@@ -275,8 +275,8 @@ final class ObjectParserTest extends TestCase
 
     public function testSkipsJunkWhereADictionaryKeyShouldBe(): void
     {
-        // Verbatim shape of this repo's own test.pdf, where the 2012
-        // writer emitted "/Resources" with no value: /Resources swallows
+        // Verbatim shape of this project's 2012 writer's output, which
+        // emitted "/Resources" with no value: /Resources swallows
         // the /MediaBox key and leaves its array dangling. Losing the
         // whole page over that would be the wrong trade -- the other
         // entries are perfectly readable.

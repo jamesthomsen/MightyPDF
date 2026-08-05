@@ -177,7 +177,7 @@ final class PdfEditorTest extends TestCase
 
     public function testEditsARealFileWrittenByAnotherTool(): void
     {
-        $path = __DIR__ . '/../../blank.pdf';
+        $path = __DIR__ . '/../fixtures/pdf/blank.pdf';
 
         self::assertSame(file_get_contents($path), PdfEditor::open($path)->save());
 

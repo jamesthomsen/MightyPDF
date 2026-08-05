@@ -136,9 +136,10 @@ final class XrefTable
      * The lowest object number an incremental update can safely allocate.
      *
      * Not simply /Size, because /Size is a claim the file makes about
-     * itself and files get it wrong -- this repo's own test.pdf says
-     * /Size 3 while its table describes four entries, the confirmed 2012
-     * off-by-one. Allocating from a /Size that is too small would hand
+     * itself and files get it wrong -- this project's own 2012 writer
+     * emitted /Size 3 over a table describing four entries, the confirmed
+     * off-by-one (sample in git history at 9508591, test.pdf).
+     * Allocating from a /Size that is too small would hand
      * out an id some existing object already uses, and the update would
      * silently overwrite it.
      */
