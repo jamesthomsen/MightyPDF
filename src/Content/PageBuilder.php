@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content;
 
+use MightyPDF\Assembler\Annotation\LinkAnnotation;
+use MightyPDF\Assembler\Destination;
 use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\DocumentContext;
 use MightyPDF\Assembler\Form\CheckboxField;
@@ -1081,6 +1083,54 @@ final class PageBuilder
         );
 
         $this->registerField($field);
+
+        return $this;
+    }
+
+    /**
+     * A clickable region of the page that opens $uri.
+     *
+     * A link draws nothing: it is laid over whatever is already there, so
+     * the underlined blue text that makes a link *look* like one is drawn
+     * separately. That is the right way round -- a link over an image, a
+     * button or a whole table cell is just as ordinary as one over text.
+     *
+     * ```php
+     * $content->drawText($font, 12.0, 72, 700, 'mightypdf.dev', r: 0.1, g: 0.3, b: 0.8);
+     * $content->addLink(72, 697, $font->widthOfPt('mightypdf.dev', 12.0), 14, 'https://mightypdf.dev');
+     * ```
+     */
+    public function addLink(float $x, float $y, float $width, float $height, string $uri): static
+    {
+        return $this->addAnnotation(LinkAnnotation::toUri(
+            $this->document->allocate(),
+            new PdfRectangle($x, $y, $x + $width, $y + $height),
+            $uri,
+        ));
+    }
+
+    /**
+     * The same, going somewhere in this document rather than out of it --
+     * a table of contents, a footnote, a "back to the top".
+     */
+    public function addInternalLink(
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        Destination $destination,
+    ): static {
+        return $this->addAnnotation(LinkAnnotation::toDestination(
+            $this->document->allocate(),
+            new PdfRectangle($x, $y, $x + $width, $y + $height),
+            $destination,
+        ));
+    }
+
+    private function addAnnotation(LinkAnnotation $annotation): static
+    {
+        $this->document->register($annotation);
+        $this->page->addAnnotation($annotation->objectId());
 
         return $this;
     }

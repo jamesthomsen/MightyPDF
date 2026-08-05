@@ -49,6 +49,8 @@ output is written to `examples/output/`.
 | [11-stamping-an-existing-page.php](examples/11-stamping-an-existing-page.php) | Stamping a page with `PageOverlay`, plus adding a field to an existing form |
 | [12-document-metadata.php](examples/12-document-metadata.php) | Setting Title/Author/Subject/Keywords/Creator/Producer/CreationDate |
 | [13-merging-documents.php](examples/13-merging-documents.php) | Combining pages from multiple PDFs into one with `PdfMerger` |
+| [14-embedding-a-font.php](examples/14-embedding-a-font.php) | Embedding a TrueType or OpenType font, and pointing a form field at one |
+| [15-links-and-bookmarks.php](examples/15-links-and-bookmarks.php) | Links out of and inside a document, and a bookmark tree |
 
 ## Core concepts
 
@@ -452,6 +454,67 @@ $content2 = new PageBuilder($document, $page2);
 
 $document->saveToFile('output.pdf');
 ```
+
+## Links and bookmarks
+
+A link is a rectangle of the page that goes somewhere when it is
+clicked. It draws nothing — the underlined blue text that makes a link
+*look* like one is yours to draw, which is the right way round: a link
+over an image, a button or a whole table cell is just as ordinary.
+
+```php
+$content->drawText(StandardFont::Helvetica, 12.0, 72, 700, 'php.net', r: 0.1, g: 0.3, b: 0.8);
+$content->addLink(x: 72, y: 697, width: 40, height: 14, uri: 'https://www.php.net/');
+
+$content->addInternalLink(x: 72, y: 660, width: 200, height: 14,
+    destination: Destination::of($chapterPage, top: 792));
+```
+
+`Destination` is where a link or a bookmark points, and the same value
+serves both:
+
+- `Destination::of($page, ?float $top = null, ?float $left = null)` — a
+  point on the page, scrolled to the top of the window. Left null, the
+  reader keeps the position it had, which makes a link feel like a page
+  turn rather than a jump. `$top` is a y coordinate in the page's own
+  space, so it counts from the bottom: the top of a Letter page is 792.
+- `Destination::fitPage($page)` — the whole page, fitted to the window.
+- `Destination::fitWidth($page, ?float $top = null)` — its full width.
+
+**Bookmarks** are the tree a reader shows beside the page. Adding one
+returns it, so sections go under chapters:
+
+```php
+$outline = $document->outline();
+
+$outline->add('Contents', Destination::of($contentsPage));
+
+$one = $outline->add('1. The first chapter', Destination::of($chapter1));
+$one->add('1.1 Background', Destination::of($chapter1, top: 600));
+$one->add('1.2 Method', Destination::of($chapter1, top: 400));
+
+// Closed: its sections are there, but the reader starts with them folded away.
+$outline->add('2. The second chapter', Destination::of($chapter2), open: false)
+    ->add('2.1 Results', Destination::of($chapter2));
+```
+
+`add(string $title, ?Destination $destination = null, bool $open = true)`
+— the destination is optional, since an item with none is a heading that
+groups the items under it and goes nowhere itself. Titles are text
+strings, so they keep their own characters in any language.
+
+Like `/AcroForm` and `/Info`, the outline is created the first time you
+ask for it; a document that never calls `outline()` has none at all.
+Asking also sets `/PageMode /UseOutlines`, so readers open with their
+bookmark panel showing — an outline nobody can see is the same as no
+outline for most of the people who open the file.
+
+The tree's own wiring (`/First`, `/Last`, `/Next`, `/Prev`, `/Parent`
+and the signed `/Count` a reader lays the panel out from) is written at
+save time, since none of it is true until the whole tree exists.
+
+See [`examples/15-links-and-bookmarks.php`](examples/15-links-and-bookmarks.php)
+for a runnable version.
 
 ## Document metadata
 

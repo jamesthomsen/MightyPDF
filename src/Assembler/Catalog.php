@@ -28,4 +28,22 @@ final class Catalog extends Dictionary
     {
         $this->set('AcroForm', new PdfReference($acroFormObjectId));
     }
+
+    public function setOutlines(int $outlineObjectId): void
+    {
+        $this->set('Outlines', new PdfReference($outlineObjectId));
+    }
+
+    /**
+     * How the document asks to be opened: with its bookmark panel
+     * showing, here (§12.2, /PageMode /UseOutlines).
+     *
+     * Worth saying rather than leaving to the reader's default, which is
+     * to show no panel at all -- an outline nobody can see is the same as
+     * no outline for most of the people who open the file.
+     */
+    public function setPageMode(string $mode): void
+    {
+        $this->set('PageMode', new PdfName($mode));
+    }
 }

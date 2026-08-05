@@ -33,6 +33,7 @@ final class Document implements DocumentContext
     private readonly Catalog $catalog;
     private readonly PageTreeNode $pageTree;
     private ?AcroForm $acroForm = null;
+    private ?Outline $outline = null;
     private ?DocumentInfo $info = null;
     private ?StandardSecurityHandler $security = null;
     private ?int $encryptObjectId = null;
@@ -153,6 +154,26 @@ final class Document implements DocumentContext
         }
 
         return $this->acroForm;
+    }
+
+    /**
+     * The document's outline -- its bookmarks -- created lazily, the same
+     * way acroForm() and info() are.
+     *
+     * Asking for it also asks readers to show their bookmark panel when
+     * the document opens. A document with an outline wants it seen, and
+     * the default is to show nothing.
+     */
+    public function outline(): Outline
+    {
+        if ($this->outline === null) {
+            $this->outline = new Outline($this, $this->registry->allocate());
+            $this->registry->register($this->outline);
+            $this->catalog->setOutlines($this->outline->objectId());
+            $this->catalog->setPageMode('UseOutlines');
+        }
+
+        return $this->outline;
     }
 
     /** @return list<Page> */
