@@ -27,6 +27,11 @@ final class PdfMerger
         // between sources. See FormImporter.
         $form = new FormImporter($document);
 
+        // The same reasoning for bookmarks: a document has one outline,
+        // and what a merged one looks like is a question about the merge
+        // rather than about any file in it. See OutlineImporter.
+        $outlines = new OutlineImporter($document);
+
         foreach ($paths as $path) {
             $source = PdfEditor::open($path);
             $importer = new PageImporter($source, $document, $form);
@@ -36,6 +41,10 @@ final class PdfMerger
             foreach ($importer->pages() as $sourcePage) {
                 $importer->import($sourcePage);
             }
+
+            // After this source's pages, so that every bookmark of its
+            // that still points somewhere knows where.
+            $outlines->take($source, $importer->importedPages());
         }
 
         $form->finish();

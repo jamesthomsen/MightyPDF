@@ -138,6 +138,16 @@ final class PageImporter
         }
     }
 
+    /**
+     * Which of this source's pages were imported, and what they were
+     * renumbered to -- what anything pointing at a page needs to know
+     * once the pages are in. See OutlineImporter.
+     */
+    public function importedPages(): ImportedPages
+    {
+        return $this->importedPages;
+    }
+
     /** Copies one source page into the target and returns the new page. */
     public function import(Dictionary $sourcePage): Page
     {

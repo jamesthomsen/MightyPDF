@@ -15,6 +15,9 @@
  * share a value. This prints what the merged form's fields ended up
  * called.
  *
+ * Bookmarks are combined the same way -- each file's appear in the order
+ * the files were merged, pointing at the pages they arrived with.
+ *
  * Run: php examples/13-merging-documents.php
  */
 
@@ -22,6 +25,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../vendor/autoload.php';
 
+use MightyPDF\Assembler\Destination;
 use MightyPDF\Assembler\Document;
 use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\PageBuilder;
@@ -38,10 +42,19 @@ $cover = new Document();
 $cover->saveToFile(__DIR__ . '/output/13-source-cover.pdf');
 
 $report = new Document();
-(new PageBuilder($report, $report->newPage()))
-    ->drawText(StandardFont::Helvetica, 14.0, 72, 720, 'Report, page 1');
-(new PageBuilder($report, $report->newPage()))
-    ->drawText(StandardFont::Helvetica, 14.0, 72, 720, 'Report, page 2');
+$reportPages = [];
+
+foreach ([1, 2] as $number) {
+    $reportPages[$number] = $report->newPage();
+    (new PageBuilder($report, $reportPages[$number]))
+        ->drawText(StandardFont::Helvetica, 14.0, 72, 720, "Report, page $number");
+}
+
+// A source with bookmarks of its own, to be carried into the merge.
+$chapter = $report->outline()->add('Report', Destination::of($reportPages[1]));
+$chapter->add('First half', Destination::of($reportPages[1], top: 700));
+$chapter->add('Second half', Destination::of($reportPages[2], top: 700));
+
 $report->saveToFile(__DIR__ . '/output/13-source-report.pdf');
 
 // Two forms that both call their field "signature" -- the collision a
@@ -61,6 +74,12 @@ $merged = PdfMerger::merge(
     __DIR__ . '/output/13-source-form-a.pdf',
     __DIR__ . '/output/13-source-form-b.pdf',
 );
+
+// The report's own bookmarks arrived pointing at the pages they came
+// with -- pages 2 and 3 of the merged document, since the cover went
+// first -- without being touched here. A bookmark added now joins them
+// at the end, in the order it was added.
+$merged->outline()->add('Cover', Destination::of($merged->pages()[0]));
 
 $merged->saveToFile(__DIR__ . '/output/13-merging-documents.pdf');
 

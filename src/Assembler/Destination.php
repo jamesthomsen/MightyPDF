@@ -75,6 +75,23 @@ final class Destination
     }
 
     /**
+     * A destination read out of another document, kept exactly as its
+     * author wrote it.
+     *
+     * The named constructors above offer the three views a document
+     * author means. This one exists for an importer, which is not
+     * choosing a view but preserving one -- including the shapes those
+     * three do not cover (/FitR, /FitBH and the rest), which are
+     * perfectly valid in a file even where nothing here would write one.
+     *
+     * @param list<PdfValue> $arguments what followed the fit, unchanged
+     */
+    public static function copied(int $pageObjectId, string $fit, array $arguments): self
+    {
+        return new self($pageObjectId, $fit, $arguments);
+    }
+
+    /**
      * The destination as PDF writes it: the page, the fit, and whatever
      * that fit takes.
      */

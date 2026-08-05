@@ -820,9 +820,34 @@ importing a subset) keeps its rectangle and does nothing, rather than
 dragging that page in to make itself right. And a *named* destination is
 dropped: the name trees that resolve them are not imported, and a name
 meaning one thing in one file may mean another in a document merged from
-several. Bookmarks are not merged at all — an outline describes a
-document's structure, and the merged document's structure is a new
-question rather than the sum of the answers.
+several.
+
+**Bookmarks come across too.** Each file's top-level items are appended
+in the order the files were merged — wrapping each one's bookmarks under
+a heading named after the file would be adding structure the documents
+never had. Destinations are remapped to the merged pages, and whether an
+item was written open or folded away survives with it, as do its colour
+and bold/italic flags.
+
+An item survives if anything under it still points somewhere. A bookmark
+whose page was left behind is a line that goes nowhere, and a subtree of
+them is a table of contents for a document that is not here; an ancestor
+kept only because a descendant survived loses its own destination and
+becomes what it already looked like — a heading. A bookmark that opens a
+*link* keeps it, since a URI is a value like any other; one that runs
+JavaScript or opens another file does not, because a merge is no place
+to decide that someone else's script should still fire.
+
+Importing a subset by hand carries bookmarks the same way, with one
+extra line — `PdfMerger` is doing exactly this:
+
+```php
+$outlines = new OutlineImporter($document);
+
+foreach ($importer->pages() as $index => $page) { /* ... */ }
+
+$outlines->take($source, $importer->importedPages());
+```
 
 Merging forms means combining every source file's `/AcroForm` into the
 one a document is allowed to have, and two things about that are worth
@@ -904,9 +929,10 @@ for a runnable version.
   — this library has no code anywhere to hash a byte range, embed a
   certificate, or validate one, so nothing in it can actually sign a
   document.
-- **Merging**: bookmarks are not carried across, and named destinations
-  on imported links are dropped (see "Merging PDFs" for both). The merged
-  document always gets a fresh, flat page tree
+- **Merging**: named destinations on imported links are dropped, and a
+  bookmark whose pages were all left behind goes with them (see "Merging
+  PDFs" for both). The merged document always gets a fresh, flat page
+  tree
   regardless of how the source files' own page trees were shaped — which
   matches how `Document` builds every page tree already. Form fields
   come across (see "Merging PDFs" above); the form's `/CO` calculation
