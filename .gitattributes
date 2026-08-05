@@ -1,0 +1,11 @@
+# What a `composer require` pulls down. Everything here is how the
+# library is developed rather than part of it, and a consumer vendoring
+# MightyPDF has no use for any of it -- the test fixtures alone are
+# larger than the source they test.
+
+/tests          export-ignore
+/examples       export-ignore
+/phpunit.xml    export-ignore
+/.gitignore     export-ignore
+/.gitattributes export-ignore
+/.claude        export-ignore
