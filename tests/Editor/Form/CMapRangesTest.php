@@ -109,6 +109,46 @@ final class CMapRangesTest extends TestCase
     }
 
     /**
+     * A lookup walks the ranges, and drawing a field's value asks many
+     * times over -- it is measured, then wrapped (measuring each
+     * candidate line), then written. Against a CMap of the largest size
+     * allowed, a 1 166-character multiline field took 10.9 seconds.
+     */
+    public function testRepeatedLookupsDoNotWalkTheRangesAgain(): void
+    {
+        $entries = '';
+
+        for ($i = 1; $i <= 20_000; ++$i) {
+            $entries .= sprintf("<%04X> <%04X>\n", $i, 0x4E00 + $i);
+        }
+
+        $cmap = CMapRanges::toUnicode("beginbfchar\n" . $entries . "endbfchar\n");
+
+        // The last entry, so every walk that does happen is a full one.
+        $last = 0x4E00 + 20_000;
+        $started = microtime(true);
+
+        for ($i = 0; $i < 5_000; ++$i) {
+            $code = $cmap->codeFor($last);
+            $value = $cmap->valueFor("\x4E\x20");
+        }
+
+        self::assertLessThan(2.0, microtime(true) - $started);
+        self::assertSame("\x4E\x20", $code, 'the remembered answer is the right one');
+        self::assertSame($last, $value);
+    }
+
+    /** An answer of "nothing maps to this" is worth remembering too. */
+    public function testACharacterTheCMapDoesNotCoverIsAnsweredOnce(): void
+    {
+        $cmap = CMapRanges::toUnicode("1 beginbfrange\n<0041> <005A> <0041>\nendbfrange\n");
+
+        self::assertNull($cmap->codeFor(0x5B));
+        self::assertNull($cmap->codeFor(0x5B), 'the second answer is the first');
+        self::assertSame("\x00\x41", $cmap->codeFor(0x41));
+    }
+
+    /**
      * The cap is on what is read, not on what is looked at afterwards:
      * building every match of a hundred-megabyte stream before the first
      * one is counted is the allocation this is here to avoid.

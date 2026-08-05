@@ -30,6 +30,38 @@ final class CMapRanges
     private const int MAX_ENTRIES = 20_000;
 
     /**
+     * How many answers are kept. A field's value is drawn from a small
+     * alphabet however long it is -- a page of Japanese runs to a few
+     * hundred distinct characters -- so this is far more than a field
+     * needs, and the cost of being wrong about that is only that the
+     * lookups past it are as slow as they always were.
+     */
+    private const int MAX_REMEMBERED = 4_096;
+
+    /**
+     * Answers already worked out, which is what makes a long value
+     * affordable.
+     *
+     * A lookup walks the ranges, and every question about a field asks
+     * again: the appearance builder measures the value, wraps it --
+     * measuring each candidate line as it goes -- and then writes it, so
+     * one character is looked up many times over. Against a CMap of the
+     * twenty thousand entries allowed above, a 1 166-character multiline
+     * field took 10.9 seconds, and the same field with these caches
+     * takes about as long as one pass.
+     *
+     * Nulls are remembered too, which is why these are read with
+     * array_key_exists() -- "no code maps to this" is an answer, and the
+     * walk that establishes it is the expensive one.
+     *
+     * @var array<int, ?string>
+     */
+    private array $codeForValue = [];
+
+    /** @var array<string, ?int> */
+    private array $valueForCode = [];
+
+    /**
      * @param list<array{code: string, low: int, high: int, value: int}> $ranges
      *        $code is the low end as it is written -- its length is the
      *        code's width in bytes, which a CMap may vary
@@ -73,6 +105,21 @@ final class CMapRanges
     /** The value a code maps to -- a character id, or a code point. */
     public function valueFor(string $code): ?int
     {
+        if (array_key_exists($code, $this->valueForCode)) {
+            return $this->valueForCode[$code];
+        }
+
+        $value = $this->findValueFor($code);
+
+        if (count($this->valueForCode) < self::MAX_REMEMBERED) {
+            $this->valueForCode[$code] = $value;
+        }
+
+        return $value;
+    }
+
+    private function findValueFor(string $code): ?int
+    {
         $number = self::number($code);
 
         foreach ($this->ranges as $range) {
@@ -93,6 +140,21 @@ final class CMapRanges
      * glyph.
      */
     public function codeFor(int $value): ?string
+    {
+        if (array_key_exists($value, $this->codeForValue)) {
+            return $this->codeForValue[$value];
+        }
+
+        $code = $this->findCodeFor($value);
+
+        if (count($this->codeForValue) < self::MAX_REMEMBERED) {
+            $this->codeForValue[$value] = $code;
+        }
+
+        return $code;
+    }
+
+    private function findCodeFor(int $value): ?string
     {
         foreach ($this->ranges as $range) {
             $span = $range['high'] - $range['low'];
