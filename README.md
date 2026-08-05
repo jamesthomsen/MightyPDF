@@ -470,6 +470,11 @@ $content->addInternalLink(x: 72, y: 660, width: 200, height: 14,
     destination: Destination::of($chapterPage, top: 792));
 ```
 
+Both work just as well on a page of a document you opened — `PageOverlay`
+hands you the same `PageBuilder` (see "Drawing on an existing page"), and
+`Destination::atPage($objectId, top: 700)` names a page of that document
+rather than one you just made.
+
 `Destination` is where a link or a bookmark points, and the same value
 serves both:
 
@@ -803,6 +808,22 @@ not re-embedded per page.
 Annotations are carried over along with the page they're on — links and
 sticky notes, and **form fields** too.
 
+**A link's destination is settled once the merge is finished**, not as
+the link is copied. A contents page links forwards, so the page it names
+has not been imported yet when its link is: resolving it then would copy
+the *page* — content stream and all — into a duplicate that is in no
+page tree, leaving a link that goes somewhere invisible and a file
+carrying one page twice. Neither shows until someone clicks.
+
+Two consequences worth knowing. A link whose page was left behind (when
+importing a subset) keeps its rectangle and does nothing, rather than
+dragging that page in to make itself right. And a *named* destination is
+dropped: the name trees that resolve them are not imported, and a name
+meaning one thing in one file may mean another in a document merged from
+several. Bookmarks are not merged at all — an outline describes a
+document's structure, and the merged document's structure is a new
+question rather than the sum of the answers.
+
 Merging forms means combining every source file's `/AcroForm` into the
 one a document is allowed to have, and two things about that are worth
 knowing:
@@ -883,7 +904,9 @@ for a runnable version.
   — this library has no code anywhere to hash a byte range, embed a
   certificate, or validate one, so nothing in it can actually sign a
   document.
-- **Merging**: the merged document always gets a fresh, flat page tree
+- **Merging**: bookmarks are not carried across, and named destinations
+  on imported links are dropped (see "Merging PDFs" for both). The merged
+  document always gets a fresh, flat page tree
   regardless of how the source files' own page trees were shaped — which
   matches how `Document` builds every page tree already. Form fields
   come across (see "Merging PDFs" above); the form's `/CO` calculation

@@ -39,6 +39,10 @@ use MightyPDF\Editor\Form\FormImporter;
  *
  * Pass a FormImporter to carry fields; without one, widget annotations
  * are skipped and a merged page keeps its appearance but not its form.
+ *
+ * Links come across too, and where they point is settled at save time
+ * rather than as they are copied -- a page linking forwards names a page
+ * that has not been imported yet. See ImportedAnnotation.
  */
 final class PageImporter
 {
@@ -47,6 +51,13 @@ final class PageImporter
 
     /** @var array<int, int> source object id => target object id */
     private array $idMap = [];
+
+    /**
+     * Which source pages were imported, for the links that point at
+     * them -- see ImportedAnnotation for why that cannot be answered
+     * while a link is being copied.
+     */
+    private readonly ImportedPages $importedPages;
 
     /** @var array<int, PdfObject> target object id => the copied object */
     private array $copied = [];
@@ -65,6 +76,7 @@ final class PageImporter
         private readonly Document $target,
         private readonly ?FormImporter $form = null,
     ) {
+        $this->importedPages = new ImportedPages();
     }
 
     /**
@@ -143,6 +155,7 @@ final class PageImporter
         if ($sourcePage->hasObjectId()) {
             $this->idMap[$sourcePage->objectId()] = $page->objectId();
             $this->copied[$page->objectId()] = $page;
+            $this->importedPages->record($sourcePage->objectId(), $page->objectId());
         }
 
         $this->importResources($sourcePage, $page);
@@ -159,7 +172,7 @@ final class PageImporter
             $annotation = $this->source->resolveDictionary($reference);
 
             if (!FormImporter::isWidget($annotation)) {
-                $page->addAnnotation($this->copyObject($reference->objectId())->objectId());
+                $page->addAnnotation($this->copyAnnotation($reference->objectId())->objectId());
 
                 continue;
             }
@@ -449,6 +462,115 @@ final class PageImporter
      * into the target, renumbered, caching the result so a second reference
      * to it returns the same copy instead of duplicating it.
      */
+    /**
+     * An annotation, copied like any other object except for where it
+     * points.
+     *
+     * A destination names a page, and a page is the one thing that must
+     * not be deep-copied here: it either belongs to the merged document
+     * already or is not going to, and copying it makes a third answer up.
+     * See ImportedAnnotation.
+     */
+    private function copyAnnotation(int $oldObjectId): PdfObject
+    {
+        if (isset($this->idMap[$oldObjectId])) {
+            return $this->copied[$this->idMap[$oldObjectId]];
+        }
+
+        $resolved = $this->source->get($oldObjectId);
+
+        if (!$resolved instanceof Dictionary) {
+            throw new \RuntimeException(
+                "Cannot import annotation $oldObjectId: expected a dictionary, found something else.",
+            );
+        }
+
+        $newId = $this->target->allocate();
+        $this->idMap[$oldObjectId] = $newId;
+
+        $copy = new ImportedAnnotation($newId, $this->importedPages);
+        $this->copied[$newId] = $copy;
+
+        foreach ($resolved->entries() as $key => $value) {
+            match ((string) $key) {
+                'Dest' => $this->copyDestination($copy, $copy, 'Dest', $value),
+                'A' => $copy->set('A', $this->copyAction($copy, $value)),
+                default => $copy->set((string) $key, $this->copyValue($value)),
+            };
+        }
+
+        $this->target->register($copy);
+
+        return $copy;
+    }
+
+    /**
+     * An action, copied inline so that a /GoTo's destination can be held
+     * back the way an annotation's own is.
+     *
+     * Inlining is not a liberty: an action dictionary may be direct or
+     * indirect, and a copy that keeps one object per action would have to
+     * carry the deferral through it for no gain.
+     */
+    private function copyAction(ImportedAnnotation $annotation, PdfValue $value): PdfValue
+    {
+        $action = $this->source->resolveDictionary($value);
+
+        if ($action === null) {
+            return $this->copyValue($value);
+        }
+
+        $copy = new Dictionary();
+
+        foreach ($action->entries() as $key => $entry) {
+            if ((string) $key === 'D') {
+                $this->copyDestination($annotation, $copy, 'D', $entry);
+
+                continue;
+            }
+
+            $copy->set((string) $key, $this->copyValue($entry));
+        }
+
+        return $copy;
+    }
+
+    /**
+     * Records where a destination points, or drops it.
+     *
+     * Three shapes arrive here. An explicit destination -- a page and a
+     * view -- is deferred until the page's fate is known. A *named* one
+     * is dropped: the name trees that resolve them are not imported, and
+     * a name that means one thing in the source may well mean another in
+     * a document merged from several. Anything else is copied as it
+     * stands, which covers the page-number form remote destinations use.
+     */
+    private function copyDestination(ImportedAnnotation $annotation, Dictionary $holder, string $key, PdfValue $value): void
+    {
+        $destination = $this->source->resolve($value);
+
+        if ($destination instanceof PdfName || $destination instanceof PdfString) {
+            return;
+        }
+
+        if (!$destination instanceof PdfArray) {
+            $holder->set($key, $this->copyValue($value));
+
+            return;
+        }
+
+        $items = $destination->items();
+        $page = $items[0] ?? null;
+
+        if (!$page instanceof PdfReference) {
+            $holder->set($key, $this->copyValue($destination));
+
+            return;
+        }
+
+        $annotation->deferDestination($holder, $key, $page->objectId(), array_slice($items, 1));
+    }
+
     private function copyObject(int $oldObjectId): PdfObject
     {
         if (isset($this->idMap[$oldObjectId])) {
