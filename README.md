@@ -9,7 +9,7 @@ Requires **PHP 8.3+**, `ext-iconv`, `ext-openssl`, and `ext-zlib`.
 ## Installation
 
 ```bash
-composer require jthomsen/mightypdf
+composer require jamesthomsen/mightypdf
 ```
 
 ## Quick start
