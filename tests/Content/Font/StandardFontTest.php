@@ -65,4 +65,27 @@ final class StandardFontTest extends TestCase
         self::assertSame(250, $metrics->widthOfCode(ord(' ')));
         self::assertSame(722, $metrics->widthOfCode(ord('A')));
     }
+
+    public function testSupportsWhatWinAnsiHasCodesFor(): void
+    {
+        self::assertTrue(StandardFont::Helvetica->supports('Hello, café — €50'));
+        self::assertFalse(StandardFont::Helvetica->supports('Ταβέρνα'));
+    }
+
+    public function testMissingCharactersNamesWhatWillNotBeDrawnAsItself(): void
+    {
+        self::assertSame([], StandardFont::Helvetica->missingCharacters('naïve'));
+        self::assertSame(['Ł', 'ź'], StandardFont::TimesRoman->missingCharacters('Łódź'));
+    }
+
+    /**
+     * The bug this pair of methods exists to make checkable: text with no
+     * CP1252 character in it is drawn as an approximation, not refused.
+     */
+    public function testTextOutsideWinAnsiIsMeasuredRatherThanRefused(): void
+    {
+        foreach (['Phở Việt Nam', 'Ταβέρνα', 'Łódź'] as $text) {
+            self::assertGreaterThan(0.0, StandardFont::Helvetica->widthOfPt($text, 12.0));
+        }
+    }
 }

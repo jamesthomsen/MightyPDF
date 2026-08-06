@@ -20,9 +20,11 @@ use MightyPDF\Assembler\Types\WinAnsiEncoding;
  * usesWinAnsiEncoding() and FontMetrics::fixedWidth()'s use below.
  *
  * Text drawn with one of these is limited to what WinAnsiEncoding can
- * represent, and anything outside that is transliterated rather than
- * drawn (see WinAnsiEncoding). A document that needs the rest of Unicode
- * needs a font that contains it: EmbeddedFont.
+ * represent, and anything outside that is transliterated or substituted
+ * rather than drawn (see WinAnsiEncoding). Drawing never fails over it;
+ * supports() and missingCharacters() are how a caller finds out first. A
+ * document that needs the rest of Unicode needs a font that contains it:
+ * EmbeddedFont.
  */
 enum StandardFont implements Font
 {
@@ -74,12 +76,37 @@ enum StandardFont implements Font
     /**
      * Measured on the encoded form, not the text as given: what a
      * standard font actually draws for "café" is whatever CP1252 makes
-     * of it, and a character that transliterates to two ("œ" to "oe")
+     * of it, and a character that transliterates to two ("ﬁ" to "fi")
      * takes the width of two.
      */
     public function widthOfPt(string $utf8Text, float $sizePt): float
     {
         return $this->metrics()->widthOf(WinAnsiEncoding::encode($utf8Text), $sizePt);
+    }
+
+    /** Whether every character of $utf8Text has a WinAnsi code of its own. */
+    public function supports(string $utf8Text): bool
+    {
+        return $this->missingCharacters($utf8Text) === [];
+    }
+
+    /**
+     * The characters of $utf8Text with no WinAnsi code -- the ones that
+     * will be drawn as an approximation ("Ł" as "L") or as "?" rather
+     * than as themselves. Unlike an embedded font's, this is advisory:
+     * drawing them succeeds, it just does not draw what was asked for.
+     *
+     * Answered against WinAnsi for Symbol and ZapfDingbats too, which is
+     * an approximation in the same way their widths are (see
+     * loadMetrics()): those two are read through their own built-in
+     * encodings, so what they draw for ordinary prose is not the prose
+     * either way.
+     *
+     * @return list<string>
+     */
+    public function missingCharacters(string $utf8Text): array
+    {
+        return WinAnsiEncoding::unrepresentableCharacters($utf8Text);
     }
 
     /**

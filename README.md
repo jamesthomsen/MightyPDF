@@ -120,9 +120,25 @@ Available cases: `Helvetica`, `HelveticaBold`, `HelveticaOblique`,
 `CourierBoldOblique`, `Symbol`, `ZapfDingbats`.
 
 Text drawn in one of these is transcoded to WinAnsiEncoding (≈ CP1252).
-Characters outside that repertoire are transliterated to the nearest
-ASCII equivalent (e.g. curly quotes → straight quotes) rather than
-failing. For text that has to keep its own characters, embed a font.
+That covers more than Latin-1 — the euro sign, en and em dashes, curly
+quotes and the `œ` ligature are all in it. Characters outside it are
+transliterated to the nearest equivalent (`Ł` → `L`, `ﬁ` → `fi`), and a
+character with no transliteration at all is drawn as `?`. Encoding never
+fails and never silently drops text. For text that has to keep its own
+characters, embed a font.
+
+To find out before drawing rather than after, ask the font:
+
+```php
+StandardFont::Helvetica->supports('Ταβέρνα');          // false
+StandardFont::Helvetica->missingCharacters('Łódź');    // ['Ł', 'ź']
+```
+
+Both are on the `Font` interface, so code that draws in whatever font it
+was handed can ask either kind. The two answer the same question — which
+characters this font cannot draw as themselves — but the consequence
+differs: a standard font approximates them, an embedded font refuses to
+draw at all (see below).
 
 ### Embedding a TrueType font
 
@@ -901,13 +917,14 @@ for a runnable version.
   and subset, plus any OpenType/CFF (`.otf`) file embedded whole —
   subsetting PostScript outlines is not implemented, and a CID-keyed CFF
   or a font collection (`.ttc`) is refused rather than half-embedded.
-  Text drawn in a *standard* font is
-  still limited to WinAnsi/CP1252 and transliterated outside it; text in
-  an embedded font is not. One gap in a font embedded whole (`subset:
-  false`): characters past the Basic Multilingual Plane render correctly
-  but do not reliably copy out of the page, because such a font is
-  addressed by UTF-16 code and a `/ToUnicode` map takes one code width
-  throughout. Drawn in a subset font — the default — they copy out fine.
+  Text drawn in a *standard* font is still limited to WinAnsi/CP1252,
+  and transliterated or drawn as `?` outside it — `supports()` says so
+  in advance; text in an embedded font is not. One gap in a font
+  embedded whole (`subset: false`): characters past the Basic
+  Multilingual Plane render correctly but do not reliably copy out of
+  the page, because such a font is addressed by UTF-16 code and a
+  `/ToUnicode` map takes one code width throughout. Drawn in a subset
+  font — the default — they copy out fine.
 - **Form fields**: a field's font must be one of the standard 14 or a
   TrueType file embedded whole; a subset is refused, since it holds only
   the characters this document already drew. Filling a field falls back

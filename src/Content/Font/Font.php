@@ -34,6 +34,23 @@ interface Font
     /** The width of $utf8Text, in points, when drawn at $sizePt. */
     public function widthOfPt(string $utf8Text, float $sizePt): float;
 
+    /** Whether this font can draw every character of $utf8Text as itself. */
+    public function supports(string $utf8Text): bool;
+
+    /**
+     * The characters of $utf8Text this font cannot draw as themselves,
+     * without duplicates and in the order they appear.
+     *
+     * What that costs depends on the kind of font, which is the reason
+     * this is asked of the interface rather than of one implementation:
+     * an embedded font refuses to draw at all, a standard font
+     * transliterates or substitutes. Either way a caller holding a Font
+     * it did not choose can find out before drawing instead of after.
+     *
+     * @return list<string>
+     */
+    public function missingCharacters(string $utf8Text): array;
+
     /**
      * How far the font rises above the baseline at $sizePt -- what a
      * caller placing the first line of text inside a box needs, since
