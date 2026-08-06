@@ -187,6 +187,56 @@ say which one was meant.
 See [`examples/14-embedding-a-font.php`](examples/14-embedding-a-font.php)
 for a runnable version.
 
+### Wrapped text
+
+`drawParagraph()` word-wraps into a box. `($x, $y)` is the box's
+**bottom-left** corner, matching `fillRectangle()` and images:
+
+```php
+$content->drawParagraph($font, 11.0, 72, 600, 200, 120, $text,
+    align: 'J', valign: 'T', lineHeightPt: 14.0);
+```
+
+`align` is `'L'` (default), `'C'`, `'R'` or `'J'`; `valign` is `'T'`
+(default), `'M'` or `'B'`; `lineHeightPt` defaults to 1.15 × the size.
+
+The box is not auto-sized — measure first and pass the height in:
+
+```php
+use MightyPDF\Content\Text\TextWrapper;
+
+$lines  = TextWrapper::wrapUtf8($text, $font, 11.0, 200);
+$height = count($lines) * 14.0;
+```
+
+#### Lining wrapped text up with single-line text
+
+`drawText()` takes a **baseline**; `drawParagraph()` takes a **box**. Mix
+them and the two won't agree unless you convert. At `valign: 'T'` the
+first baseline lands at exactly:
+
+```php
+$baselineY = $y + $height - $font->ascentPt($sizePt);
+```
+
+So a single-line label beside a wrapped cell, sharing its top edge:
+
+```php
+$content->drawParagraph($font, 11.0, 200, 600, 300, 120, $body);
+$content->drawText($font, 11.0, 72, 600 + 120 - $font->ascentPt(11.0), 'Notes');
+```
+
+Or skip the arithmetic and draw the label with `drawParagraph()` too,
+using the same box — one-line text wraps to one line, and both then
+place their baselines the same way by construction.
+
+One trap: the offset is the *font's* ascent, not a fraction of the size.
+A standard font reports a flat 0.8 × size (the shipped Core-14 metrics
+carry no ascent), while an embedded font reports what its `hhea` table
+says — often nearer 0.95. At 11pt that's about 1.7pt of drift, so a row
+mixing the two kinds needs its baselines placed from one `ascentPt()`
+call rather than one per cell.
+
 ### Measuring text
 
 Every font measures its own text, so layout math (centering, fitting a
@@ -195,6 +245,8 @@ box) is the same for both kinds:
 ```php
 $width = $font->widthOfPt($text, $sizePt);  // width in points
 $x = ($pageWidth - $width) / 2;
+
+$ascent = $font->ascentPt($sizePt);         // rise above the baseline
 ```
 
 `StandardFont::metrics()` additionally exposes the standard-14 width

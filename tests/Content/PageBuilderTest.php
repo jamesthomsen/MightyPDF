@@ -138,6 +138,76 @@ final class PageBuilderTest extends TestCase
         self::assertStringContainsString('1 0 0 1 0 3.5 Tm', $this->decompressedContentStreamBytes($bottomPage));
     }
 
+    /**
+     * The README tells callers mixing drawParagraph() with drawText()
+     * to place the latter's baseline at `y + height - ascentPt()`.
+     * Pinned here against the font's own ascent rather than a hardcoded
+     * number, so the documented formula cannot drift away from what the
+     * method does.
+     */
+    public function testDrawParagraphFirstBaselineIsTheBoxTopLessTheFontsAscent(): void
+    {
+        $font = StandardFont::Helvetica;
+        $document = new Document();
+        $page = $document->newPage();
+
+        (new PageBuilder($document, $page))->drawParagraph($font, 12.0, 20, 100, 200, 50, 'Hello');
+
+        $expected = 100 + 50 - $font->ascentPt(12.0);
+
+        self::assertStringContainsString(
+            "1 0 0 1 20 $expected Tm",
+            $this->decompressedContentStreamBytes($page),
+        );
+    }
+
+    public function testDrawTextAtTheDocumentedOffsetSharesDrawParagraphsFirstBaseline(): void
+    {
+        $font = StandardFont::Helvetica;
+
+        $paragraphDocument = new Document();
+        $paragraphPage = $paragraphDocument->newPage();
+        (new PageBuilder($paragraphDocument, $paragraphPage))
+            ->drawParagraph($font, 12.0, 20, 100, 200, 50, 'Hello');
+
+        $textDocument = new Document();
+        $textPage = $textDocument->newPage();
+        (new PageBuilder($textDocument, $textPage))
+            ->drawText($font, 12.0, 20, 100 + 50 - $font->ascentPt(12.0), 'Hello');
+
+        self::assertSame(
+            $this->firstTextMatrix($paragraphPage),
+            $this->firstTextMatrix($textPage),
+        );
+    }
+
+    /**
+     * The offset is the *font's* ascent, not a fraction of the size --
+     * which is why the README warns that a row mixing the two kinds of
+     * font drifts. Asserted as the same formula over an embedded font
+     * rather than as a difference between two: the synthetic fixture
+     * font happens to declare 0.8 of the em, the very ratio
+     * StandardFont assumes, so a difference test would prove nothing
+     * about either.
+     */
+    public function testTheFirstBaselineOffsetIsTheFontsOwnAscentForAnEmbeddedFontToo(): void
+    {
+        $font = self::embeddedFont();
+        $document = new Document();
+        $page = $document->newPage();
+
+        // 'AB' rather than prose: the synthetic font's cmap covers only
+        // a handful of code points (see SyntheticTrueTypeFont).
+        (new PageBuilder($document, $page))->drawParagraph($font, 12.0, 20, 100, 200, 50, 'AB');
+
+        $expected = 100 + 50 - $font->ascentPt(12.0);
+
+        self::assertStringContainsString(
+            "1 0 0 1 20 $expected Tm",
+            $this->decompressedContentStreamBytes($page),
+        );
+    }
+
     public function testDrawParagraphJustifyAddsWordSpacingToEveryNonLastLineOnly(): void
     {
         $document = new Document();
@@ -1312,6 +1382,14 @@ final class PageBuilderTest extends TestCase
     private static function embeddedFont(): EmbeddedFont
     {
         return EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build());
+    }
+
+    /** The `x y Tm` of the first text-showing block on the page. */
+    private function firstTextMatrix(Page $page): string
+    {
+        preg_match('/1 0 0 1 ([\d.-]+ [\d.-]+) Tm/', $this->decompressedContentStreamBytes($page), $matches);
+
+        return $matches[1] ?? '';
     }
 
     private function decompressedContentStreamBytes(Page $page): string

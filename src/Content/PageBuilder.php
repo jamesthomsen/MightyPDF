@@ -128,6 +128,26 @@ final class PageBuilder
      * wrapped text block within the box when it's shorter than $height.
      * $r/$g/$b: see drawText()'s doc comment -- set explicitly per line
      * for the same reason.
+     *
+     * **Where the first baseline lands**, which is what a caller mixing
+     * this with drawText() needs: at $valign 'T', exactly
+     *
+     *     $y + $height - $font->ascentPt($sizePt)
+     *
+     * -- the text's ascent hung from the box's top edge. A single-line
+     * cell drawn with drawText() at that same y sits on the same
+     * baseline as this method's first line, which is how the two are
+     * lined up side by side. Drawing that cell with drawParagraph() and
+     * the same box is the other way, and stays right without the caller
+     * restating the formula.
+     *
+     * Note that the ascent is the *font's*, not the size's, so two boxes
+     * of identical geometry do not line up if they are set in different
+     * kinds of font: a standard font reports a flat 0.8 of the nominal
+     * size (its shipped metrics carry no ascent -- see
+     * StandardFont::ascentPt()), while an embedded font reports what its
+     * hhea table actually says, commonly nearer 0.95. Align a row on one
+     * font, or place its baselines from one ascentPt() call.
      */
     public function drawParagraph(
         Font $font,
