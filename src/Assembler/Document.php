@@ -70,6 +70,24 @@ final class Document implements DocumentContext
      */
     private array $fontCache = [];
 
+    /**
+     * Closures run at the start of save(), for a layer that has work to
+     * do once nothing more will be added -- Layout\Flow's per-page
+     * furniture, which cannot be drawn earlier because "Page 3 of 7"
+     * needs a page count that is still changing.
+     *
+     * Registered here rather than left to the caller because the caller
+     * is who forgets. A Flow hands out its Document through document(),
+     * and $flow->document()->save() would otherwise produce a file with
+     * no page numbers and no legal footer -- silently, since a missing
+     * footer looks exactly like a document that never had one. This is
+     * the assembler's own lifecycle, so it is the thing that can make
+     * the two paths agree.
+     *
+     * @var list<\Closure(): void>
+     */
+    private array $beforeSave = [];
+
     public function __construct()
     {
         $this->registry = new IndirectObjectRegistry();
@@ -252,8 +270,27 @@ final class Document implements DocumentContext
         $this->id = new PdfArray($id, $id);
     }
 
+    /**
+     * Registers a closure run at the start of every save(), in
+     * registration order -- see $beforeSave.
+     *
+     * A closure registered here must be idempotent: save() may be called
+     * more than once, and drawing a second set of footers on the second
+     * call is exactly the bug this exists to prevent.
+     *
+     * @param \Closure(): void $finalize
+     */
+    public function onBeforeSave(\Closure $finalize): void
+    {
+        $this->beforeSave[] = $finalize;
+    }
+
     public function save(): string
     {
+        foreach ($this->beforeSave as $finalize) {
+            $finalize();
+        }
+
         $result = $this->registry->writeAll(self::HEADER, $this->encryptionPass());
 
         $trailer = Trailer::forNewDocument(
