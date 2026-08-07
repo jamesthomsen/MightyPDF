@@ -48,6 +48,12 @@ final class Ean13Test extends TestCase
     {
         self::assertSame('5901234123457', Ean13::normalize('5-901234-123457'));
         self::assertSame('5901234123457', Ean13::normalize('590123 412345'));
+
+        // UPC-A too, which is printed with them just as often.
+        self::assertSame(
+            Ean13::upcAElements('036000291452'),
+            Ean13::upcAElements('0 36000 29145 2'),
+        );
     }
 
     public function testTheWrongNumberOfDigitsIsRefused(): void

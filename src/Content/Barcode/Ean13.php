@@ -85,7 +85,9 @@ final class Ean13
      */
     public static function upcAElements(string $value): array
     {
-        $digits = preg_replace('/\s+/', '', $value) ?? '';
+        // The same separators normalize() ignores, for the same reason:
+        // a UPC is printed with them and gets pasted in with them.
+        $digits = preg_replace('/[\s-]+/', '', $value) ?? '';
 
         if (preg_match('/^\d{11,12}$/', $digits) !== 1) {
             throw new \InvalidArgumentException(
