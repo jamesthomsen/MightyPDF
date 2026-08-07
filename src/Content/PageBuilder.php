@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content;
 
+use MightyPDF\Assembler\Annotation\AttachmentIcon;
+use MightyPDF\Assembler\Annotation\FileAttachmentAnnotation;
 use MightyPDF\Assembler\Annotation\LinkAnnotation;
+use MightyPDF\Assembler\Attachment\FileSpecification;
 use MightyPDF\Assembler\Destination;
 use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\DocumentContext;
@@ -1707,12 +1710,45 @@ final class PageBuilder
         ));
     }
 
-    private function addAnnotation(LinkAnnotation $annotation): static
+    private function addAnnotation(Dictionary $annotation): static
     {
         $this->document->register($annotation);
         $this->page->addAnnotation($annotation->objectId());
 
         return $this;
+    }
+
+    /**
+     * Puts an already-attached file on the page as an icon that opens it.
+     *
+     * $file is what Document::attach() returned, so the icon and the
+     * reader's attachments panel point at one embedded file rather than
+     * at two copies of it:
+     *
+     * ```php
+     * $workings = $document->attach('workings.xlsx', $bytes, mediaType: '...');
+     * $content->addFileAttachment($workings, x: 500, y: 640, size: 20);
+     * ```
+     *
+     * The icon is drawn by the reader from $icon and the rectangle is a
+     * hint at its size rather than a frame it is fitted to -- see
+     * AttachmentIcon.
+     */
+    public function addFileAttachment(
+        FileSpecification $file,
+        float $x,
+        float $y,
+        float $size = 20.0,
+        AttachmentIcon $icon = AttachmentIcon::PushPin,
+        ?string $note = null,
+    ): static {
+        return $this->addAnnotation(new FileAttachmentAnnotation(
+            $this->document->allocate(),
+            new PdfRectangle($x, $y, $x + $size, $y + $size),
+            $file,
+            $icon,
+            $note,
+        ));
     }
 
     /**

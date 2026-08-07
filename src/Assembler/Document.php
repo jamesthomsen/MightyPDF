@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace MightyPDF\Assembler;
 
+use MightyPDF\Assembler\Attachment\AttachmentRelationship;
+use MightyPDF\Assembler\Attachment\FileSpecification;
 use MightyPDF\Assembler\Form\AcroForm;
 use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Assembler\Types\PdfHexString;
 use MightyPDF\Assembler\Types\PdfRectangle;
+use MightyPDF\Assembler\Types\PdfReference;
+use MightyPDF\Assembler\Types\PdfString;
 use MightyPDF\Crypt\CryptTransform;
 use MightyPDF\Crypt\Permissions;
 use MightyPDF\Crypt\StandardSecurityHandler;
@@ -35,6 +39,10 @@ final class Document implements DocumentContext
     private ?AcroForm $acroForm = null;
     private ?Outline $outline = null;
     private ?DocumentInfo $info = null;
+    private ?ViewerPreferences $viewerPreferences = null;
+
+    /** @var array<string, FileSpecification> attachment name => its file specification */
+    private array $attachments = [];
     private ?StandardSecurityHandler $security = null;
     private ?int $encryptObjectId = null;
     private ?PdfArray $id = null;
@@ -107,7 +115,7 @@ final class Document implements DocumentContext
      * 841.89. Widening the parameter rather than adding a second method
      * keeps one way to add a page.
      */
-    public function newPage(PageSize|PdfRectangle|null $mediaBox = null): Page
+    public function newPage(PageSize|PdfRectangle|null $mediaBox = null, int $rotation = 0): Page
     {
         $mediaBox = match (true) {
             $mediaBox instanceof PageSize => $mediaBox->mediaBox(),
@@ -116,6 +124,7 @@ final class Document implements DocumentContext
         };
 
         $page = new Page($this->registry->allocate(), $mediaBox);
+        $page->setRotation($rotation);
         $page->setParent($this->pageTree->objectId());
         $this->registry->register($page);
 
@@ -198,10 +207,143 @@ final class Document implements DocumentContext
             $this->outline = new Outline($this, $this->registry->allocate());
             $this->registry->register($this->outline);
             $this->catalog->setOutlines($this->outline->objectId());
-            $this->catalog->setPageMode('UseOutlines');
+
+            // Asked for only where the document has not already said what
+            // it wants. A caller who set a page mode of their own meant
+            // it, and quietly overriding it because a bookmark was added
+            // afterwards is a document that opens wrong depending on the
+            // order two unrelated calls were made in.
+            if (!$this->catalog->hasPageMode()) {
+                $this->catalog->setPageMode(PageMode::Outlines);
+            }
         }
 
         return $this->outline;
+    }
+
+    /**
+     * How this document asks to be displayed and printed -- created
+     * lazily, like acroForm() and info(), so a document that asks for
+     * nothing carries no /ViewerPreferences.
+     */
+    public function viewerPreferences(): ViewerPreferences
+    {
+        if ($this->viewerPreferences === null) {
+            $this->viewerPreferences = new ViewerPreferences($this->registry->allocate());
+            $this->registry->register($this->viewerPreferences);
+            $this->catalog->setViewerPreferences($this->viewerPreferences->objectId());
+        }
+
+        return $this->viewerPreferences;
+    }
+
+    /** Which panel the reader shows when the document opens. */
+    public function setPageMode(PageMode $mode): void
+    {
+        $this->catalog->setPageMode($mode);
+    }
+
+    /** How the reader arranges the pages -- as facing spreads, say. */
+    public function setPageLayout(PageLayout $layout): void
+    {
+        $this->catalog->setPageLayout($layout);
+    }
+
+    /**
+     * Carries a file inside this document: an e-invoice's XML, the
+     * dataset behind a report, the original of something summarised.
+     *
+     * $name is what a reader shows and the key the attachment is filed
+     * under, so two attachments cannot share one. $mediaType goes in as
+     * the file's /Subtype ("application/xml", "text/csv"); $relationship
+     * is the claim about what this file has to do with the document, and
+     * is what an e-invoicing consumer looks for (see
+     * AttachmentRelationship).
+     *
+     * Attaching anything also asks the reader to open its attachments
+     * panel -- unless the document has already said what it wants -- on
+     * the same reasoning as outline(): a file nobody notices is a file
+     * nobody has.
+     */
+    public function attach(
+        string $name,
+        string $bytes,
+        ?string $description = null,
+        ?string $mediaType = null,
+        AttachmentRelationship $relationship = AttachmentRelationship::Unspecified,
+    ): FileSpecification {
+        if ($name === '') {
+            throw new \InvalidArgumentException('An attachment needs a name -- it is what a reader shows and files it under.');
+        }
+
+        if (isset($this->attachments[$name])) {
+            throw new \InvalidArgumentException(
+                "This document already carries an attachment called \"$name\". "
+                . 'Names are the keys of a name tree, so they have to be distinct.',
+            );
+        }
+
+        $embedded = FileSpecification::embeddedFile($this->registry->allocate(), $bytes, $mediaType);
+        $this->registry->register($embedded);
+
+        $specification = new FileSpecification(
+            $this->registry->allocate(),
+            $name,
+            $embedded,
+            $description,
+            $relationship,
+        );
+        $this->registry->register($specification);
+
+        $this->attachments[$name] = $specification;
+        $this->syncAttachments();
+
+        if (!$this->catalog->hasPageMode()) {
+            $this->catalog->setPageMode(PageMode::Attachments);
+        }
+
+        return $specification;
+    }
+
+    /** @return array<string, FileSpecification> keyed by name */
+    public function attachments(): array
+    {
+        return $this->attachments;
+    }
+
+    /**
+     * Rebuilds the /EmbeddedFiles name tree and the /AF array.
+     *
+     * One flat node rather than a balanced tree: the spec permits either,
+     * and a document with enough attachments for the difference to matter
+     * is not a document this library is being asked to write. The keys
+     * must be sorted, though -- a reader is entitled to binary-search
+     * them, and an unsorted node is one where some attachments simply
+     * cannot be found.
+     */
+    private function syncAttachments(): void
+    {
+        $sorted = $this->attachments;
+        ksort($sorted, SORT_STRING);
+
+        $pairs = [];
+
+        foreach ($sorted as $name => $specification) {
+            $pairs[] = PdfString::text((string) $name);
+            $pairs[] = new PdfReference($specification->objectId());
+        }
+
+        $embeddedFiles = new Dictionary();
+        $embeddedFiles->set('Names', new PdfArray(...$pairs));
+
+        $names = new Dictionary();
+        $names->set('EmbeddedFiles', $embeddedFiles);
+
+        $this->catalog->setNames($names);
+        $this->catalog->setAssociatedFiles(array_map(
+            static fn (FileSpecification $specification): int => $specification->objectId(),
+            array_values($sorted),
+        ));
     }
 
     /** @return list<Page> */
