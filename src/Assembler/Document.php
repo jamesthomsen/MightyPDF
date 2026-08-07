@@ -83,9 +83,19 @@ final class Document implements DocumentContext
         $this->catalog->setPages($this->pageTree->objectId());
     }
 
-    public function newPage(?PdfRectangle $mediaBox = null): Page
+    /**
+     * $mediaBox may be a PageSize, which is the readable way to say the
+     * same thing: newPage(PageSize::A4) rather than a copied 595.28 x
+     * 841.89. Widening the parameter rather than adding a second method
+     * keeps one way to add a page.
+     */
+    public function newPage(PageSize|PdfRectangle|null $mediaBox = null): Page
     {
-        $mediaBox ??= new PdfRectangle(0, 0, self::LETTER_WIDTH, self::LETTER_HEIGHT);
+        $mediaBox = match (true) {
+            $mediaBox instanceof PageSize => $mediaBox->mediaBox(),
+            $mediaBox instanceof PdfRectangle => $mediaBox,
+            default => new PdfRectangle(0, 0, self::LETTER_WIDTH, self::LETTER_HEIGHT),
+        };
 
         $page = new Page($this->registry->allocate(), $mediaBox);
         $page->setParent($this->pageTree->objectId());
