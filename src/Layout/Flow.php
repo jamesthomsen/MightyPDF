@@ -237,6 +237,77 @@ final class Flow
     }
 
     /**
+     * cellAt() with the text wrapped: a box at an explicit position whose
+     * contents run to as many lines as they need, leaving the cursor
+     * alone and never breaking the page.
+     *
+     * This is what a table cell is, and the reason it is a separate call
+     * from cellAt() rather than a flag on it: a single-line cell is
+     * measured once and a wrapped one is measured per line, and the two
+     * agree on where a one-line string lands only because both end up in
+     * TextPlacement.
+     */
+    public function paragraphAt(
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        string $text = '',
+        ?Style $style = null,
+        ?float $lineHeight = null,
+    ): static {
+        $style ??= $this->defaultStyle;
+
+        $this->rect($x, $y, $width, $height, $style->fill, $style->border);
+
+        if ($text === '') {
+            return $this;
+        }
+
+        [$xPt, $bottomYPt, $widthPt, $heightPt] = $this->boxToPoints($x, $y, $width, $height);
+
+        $this->content()->drawParagraph(
+            $style->font,
+            $style->sizePt,
+            $xPt + $style->paddingPt,
+            $bottomYPt,
+            self::inset($widthPt, $style->paddingPt),
+            $heightPt,
+            $this->drawable($text, $style),
+            $style->align,
+            $style->valign,
+            $lineHeight === null ? null : $this->unit->toPoints($lineHeight),
+            paint: $style->color,
+        );
+
+        return $this;
+    }
+
+    /**
+     * A table: fixed column widths, cells that wrap, rows that size
+     * themselves, and a header that comes back at the top of every page
+     * the table runs onto. See Table.
+     *
+     * @param list<float> $columnWidths in this Flow's unit
+     */
+    public function table(
+        array $columnWidths,
+        ?Style $bodyStyle = null,
+        ?Style $headerStyle = null,
+        float $minRowHeight = 0.0,
+        float $verticalPaddingPt = 2.0,
+    ): Table {
+        return new Table(
+            $this,
+            $columnWidths,
+            $bodyStyle ?? $this->defaultStyle,
+            $headerStyle,
+            $minRowHeight,
+            $verticalPaddingPt,
+        );
+    }
+
+    /**
      * One line with its baseline at (x, y), for the cases a box does not
      * describe: a value pinned to a rule, a label on a chart axis, a
      * signature line. The style's alignment and vertical alignment do
