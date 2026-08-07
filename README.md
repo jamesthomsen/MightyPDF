@@ -59,10 +59,9 @@ indirect object in the file, and is responsible for producing final PDF
 bytes.
 
 - `new Document()` — start a new, empty document.
-- `$document->newPage(?PdfRectangle $mediaBox = null): Page` — append a
-  page and return it. Defaults to US Letter (612×792pt); pass a
-  `PdfRectangle` for a different size (e.g. A4 is `new PdfRectangle(0, 0,
-  595.28, 841.89)`).
+- `$document->newPage(PageSize|PdfRectangle|null $mediaBox = null): Page`
+  — append a page and return it. Defaults to US Letter (612×792pt); pass
+  a `PageSize` (`PageSize::A4`) or a `PdfRectangle` for anything else.
 - `$document->pages(): array` — all pages added so far.
 - `$document->save(): string` — serialize the whole document to a PDF
   byte string.
@@ -90,7 +89,13 @@ $content
 **Coordinates and units.** Everything is in PDF points (1/72 inch),
 measured from the page's **bottom-left corner**, X increasing right and
 Y increasing up — standard PDF convention, not screen/CSS convention.
-Colors are RGB with each channel in the `0.0`–`1.0` range.
+Colors are RGB with each channel in the `0.0`–`1.0` range; `Color`
+converts from hex and 0–255.
+
+If you would rather work in millimetres from the top-left, with a
+cursor, cells and automatic page breaks, see [the layout
+layer](#the-layout-layer) — it is built on everything below and replaces
+none of it.
 
 ## Text and fonts
 
@@ -209,45 +214,83 @@ $lines  = TextWrapper::wrapUtf8($text, $font, 11.0, 200);
 $height = count($lines) * 14.0;
 ```
 
-#### Lining wrapped text up with single-line text
+### Text in a box
 
-`drawText()` takes a **baseline**; `drawParagraph()` takes a **box**. Mix
-them and the two won't agree unless you convert. At `valign: 'T'` the
-first baseline lands at exactly:
+`drawTextInBox()` places one line inside a rectangle — the single call
+that a fill, a width measurement and a piece of vertical arithmetic used
+to be:
 
 ```php
-$baselineY = $y + $height - $font->ascentPt($sizePt);
+use MightyPDF\Content\Text\{HorizontalAlign, VerticalAlign};
+
+$content->drawTextInBox($font, 12.0, 72, 600, 200, 24, 'Total due',
+    HorizontalAlign::Right, VerticalAlign::Middle);
 ```
 
-So a single-line label beside a wrapped cell, sharing its top edge:
+`VerticalAlign` has two middles, and picking the right one matters more
+as the type gets bigger:
+
+| | centres | use for |
+|---|---|---|
+| `Top` | ascent hung from the top edge | text that grows downwards |
+| `Middle` | the em box, ascent to descent | running prose, mixed case |
+| `CapMiddle` | the capitals, baseline to cap height | labels, headings, figures, a single large letter |
+| `Bottom` | the descent on the bottom edge | last lines of unequal columns |
+
+`Middle` keeps a line in place when the wording gains or loses a
+descender. `CapMiddle` is what the eye reads as centred for anything
+with nothing below the baseline — centred on the em box, a lone capital
+sits high by half the descent, which is a point at 10pt and most of a
+centimetre at 270pt.
+
+`drawParagraph()` takes the same two enums (and still takes its original
+`'L'`/`'C'`/`'R'`/`'J'` and `'T'`/`'M'`/`'B'` strings).
+
+#### Lining wrapped text up with single-line text
+
+Both methods place text through `TextPlacement`, so **a single line in a
+box lands in exactly the same place whichever you use** — for every
+alignment and every line height. A label beside a wrapped cell is just
+the same box:
 
 ```php
 $content->drawParagraph($font, 11.0, 200, 600, 300, 120, $body);
-$content->drawText($font, 11.0, 72, 600 + 120 - $font->ascentPt(11.0), 'Notes');
+$content->drawTextInBox($font, 11.0, 72, 600, 100, 120, 'Notes');
 ```
 
-Or skip the arithmetic and draw the label with `drawParagraph()` too,
-using the same box — one-line text wraps to one line, and both then
-place their baselines the same way by construction.
+If you are placing a baseline yourself, `valign: Top` puts the first one
+at exactly `$y + $height - $font->ascentPt($sizePt)`.
 
-One trap: the offset is the *font's* ascent, not a fraction of the size.
-A standard font reports a flat 0.8 × size (the shipped Core-14 metrics
-carry no ascent), while an embedded font reports what its `hhea` table
-says — often nearer 0.95. At 11pt that's about 1.7pt of drift, so a row
-mixing the two kinds needs its baselines placed from one `ascentPt()`
-call rather than one per cell.
+One trap: that offset is the *font's* ascent, not a fraction of the
+size. Helvetica rises 0.718 × size and Times 0.683, while an embedded
+font reports what its `hhea` table says — often nearer 0.95. A row
+mixing two kinds of font needs its baselines placed from one
+`ascentPt()` call rather than one per cell.
 
 ### Measuring text
 
-Every font measures its own text, so layout math (centering, fitting a
-box) is the same for both kinds:
+Every font measures its own text, so layout math is the same for both
+kinds:
 
 ```php
-$width = $font->widthOfPt($text, $sizePt);  // width in points
+$width = $font->widthOfPt($text, $sizePt);      // width in points
 $x = ($pageWidth - $width) / 2;
 
-$ascent = $font->ascentPt($sizePt);         // rise above the baseline
+$ascent    = $font->ascentPt($sizePt);          // rise above the baseline
+$descent   = $font->descentPt($sizePt);         // drop below it, positive
+$capHeight = $font->capHeightPt($sizePt);       // baseline to cap
 ```
+
+`descentPt()` reports a **positive** distance, the opposite sign to
+AFM's `Descender` and the PDF descriptor's `/Descent`. Every placement
+formula wants `ascent + descent`, and writing that as `ascent - descent`
+is a slip worth a fraction of a point in body copy and centimetres in a
+headline.
+
+Prefer `TextPlacement` (or `drawTextInBox()`) to doing this arithmetic
+yourself — a hardcoded fraction of the type size, which is how FPDF and
+TCPDF centre text, cannot be right for fourteen fonts at once: Helvetica
+needs 0.359 of the size and Courier 0.281.
 
 `StandardFont::metrics()` additionally exposes the standard-14 width
 tables directly, keyed by WinAnsi code, for callers working in encoded
@@ -522,6 +565,195 @@ $content2 = new PageBuilder($document, $page2);
 
 $document->saveToFile('output.pdf');
 ```
+
+## The layout layer
+
+Everything above is a **pure writer**: you say where things go, in
+points, from the bottom-left. That is the right foundation and the wrong
+altitude for a business document, where you want a cursor, a cell, a
+page that breaks itself, and millimetres from the top-left.
+
+`MightyPDF\Layout\Flow` is that layer, built entirely on `PageBuilder` —
+it adds no capability to the content layer and takes none away. Mix the
+two freely: `content()` hands back the `PageBuilder` for the current
+page, and `toPointsX()`/`toPointsY()` convert a coordinate so custom
+drawing lands in the same space as everything else.
+
+```php
+use MightyPDF\Assembler\{Document, PageSize};
+use MightyPDF\Content\Color;
+use MightyPDF\Content\Font\StandardFont;
+use MightyPDF\Content\Text\{HorizontalAlign, VerticalAlign};
+use MightyPDF\Layout\{Border, Flow, Margins, Style, Unit};
+
+$flow = new Flow(new Document(), PageSize::A4, Margins::uniform(15.0));
+
+$heading = new Style(StandardFont::HelveticaBold, 9.0, Color::white(),
+    fill: Color::fromHex('#334155'), border: Border::box(0.3));
+$row = new Style(StandardFont::Helvetica, 9.0, border: Border::bottom(0.1));
+
+foreach (['Control', 'Owner', 'Status'] as $text) {
+    $flow->cell(60.0, 7.0, $text, $heading);
+}
+$flow->newLine(7.0);
+
+foreach ($controls as $i => $control) {
+    $style = $i % 2 === 0 ? $row->with(fill: Color::gray(0.96)) : $row;
+
+    $flow->cell(60.0, 6.0, $control->name, $style);
+    $flow->cell(60.0, 6.0, $control->owner, $style);
+    $flow->cell(60.0, 6.0, $control->status, $style->with(align: HorizontalAlign::Right));
+    $flow->newLine(6.0);
+}
+
+$flow->saveToFile('scorecard.pdf');
+```
+
+Rows past the bottom margin start a new page by themselves. See
+[`examples/16-a-report-with-the-layout-layer.php`](examples/16-a-report-with-the-layout-layer.php)
+for the whole thing: a grade placard, a table that breaks across pages, a
+line chart drawn through the primitives, and a footer on every page.
+
+**Coordinates.** X runs right and Y runs **down**, from the page's
+top-left corner, in whatever `Unit` you chose (`Millimetres` by default;
+also `Points` and `Inches`). That is the opposite of PDF's own
+convention, deliberately: every page description a person writes — a
+margin, a header depth, a row height — is measured from the top of the
+sheet. The flip happens in one method.
+
+**The cursor.** `x()`, `y()`, `moveTo()`. `cell()` advances x by its
+width; `newLine($height)` returns to the left margin and drops y. A
+table row is a run of cells and a `newLine()`.
+
+**Cells and paragraphs.** `cell()` is one line; `paragraph()` word-wraps
+and auto-sizes its box unless you pass a height. Both place text through
+the same `TextPlacement`, so a wrapped cell and an unwrapped one of the
+same geometry sit on the same baselines. `paragraphHeight()` measures
+without drawing.
+
+**Page breaks.** Automatic, and `willFit()`/`breakIfNeeded()` let custom
+drawing take part in the same decision. An element taller than the page
+body overflows one page rather than breaking forever.
+
+### Something on every page
+
+```php
+$flow->onEachPage(function (Flow $flow, int $page, int $total): void {
+    $flow->cellAt(15.0, 283.0, 180.0, 5.0, "Not legal advice. Page $page of $total.",
+        new Style(StandardFont::Helvetica, 7.0, Color::gray(0.4),
+            align: HorizontalAlign::Center));
+});
+```
+
+This is the guarantee a per-page footer needs: it runs for **every**
+page, including ones an automatic break created in the middle of a
+table. Without it, a legal disclaimer is only as reliable as every
+drawing function remembering to place one.
+
+Hooks run at `finish()` rather than as each page closes, which is what
+makes `of $total` simply true. FPDF substitutes a placeholder string
+afterwards and TCPDF rewrites the page; both work around being a
+streaming writer. MightyPDF appends to any page's content stream right
+up until `save()`, so waiting costs nothing. The closure is handed the
+same `Flow`, pointed at the page in question, so a footer is written in
+millimetres like everything else.
+
+`finish()` is idempotent, and `save()`/`saveToFile()` call it for you.
+So does saving through `document()`: the hooks are registered with the
+`Document` itself, so `$flow->document()->save()` decorates the pages
+too rather than quietly producing a file with no footer on it.
+
+### Measuring and placing by hand
+
+```php
+$flow->widthOf($text, $style);   // in the flow's unit, so you can size a column
+$flow->remainingWidth();         // cursor to right margin — a cell that fills the line
+$flow->textAt($x, $y, $text);    // a baseline outright, for a chart label or a rule
+```
+
+### Text a font cannot draw
+
+An embedded font **throws** on the first character it has no glyph for.
+That is right for a library — a blank box is invisible in review and
+obvious in print — and wrong for a document assembled on demand from
+names other people typed, where the character nobody anticipated turns
+an imperfect report into a 500.
+
+```php
+use MightyPDF\Layout\MissingGlyphs;
+
+$flow = new Flow($document, PageSize::A4, missingGlyphs: MissingGlyphs::Substitute);
+```
+
+Every character the font can't set becomes a transliteration it can, or
+`?`. Text is never blanked — a name that couldn't be set is visibly
+approximate rather than silently missing, which is the worse of the two.
+Widths are measured on what will actually be drawn, so centring and
+right-alignment aren't computed from characters that were replaced.
+
+`GlyphFallback::apply($text, $font)` is the same thing for callers
+working directly with `PageBuilder`. Both are portable: transliteration
+is asked for one character at a time and non-ASCII results are refused,
+so the answer doesn't change with which iconv PHP was built against.
+
+### Fonts from configuration
+
+```php
+StandardFont::matching('Arial', bold: true);            // Helvetica-Bold
+StandardFont::matching('Baskerville, Georgia, serif');  // Times-Roman
+```
+
+For code holding a font as data — a config value, a CSS-style family
+list, a port of an API whose call was `setFont('Arial', 'B')`.
+
+### Colours
+
+Channels are `0.0`–`1.0` floats in PDF, and 0–255 or hex everywhere
+else:
+
+```php
+use MightyPDF\Content\Color;
+
+Color::fromHex('#334155');          // also '#abc', with or without the '#'
+Color::fromRgb255(51, 65, 85);
+Color::gray(0.96);
+Color::black();  Color::white();
+```
+
+Out-of-range channels throw rather than clamp. The layout layer takes
+`Color` directly; the drawing primitives keep their float triples, and
+`rgb()` spreads into them:
+
+```php
+$content->fillRectangle($x, $y, $w, $h, ...$color->rgb());
+```
+
+### Page sizes
+
+```php
+use MightyPDF\Assembler\PageSize;
+
+$document->newPage(PageSize::A4);          // or ::A3, ::A5, ::Letter, ::Legal, ::Tabloid
+$document->newPage(PageSize::A4->landscape());
+```
+
+### Serving a PDF over HTTP
+
+```php
+use MightyPDF\Output\PdfResponse;
+
+PdfResponse::inline($document->save(), 'scorecard.pdf')->send();
+PdfResponse::attachment($flow->save(), 'Rapport financier — 2026.pdf')->send();
+```
+
+Sets `Content-Type`, `Content-Disposition`, `Content-Length`, a
+`Cache-Control` that stops a browser showing an hour-old invoice, and
+`X-Content-Type-Options: nosniff` so that nothing downstream gets to
+decide this is something other than a PDF. A
+filename is usually taken from a record, so it is treated as untrusted:
+CR/LF/NUL are refused (that is header injection, not a formatting
+problem), quotes are escaped, and a non-ASCII name also goes out in RFC
+5987 form. `headers()` returns them without sending, for testing.
 
 ## Links and bookmarks
 
@@ -962,6 +1194,62 @@ foreach ($importer->pages() as $index => $page) {
 
 See [`examples/13-merging-documents.php`](examples/13-merging-documents.php)
 for a runnable version.
+
+## Upgrading from 1.x
+
+**2.0.0** adds the layout layer. Almost all of it is additive, but two
+changes are breaking, which is why it is a major version.
+
+**1. `Font` gained `descentPt()` and `capHeightPt()`.** If you implement
+`Font` yourself, add them; nothing else changes. Both built-in fonts
+already have them.
+
+The interface previously exposed only `ascentPt()`, which is half of
+what placing text in a box needs — so the only way to centre anything
+was a magic fraction of the type size copied from FPDF. That is a defect
+whose size grows with the type: invisible in a 10pt table, centimetres
+out in a headline. See `TextPlacement`.
+
+**2. Standard fonts report their real vertical metrics.**
+`StandardFont::ascentPt()` used to return a flat `0.8 × size` for all
+fourteen. It now returns what Adobe's Core 14 AFMs say — Helvetica
+0.718, Times 0.683, Courier 0.629 — so **top-aligned text in a standard
+font moves down slightly**: 0.082 × size for Helvetica, about 0.8pt at
+10pt and 22pt at 270pt.
+
+`drawParagraph()`'s `valign: 'M'` and `'B'` also move. Both now place a
+block by its real ink extent (first ascent to last descent) rather than
+by line count × line height, which is what makes wrapped and unwrapped
+text line up at last. `'T'` is unchanged.
+
+**3. Standard-font widths now cover the whole WinAnsi repertoire.** The
+tables previously stopped at ASCII (32–126); every code above that fell
+back to `FontMetrics`'s 500-unit default. So `é` measured 500 instead of
+556, and an em dash 500 instead of 1000 — text still drew, it was just
+measured wrong, which moves every centred, right-aligned, wrapped and
+justified line containing one. A typical line of German or French was
+about 3% out; a line with several dashes, more.
+
+Anything set in English is unaffected. Anything else moves, and it moves
+towards being correct.
+
+**4. Characters WinAnsi has no glyph for now measure zero.** Codes
+0x00–0x1F and 0x7F — the C0 controls and DEL — are *encodable*: CP1252
+maps them to themselves, so a tab arriving in a name from a database
+column reaches the content stream as a tab. A reader draws and advances
+nothing for them; the width tables used to measure each one at the
+500-unit default, charging half an em for ink that was never going to be
+there. Text carrying one was measured too wide, so every centred,
+right-aligned, wrapped and justified line containing it sat in the wrong
+place — by an amount nothing on the page accounted for, the character
+itself being invisible. Text without one is unaffected.
+
+If you snapshot-test PDF bytes in CI, expect a diff in any document with
+top- or middle-aligned text in a standard font, or with non-ASCII text in
+one, and re-baseline once.
+Output is still byte-deterministic — the same document saved twice a
+second apart is still identical bytes, and there is still no automatic
+`/CreationDate`.
 
 ## Known limitations
 
