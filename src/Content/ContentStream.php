@@ -168,6 +168,116 @@ final class ContentStream implements PathSink
         return $this;
     }
 
+    /** DeviceCMYK, in ink coverage rather than light -- see CmykColor. */
+    public function setStrokeColorCmyk(float $c, float $m, float $y, float $k): static
+    {
+        $this->buffer .= sprintf(
+            "%s %s %s %s K\n",
+            self::num($c), self::num($m), self::num($y), self::num($k),
+        );
+
+        return $this;
+    }
+
+    public function setFillColorCmyk(float $c, float $m, float $y, float $k): static
+    {
+        $this->buffer .= sprintf(
+            "%s %s %s %s k\n",
+            self::num($c), self::num($m), self::num($y), self::num($k),
+        );
+
+        return $this;
+    }
+
+    /**
+     * Switches the nonstroking colour space to a named /Resources
+     * /ColorSpace entry -- a separation, here.
+     *
+     * Split from setting the colour itself because the two are separate
+     * operators and the split is load-bearing: "cs" also resets the
+     * colour to that space's initial value, so a caller emitting it
+     * between two shapes in the same ink would silently repaint the
+     * second one at full tint.
+     */
+    public function setFillColorSpace(string $resourceName): static
+    {
+        $this->buffer .= sprintf("/%s cs\n", $resourceName);
+
+        return $this;
+    }
+
+    public function setStrokeColorSpace(string $resourceName): static
+    {
+        $this->buffer .= sprintf("/%s CS\n", $resourceName);
+
+        return $this;
+    }
+
+    /**
+     * Sets the nonstroking colour as components of whatever space is in
+     * effect -- one number for a separation's tint, four for a DeviceN.
+     */
+    public function setFillColorComponents(float ...$components): static
+    {
+        $this->buffer .= implode(' ', array_map(self::num(...), $components)) . " scn\n";
+
+        return $this;
+    }
+
+    public function setStrokeColorComponents(float ...$components): static
+    {
+        $this->buffer .= implode(' ', array_map(self::num(...), $components)) . " SCN\n";
+
+        return $this;
+    }
+
+    /**
+     * The dash pattern: alternating on and off lengths in points, and the
+     * distance into that pattern the line starts at.
+     *
+     * An empty array is a solid line, which is the state every content
+     * stream starts in -- and the way back to it, since this is part of
+     * the graphics state and persists until changed or until the
+     * enclosing q/Q restores it.
+     *
+     * @param list<float> $pattern
+     */
+    public function setLineDash(array $pattern, float $phase = 0.0): static
+    {
+        $this->buffer .= sprintf(
+            "[%s] %s d\n",
+            implode(' ', array_map(self::num(...), $pattern)),
+            self::num($phase),
+        );
+
+        return $this;
+    }
+
+    public function setLineCap(LineCap $cap): static
+    {
+        $this->buffer .= sprintf("%d J\n", $cap->value);
+
+        return $this;
+    }
+
+    public function setLineJoin(LineJoin $join): static
+    {
+        $this->buffer .= sprintf("%d j\n", $join->value);
+
+        return $this;
+    }
+
+    /**
+     * How far a mitred join may overshoot before it is cut off flat,
+     * as a ratio of the line width. PDF's own default is 10.
+     */
+    public function setMiterLimit(float $limit): static
+    {
+        $this->buffer .= sprintf("%s M\n", self::num($limit));
+
+        return $this;
+    }
+
     public function moveTo(float $x, float $y): static
     {
         $this->buffer .= sprintf("%s %s m\n", self::num($x), self::num($y));
@@ -247,6 +357,22 @@ final class ContentStream implements PathSink
             self::num($width),
             self::num($height),
         );
+
+        return $this;
+    }
+
+    /**
+     * Clips everything drawn afterwards to the path just built, without
+     * painting the path itself.
+     *
+     * The rectangle case has its own method above because it is the one
+     * that needs no path built first. This is the general form: build a
+     * path with moveTo()/lineTo()/curveTo()/closePath(), then call this
+     * instead of fill() or stroke().
+     */
+    public function clipToPath(bool $evenOdd = false): static
+    {
+        $this->buffer .= ($evenOdd ? "W*\n" : "W\n") . "n\n";
 
         return $this;
     }

@@ -8,7 +8,11 @@ use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\PageSize;
 use MightyPDF\Assembler\Types\PdfRectangle;
 use MightyPDF\Content\Color;
+use MightyPDF\Content\Dash;
 use MightyPDF\Content\PageBuilder;
+use MightyPDF\Content\Paint;
+use MightyPDF\Content\PathSink;
+use MightyPDF\Content\Stroke;
 use MightyPDF\Content\Text\GlyphFallback;
 use MightyPDF\Content\Text\TextPlacement;
 use MightyPDF\Content\Text\TextWrapper;
@@ -408,18 +412,13 @@ final class Flow
         float $x2,
         float $y2,
         float $widthPt = 0.2,
-        ?Color $color = null,
+        ?Paint $color = null,
+        ?Dash $dash = null,
     ): static {
-        $this->content()->drawLine(
-            $this->toPointsX($x1),
-            $this->toPointsY($y1),
-            $this->toPointsX($x2),
-            $this->toPointsY($y2),
-            $widthPt,
-            ...($color ?? Color::black())->rgb(),
+        return $this->polyline(
+            [[$x1, $y1], [$x2, $y2]],
+            new Stroke($color ?? Color::black(), $widthPt, $dash ?? new Dash([])),
         );
-
-        return $this;
     }
 
     /**
@@ -433,33 +432,35 @@ final class Flow
         float $y,
         float $width,
         float $height,
-        ?Color $fill = null,
+        ?Paint $fill = null,
         ?Border $border = null,
     ): static {
         [$xPt, $bottomYPt, $widthPt, $heightPt] = $this->boxToPoints($x, $y, $width, $height);
 
-        if ($fill !== null) {
-            $this->content()->fillRectangle($xPt, $bottomYPt, $widthPt, $heightPt, ...$fill->rgb());
+        $whole = $border !== null && $border->top && $border->right && $border->bottom && $border->left;
+
+        // A full box goes out as one path rather than a fill plus four
+        // strokes: same marks, a fraction of the operators, and the
+        // corners join rather than butting against each other -- visible
+        // at the rule weights a heavy table border uses.
+        if ($fill !== null || $whole) {
+            $this->content()->drawRectangle(
+                $xPt,
+                $bottomYPt,
+                $widthPt,
+                $heightPt,
+                $fill,
+                $whole ? $border->stroke() : null,
+            );
         }
 
-        if ($border === null || $border->isEmpty()) {
-            return $this;
-        }
-
-        $rgb = $border->colorOrBlack()->rgb();
-
-        // A full box goes out as one "re S" rather than four strokes:
-        // same marks, a quarter of the operators, and the corners join
-        // rather than butting against each other -- visible at the rule
-        // weights a heavy table border uses.
-        if ($border->top && $border->right && $border->bottom && $border->left) {
-            $this->content()->strokeRectangle($xPt, $bottomYPt, $widthPt, $heightPt, $border->widthPt, ...$rgb);
-
+        if ($border === null || $border->isEmpty() || $whole) {
             return $this;
         }
 
         $topYPt = $bottomYPt + $heightPt;
         $rightXPt = $xPt + $widthPt;
+        $stroke = $border->stroke();
 
         foreach ([
             [$border->top, $xPt, $topYPt, $rightXPt, $topYPt],
@@ -468,11 +469,250 @@ final class Flow
             [$border->right, $rightXPt, $bottomYPt, $rightXPt, $topYPt],
         ] as [$enabled, $x1, $y1, $x2, $y2]) {
             if ($enabled) {
-                $this->content()->drawLine($x1, $y1, $x2, $y2, $border->widthPt, ...$rgb);
+                $this->content()->drawPolyline([[$x1, $y1], [$x2, $y2]], $stroke);
             }
         }
 
         return $this;
+    }
+
+    /**
+     * A rectangle with rounded corners -- a callout box, a pill, a key.
+     * $radius is in this Flow's unit like the rest of the geometry.
+     */
+    public function roundedRect(
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        float $radius,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+    ): static {
+        [$xPt, $bottomYPt, $widthPt, $heightPt] = $this->boxToPoints($x, $y, $width, $height);
+
+        $this->content()->drawRoundedRectangle(
+            $xPt,
+            $bottomYPt,
+            $widthPt,
+            $heightPt,
+            $this->unit->toPoints($radius),
+            $fill,
+            $stroke,
+        );
+
+        return $this;
+    }
+
+    /** An ellipse centred on ($cx, $cy), with radii in this Flow's unit. */
+    public function ellipse(
+        float $cx,
+        float $cy,
+        float $radiusX,
+        float $radiusY,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+    ): static {
+        $this->content()->drawEllipse(
+            $this->toPointsX($cx),
+            $this->toPointsY($cy),
+            $this->unit->toPoints($radiusX),
+            $this->unit->toPoints($radiusY),
+            $fill,
+            $stroke,
+        );
+
+        return $this;
+    }
+
+    public function circle(
+        float $cx,
+        float $cy,
+        float $radius,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+    ): static {
+        return $this->ellipse($cx, $cy, $radius, $radius, $fill, $stroke);
+    }
+
+    /**
+     * A closed polygon through $points, each a [x, y] pair in this Flow's
+     * coordinates.
+     *
+     * @param list<array{float, float}> $points
+     */
+    public function polygon(
+        array $points,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+        bool $evenOdd = false,
+    ): static {
+        $this->content()->drawPolygon($this->pointsToPoints($points), $fill, $stroke, $evenOdd);
+
+        return $this;
+    }
+
+    /**
+     * The open form: connected segments, stroked and never filled. What a
+     * line chart's series is.
+     *
+     * @param list<array{float, float}> $points
+     */
+    public function polyline(array $points, ?Stroke $stroke = null): static
+    {
+        $this->content()->drawPolyline($this->pointsToPoints($points), $stroke ?? Stroke::hairline());
+
+        return $this;
+    }
+
+    /**
+     * An arbitrary path in this Flow's coordinates -- the curves a chart
+     * needs, drawn in millimetres from the top-left like everything else.
+     *
+     * The closure is handed a PathSink that converts as it goes, so the
+     * numbers passed to moveTo()/lineTo()/curveTo() are the same ones
+     * every other call here takes:
+     *
+     * ```php
+     * $flow->path(
+     *     fn (PathSink $path) => $path->moveTo(20, 100)->curveTo(60, 60, 100, 140, 140, 100),
+     *     stroke: new Stroke(Color::fromHex('#2563eb'), 1.2),
+     * );
+     * ```
+     *
+     * @param \Closure(PathSink): mixed $path
+     */
+    public function path(
+        \Closure $path,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+        bool $evenOdd = false,
+    ): static {
+        $this->content()->drawPath(
+            fn (PathSink $sink) => $path(new UnitPathSink($sink, $this)),
+            $fill,
+            $stroke,
+            $evenOdd,
+        );
+
+        return $this;
+    }
+
+    // -- Scoped graphics state ------------------------------------------
+
+    /**
+     * Draws everything the closure draws turned by $degrees about
+     * ($x, $y), then puts the page back as it was.
+     *
+     * **Positive turns clockwise**, which is the opposite of the content
+     * layer's convention and deliberate for the same reason the Y axis
+     * is: this layer measures down from the top-left the way a screen
+     * does, and in that space a positive angle turns clockwise -- as it
+     * does in CSS and SVG. So a footer rotated -90 reads bottom-to-top up
+     * the left edge of the sheet.
+     *
+     * @param \Closure(self): mixed $draw
+     */
+    public function rotated(float $degrees, float $x, float $y, \Closure $draw): static
+    {
+        $this->content()->rotated(
+            -$degrees,
+            $this->toPointsX($x),
+            $this->toPointsY($y),
+            function () use ($draw): void {
+                $draw($this);
+            },
+        );
+
+        return $this;
+    }
+
+    /**
+     * Draws at less than full opacity -- a watermark, a tint panel, a
+     * greyed-out row. $alpha runs 0.0 (invisible) to 1.0 (opaque).
+     *
+     * @param \Closure(self): mixed $draw
+     */
+    public function faded(float $alpha, \Closure $draw, ?float $strokeAlpha = null): static
+    {
+        $this->content()->faded(
+            $alpha,
+            function () use ($draw): void {
+                $draw($this);
+            },
+            $strokeAlpha,
+        );
+
+        return $this;
+    }
+
+    /**
+     * Draws with everything outside the box clipped away -- for content
+     * that must not escape a panel, such as a long label in a fixed
+     * column or an oversized image in a frame.
+     *
+     * @param \Closure(self): mixed $draw
+     */
+    public function clippedToBox(
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        \Closure $draw,
+    ): static {
+        [$xPt, $bottomYPt, $widthPt, $heightPt] = $this->boxToPoints($x, $y, $width, $height);
+
+        $this->content()->clippedToRectangle(
+            $xPt,
+            $bottomYPt,
+            $widthPt,
+            $heightPt,
+            function () use ($draw): void {
+                $draw($this);
+            },
+        );
+
+        return $this;
+    }
+
+    /**
+     * One line of text turned about its own baseline origin, in the same
+     * clockwise-positive sense as rotated(): -90 is the bottom-to-top run
+     * a chart's Y-axis label takes.
+     */
+    public function rotatedTextAt(
+        float $x,
+        float $y,
+        float $degrees,
+        string $text,
+        ?Style $style = null,
+    ): static {
+        $style ??= $this->defaultStyle;
+
+        $this->content()->drawTextRotated(
+            $style->font,
+            $style->sizePt,
+            $this->toPointsX($x),
+            $this->toPointsY($y),
+            -$degrees,
+            $this->drawable($text, $style),
+            $style->color,
+        );
+
+        return $this;
+    }
+
+    /**
+     * @param list<array{float, float}> $points
+     *
+     * @return list<array{float, float}>
+     */
+    private function pointsToPoints(array $points): array
+    {
+        return array_map(
+            fn (array $point): array => [$this->toPointsX($point[0]), $this->toPointsY($point[1])],
+            $points,
+        );
     }
 
     public function image(string $path, float $x, float $y, float $width, float $height): static

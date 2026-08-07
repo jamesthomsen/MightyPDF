@@ -40,6 +40,15 @@ final class ResourceScope
     public int $nextImageResourceNumber = 1;
     public int $nextPatternResourceNumber = 1;
 
+    /**
+     * @var array<string, string> Paint::paintKey() => resource name (e.g.
+     *      "CS1"), for the /Separation spaces a spot colour needs
+     *      declared before its name means anything
+     */
+    public array $colorSpaceResourceNames = [];
+
+    public int $nextColorSpaceResourceNumber = 1;
+
     /** @var array<string, string> "fillAlpha:strokeAlpha" => resource name (e.g. "GS1") */
     public array $extGStateResourceNames = [];
 

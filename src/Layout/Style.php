@@ -6,6 +6,7 @@ namespace MightyPDF\Layout;
 
 use MightyPDF\Content\Color;
 use MightyPDF\Content\Font\Font;
+use MightyPDF\Content\Paint;
 use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\Text\HorizontalAlign;
 use MightyPDF\Content\Text\VerticalAlign;
@@ -36,8 +37,8 @@ final class Style
     public function __construct(
         public readonly Font $font = StandardFont::Helvetica,
         public readonly float $sizePt = 10.0,
-        public readonly Color $color = new Color(0.0, 0.0, 0.0),
-        public readonly ?Color $fill = null,
+        public readonly Paint $color = new Color(0.0, 0.0, 0.0),
+        public readonly ?Paint $fill = null,
         public readonly Border $border = new Border(),
         public readonly HorizontalAlign $align = HorizontalAlign::Left,
         public readonly VerticalAlign $valign = VerticalAlign::Middle,
@@ -57,8 +58,8 @@ final class Style
     public function with(
         ?Font $font = null,
         ?float $sizePt = null,
-        ?Color $color = null,
-        ?Color $fill = null,
+        ?Paint $color = null,
+        ?Paint $fill = null,
         ?Border $border = null,
         ?HorizontalAlign $align = null,
         ?VerticalAlign $valign = null,

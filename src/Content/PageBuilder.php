@@ -16,6 +16,8 @@ use MightyPDF\Assembler\Form\SignatureField;
 use MightyPDF\Assembler\Form\TextField;
 use MightyPDF\Assembler\PageContext;
 use MightyPDF\Assembler\Stream;
+use MightyPDF\Assembler\Types\PdfArray;
+use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReal;
 use MightyPDF\Assembler\Types\PdfReference;
@@ -88,9 +90,22 @@ final class PageBuilder
      * content stream (see the class doc comment), so an implicit "use
      * whatever color was last set" default would make text color depend
      * on unrelated drawing order elsewhere on the page.
+     *
+     * $paint is the way to set text in anything that is not RGB -- a
+     * process colour, a named ink. Given, it wins over the triple; the
+     * two are not merged, since a colour is one thing or the other.
      */
-    public function drawText(Font $font, float $sizePt, float $x, float $y, string $text, float $r = 0.0, float $g = 0.0, float $b = 0.0): static
-    {
+    public function drawText(
+        Font $font,
+        float $sizePt,
+        float $x,
+        float $y,
+        string $text,
+        float $r = 0.0,
+        float $g = 0.0,
+        float $b = 0.0,
+        ?Paint $paint = null,
+    ): static {
         $writer = $font->writerFor($this->document);
 
         // Encoded before the font is named in this page's resources, so
@@ -100,8 +115,9 @@ final class PageBuilder
         $resourceName = $this->fontResourceName($font, $writer);
 
         $operators = new ContentStream();
-        $operators->setFillColorRgb($r, $g, $b)
-            ->beginText()
+        ($paint ?? new Color($r, $g, $b))->applyFill($operators, $this->separationColorSpaceName(...));
+
+        $operators->beginText()
             ->setFont($resourceName, $sizePt)
             ->showTextAt($x, $y, $encoded, $writer->usesHexStrings())
             ->endText();
@@ -141,17 +157,15 @@ final class PageBuilder
         string $text,
         HorizontalAlign $align = HorizontalAlign::Left,
         VerticalAlign $valign = VerticalAlign::Middle,
-        ?Color $color = null,
+        ?Paint $color = null,
     ): static {
-        $color ??= Color::black();
-
         return $this->drawText(
             $font,
             $sizePt,
             TextPlacement::lineX($align->forSingleLine(), $x, $width, $font->widthOfPt($text, $sizePt)),
             TextPlacement::baselineY($font, $sizePt, $y, $height, $valign),
             $text,
-            ...$color->rgb(),
+            paint: $color ?? Color::black(),
         );
     }
 
@@ -210,7 +224,9 @@ final class PageBuilder
         float $r = 0.0,
         float $g = 0.0,
         float $b = 0.0,
+        ?Paint $paint = null,
     ): static {
+        $paint ??= new Color($r, $g, $b);
         $align = $align instanceof HorizontalAlign ? $align : HorizontalAlign::fromLegacy($align);
         $valign = $valign instanceof VerticalAlign ? $valign : match (strtoupper($valign)) {
             'M' => VerticalAlign::Middle,
@@ -248,8 +264,9 @@ final class PageBuilder
                 $wordSpacing = ($width - $lineWidth) / $spaceCount;
             }
 
-            $operators->setFillColorRgb($r, $g, $b)
-                ->beginText()
+            $paint->applyFill($operators, $this->separationColorSpaceName(...));
+
+            $operators->beginText()
                 ->setFont($resourceName, $sizePt);
 
             if ($writer->supportsWordSpacing()) {
@@ -419,6 +436,392 @@ final class PageBuilder
         $this->append($operators->bytes());
 
         return $this;
+    }
+
+    // -- General shapes -------------------------------------------------
+    //
+    // Everything below takes a Paint and a Stroke rather than the float
+    // triples above. That is the difference between the two families: the
+    // originals are the convenience calls this library started with and
+    // they still mean exactly what they did, while these are the general
+    // form -- any colour space, any dash, filled or stroked or both.
+
+    /**
+     * A rectangle, filled and/or stroked. Both are optional, and a call
+     * with neither draws nothing rather than raising: that is what lets a
+     * caller pass a style straight through without first asking whether
+     * there is anything to paint.
+     *
+     * ($x, $y) is the bottom-left corner, matching every other box in
+     * this class.
+     */
+    public function drawRectangle(
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+    ): static {
+        // The one shape PDF has an operator for, so it goes out as that
+        // rather than as four lines: same marks, a third of the bytes.
+        return $this->paintPath(
+            static fn (ContentStream $path) => $path->rect($x, $y, $width, $height),
+            $fill,
+            $stroke,
+        );
+    }
+
+    /** The same with its corners rounded to $radius -- see Shapes. */
+    public function drawRoundedRectangle(
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        float $radius,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+    ): static {
+        return $this->drawPath(
+            static fn (PathSink $path) => Shapes::roundedRectangle($path, $x, $y, $width, $height, $radius),
+            $fill,
+            $stroke,
+        );
+    }
+
+    /** An ellipse centred on ($cx, $cy), with the given semi-axes. */
+    public function drawEllipse(
+        float $cx,
+        float $cy,
+        float $radiusX,
+        float $radiusY,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+    ): static {
+        return $this->drawPath(
+            static fn (PathSink $path) => Shapes::ellipse($path, $cx, $cy, $radiusX, $radiusY),
+            $fill,
+            $stroke,
+        );
+    }
+
+    public function drawCircle(
+        float $cx,
+        float $cy,
+        float $radius,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+    ): static {
+        return $this->drawEllipse($cx, $cy, $radius, $radius, $fill, $stroke);
+    }
+
+    /**
+     * A closed polygon through $points, each a [x, y] pair.
+     *
+     * @param list<array{float, float}> $points
+     */
+    public function drawPolygon(
+        array $points,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+        bool $evenOdd = false,
+    ): static {
+        return $this->drawPath(
+            static fn (PathSink $path) => Shapes::polygon($path, $points, close: true),
+            $fill,
+            $stroke,
+            $evenOdd,
+        );
+    }
+
+    /**
+     * The open form: a run of connected segments, stroked and never
+     * filled. What a line chart's series is.
+     *
+     * @param list<array{float, float}> $points
+     */
+    public function drawPolyline(array $points, ?Stroke $stroke = null): static
+    {
+        return $this->drawPath(
+            static fn (PathSink $path) => Shapes::polygon($path, $points, close: false),
+            null,
+            $stroke ?? new Stroke(),
+        );
+    }
+
+    /**
+     * A regular polygon inscribed in a circle -- a triangle, a hexagon, a
+     * stop sign. $rotationDegrees turns it; 90 puts a vertex at the top.
+     */
+    public function drawRegularPolygon(
+        float $cx,
+        float $cy,
+        float $radius,
+        int $sides,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+        float $rotationDegrees = 90.0,
+    ): static {
+        return $this->drawPolygon(
+            Shapes::regularPolygonPoints($cx, $cy, $radius, $sides, $rotationDegrees),
+            $fill,
+            $stroke,
+        );
+    }
+
+    /**
+     * An arbitrary path, built by the closure and then painted.
+     *
+     * The closure is handed a PathSink -- moveTo, lineTo, curveTo,
+     * closePath, which is everything PDF can draw -- and its return value
+     * is ignored:
+     *
+     * ```php
+     * $content->drawPath(
+     *     fn (PathSink $path) => $path->moveTo(72, 72)->lineTo(172, 172)
+     *         ->curveTo(200, 200, 240, 160, 272, 172)->closePath(),
+     *     fill: Color::fromHex('#334155'),
+     *     stroke: Stroke::hairline(),
+     * );
+     * ```
+     *
+     * $evenOdd picks the fill rule. The default nonzero rule fills a
+     * subpath drawn inside another one in the same direction, while the
+     * even-odd rule leaves it as a hole -- which is the whole difference
+     * between a washer and a disc.
+     *
+     * The graphics state every Paint and Stroke sets is confined to a
+     * q/Q pair, so a dash pattern or a separation colour space set for
+     * one shape cannot leak into the next thing drawn on the page.
+     *
+     * @param \Closure(PathSink): mixed $path
+     */
+    public function drawPath(
+        \Closure $path,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+        bool $evenOdd = false,
+    ): static {
+        return $this->paintPath($path, $fill, $stroke, $evenOdd);
+    }
+
+    /**
+     * drawPath()'s body, with the closure typed against ContentStream
+     * rather than PathSink so that drawRectangle() can reach the "re"
+     * operator -- which is a path all by itself and so is not one of the
+     * four operations PathSink describes.
+     *
+     * @param \Closure(ContentStream): mixed $path
+     */
+    private function paintPath(
+        \Closure $path,
+        ?Paint $fill = null,
+        ?Stroke $stroke = null,
+        bool $evenOdd = false,
+    ): static {
+        if ($fill === null && $stroke === null) {
+            return $this;
+        }
+
+        $operators = new ContentStream();
+        $operators->pushGraphicsState();
+
+        $fill?->applyFill($operators, $this->separationColorSpaceName(...));
+        $stroke?->apply($operators, $this->separationColorSpaceName(...));
+
+        $path($operators);
+
+        match (true) {
+            $fill !== null && $stroke !== null => $operators->fillAndStroke($evenOdd),
+            $fill !== null => $operators->fill($evenOdd),
+            default => $operators->stroke(),
+        };
+
+        $operators->popGraphicsState();
+
+        $this->append($operators->bytes());
+
+        return $this;
+    }
+
+    // -- Scoped graphics state ------------------------------------------
+    //
+    // Each of these draws whatever the closure draws, under some change
+    // to the graphics state, and puts the state back afterwards. The
+    // closure is what makes that a guarantee rather than a convention:
+    // there is no way to leave a transform, a clip or an alpha in effect
+    // by forgetting to close it, which is exactly what TCPDF's paired
+    // StartTransform()/StopTransform() lets you do.
+    //
+    // They nest, and the closure is handed this same PageBuilder, so
+    // anything drawable is drawable inside one -- text, images, an SVG,
+    // another transform.
+
+    /**
+     * Draws under an arbitrary transformation matrix [a b c d e f],
+     * concatenated onto whatever is already in effect.
+     *
+     * @param array{float, float, float, float, float, float} $matrix
+     * @param \Closure(self): mixed $draw
+     */
+    public function transformed(array $matrix, \Closure $draw): static
+    {
+        $this->append((new ContentStream())->pushGraphicsState()->concatMatrix(...$matrix)->bytes());
+
+        try {
+            $draw($this);
+        } finally {
+            // In a finally so that a closure that throws does not leave
+            // the page's content stream with an unbalanced q. That would
+            // corrupt everything drawn afterwards, on a page a caller may
+            // well go on to use after catching.
+            $this->append((new ContentStream())->popGraphicsState()->bytes());
+        }
+
+        return $this;
+    }
+
+    /**
+     * Draws rotated by $degrees about ($originX, $originY).
+     *
+     * Positive is counter-clockwise, following PDF's Y-up axes: 90
+     * degrees reads bottom-to-top, which is the direction a chart's
+     * Y-axis label runs.
+     *
+     * @param \Closure(self): mixed $draw
+     */
+    public function rotated(float $degrees, float $originX, float $originY, \Closure $draw): static
+    {
+        return $this->transformed(Shapes::rotationMatrix($degrees, $originX, $originY), $draw);
+    }
+
+    /**
+     * Draws scaled about ($originX, $originY). A negative factor mirrors
+     * across that axis.
+     *
+     * @param \Closure(self): mixed $draw
+     */
+    public function scaled(
+        float $scaleX,
+        float $scaleY,
+        float $originX,
+        float $originY,
+        \Closure $draw,
+    ): static {
+        return $this->transformed(Shapes::scaleMatrix($scaleX, $scaleY, $originX, $originY), $draw);
+    }
+
+    /** @param \Closure(self): mixed $draw */
+    public function translated(float $dx, float $dy, \Closure $draw): static
+    {
+        return $this->transformed([1.0, 0.0, 0.0, 1.0, $dx, $dy], $draw);
+    }
+
+    /**
+     * Draws with everything outside the rectangle clipped away -- the
+     * common case, and the one that needs no path built.
+     *
+     * @param \Closure(self): mixed $draw
+     */
+    public function clippedToRectangle(
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        \Closure $draw,
+    ): static {
+        return $this->clippedToPath(
+            static fn (ContentStream $path) => $path->rect($x, $y, $width, $height),
+            $draw,
+        );
+    }
+
+    /**
+     * The general form: clips to an arbitrary path, built exactly as
+     * drawPath() builds one. The path itself is not painted.
+     *
+     * @param \Closure(PathSink): mixed $path
+     * @param \Closure(self): mixed $draw
+     */
+    public function clippedToPath(\Closure $path, \Closure $draw, bool $evenOdd = false): static
+    {
+        $operators = new ContentStream();
+        $operators->pushGraphicsState();
+        $path($operators);
+        $operators->clipToPath($evenOdd);
+
+        $this->append($operators->bytes());
+
+        try {
+            $draw($this);
+        } finally {
+            $this->append((new ContentStream())->popGraphicsState()->bytes());
+        }
+
+        return $this;
+    }
+
+    /**
+     * Draws at less than full opacity: $fillAlpha applies to fills and
+     * text, $strokeAlpha to outlines, each 0.0 (invisible) to 1.0
+     * (opaque). Passing one sets both.
+     *
+     * This is constant alpha, which is what a watermark or a tint panel
+     * wants. A gradient that fades is a soft mask and a different
+     * mechanism -- see SvgSoftMask, which is how the SVG renderer does
+     * it.
+     *
+     * @param \Closure(self): mixed $draw
+     */
+    public function faded(float $fillAlpha, \Closure $draw, ?float $strokeAlpha = null): static
+    {
+        $strokeAlpha ??= $fillAlpha;
+
+        foreach (['fill' => $fillAlpha, 'stroke' => $strokeAlpha] as $which => $alpha) {
+            if ($alpha < 0.0 || $alpha > 1.0) {
+                throw new \InvalidArgumentException("The $which alpha must be between 0.0 and 1.0, got $alpha.");
+            }
+        }
+
+        $resourceName = $this->extGStateResourceName($fillAlpha, $strokeAlpha);
+
+        $this->append(
+            (new ContentStream())->pushGraphicsState()->setExtGState($resourceName)->bytes(),
+        );
+
+        try {
+            $draw($this);
+        } finally {
+            $this->append((new ContentStream())->popGraphicsState()->bytes());
+        }
+
+        return $this;
+    }
+
+    /**
+     * One line of text turned about its own anchor point -- a rotated
+     * column heading, a vertical axis label, a "DRAFT" across the page.
+     *
+     * ($x, $y) is the baseline origin before rotation and stays fixed:
+     * the text turns about the point it would otherwise have started at,
+     * so a caller placing one does not also have to work out where the
+     * rotation moved it to.
+     */
+    public function drawTextRotated(
+        Font $font,
+        float $sizePt,
+        float $x,
+        float $y,
+        float $degrees,
+        string $text,
+        ?Paint $paint = null,
+    ): static {
+        return $this->rotated(
+            $degrees,
+            $x,
+            $y,
+            fn (self $content) => $content->drawText($font, $sizePt, $x, $y, $text, paint: $paint),
+        );
     }
 
     /**
@@ -892,6 +1295,59 @@ final class PageBuilder
         $this->document->register($state);
 
         return $this->nameExtGState(new PdfReference($state->objectId()));
+    }
+
+    /**
+     * The /Separation colour space a spot colour is painted through,
+     * declared in the /ColorSpace of whatever scope is being drawn into
+     * and named there.
+     *
+     * Written inline rather than as an indirect object: the whole thing
+     * is an array of four short values, and the tint transform is a Type
+     * 2 (exponential interpolation) function, which is an ordinary
+     * dictionary and not a stream. Nothing here needs a number of its
+     * own, and a page that uses one ink would otherwise cost two extra
+     * objects to say so.
+     *
+     * The function is the linear ramp SpotColor documents: at tint 0 the
+     * alternate is all zeros, i.e. bare paper, and at tint 1 it is the
+     * colour in full. /N 1 makes the interpolation between them linear.
+     *
+     * Keyed on Paint::paintKey(), which deliberately excludes the tint --
+     * every tint of one ink is the same plate and shares this one space.
+     */
+    private function separationColorSpaceName(SpotColor $spot): string
+    {
+        $key = $spot->paintKey();
+
+        if (isset($this->scope->colorSpaceResourceNames[$key])) {
+            return $this->scope->colorSpaceResourceNames[$key];
+        }
+
+        $tintTransform = new Dictionary();
+        $tintTransform->set('FunctionType', new PdfInteger(2));
+        $tintTransform->set('Domain', new PdfArray(new PdfReal(0.0), new PdfReal(1.0)));
+        $tintTransform->set('C0', new PdfArray(...array_map(
+            static fn (float $channel): PdfReal => new PdfReal(0.0),
+            $spot->alternate->components(),
+        )));
+        $tintTransform->set('C1', new PdfArray(...array_map(
+            static fn (float $channel): PdfReal => new PdfReal($channel),
+            $spot->alternate->components(),
+        )));
+        $tintTransform->set('N', new PdfInteger(1));
+
+        $colorSpace = new PdfArray(
+            new PdfName('Separation'),
+            new PdfName($spot->name),
+            new PdfName('DeviceCMYK'),
+            $tintTransform,
+        );
+
+        $resourceName = 'CS' . $this->scope->nextColorSpaceResourceNumber++;
+        $this->scope->category('ColorSpace')->set($resourceName, $colorSpace);
+
+        return $this->scope->colorSpaceResourceNames[$key] = $resourceName;
     }
 
     private function extGStateResourceName(float $fillAlpha, float $strokeAlpha): string

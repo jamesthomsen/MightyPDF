@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace MightyPDF\Layout;
 
 use MightyPDF\Content\Color;
+use MightyPDF\Content\Dash;
+use MightyPDF\Content\Paint;
+use MightyPDF\Content\Stroke;
 
 /**
  * Which edges of a cell are ruled, how thickly and in what colour.
@@ -20,6 +23,10 @@ use MightyPDF\Content\Color;
  * The width is in points even though a Flow's coordinates are not,
  * because rule weights are specified in points everywhere -- a hairline
  * is 0.25pt in every style guide, and nobody asks for a 0.088mm rule.
+ * The dash lengths are in points for the same reason.
+ *
+ * The colour is a Paint rather than a Color, so a rule can be set in a
+ * process colour or a named ink like anything else on the page.
  */
 final class Border
 {
@@ -29,7 +36,8 @@ final class Border
         public readonly bool $bottom = false,
         public readonly bool $left = false,
         public readonly float $widthPt = 0.2,
-        public readonly ?Color $color = null,
+        public readonly ?Paint $color = null,
+        public readonly ?Dash $dash = null,
     ) {
     }
 
@@ -38,19 +46,19 @@ final class Border
         return new self();
     }
 
-    public static function box(float $widthPt = 0.2, ?Color $color = null): self
+    public static function box(float $widthPt = 0.2, ?Paint $color = null, ?Dash $dash = null): self
     {
-        return new self(true, true, true, true, $widthPt, $color);
+        return new self(true, true, true, true, $widthPt, $color, $dash);
     }
 
-    public static function bottom(float $widthPt = 0.2, ?Color $color = null): self
+    public static function bottom(float $widthPt = 0.2, ?Paint $color = null, ?Dash $dash = null): self
     {
-        return new self(bottom: true, widthPt: $widthPt, color: $color);
+        return new self(bottom: true, widthPt: $widthPt, color: $color, dash: $dash);
     }
 
-    public static function top(float $widthPt = 0.2, ?Color $color = null): self
+    public static function top(float $widthPt = 0.2, ?Paint $color = null, ?Dash $dash = null): self
     {
-        return new self(top: true, widthPt: $widthPt, color: $color);
+        return new self(top: true, widthPt: $widthPt, color: $color, dash: $dash);
     }
 
     public function isEmpty(): bool
@@ -58,8 +66,23 @@ final class Border
         return !$this->top && !$this->right && !$this->bottom && !$this->left;
     }
 
-    public function colorOrBlack(): Color
+    public function colorOrBlack(): Paint
     {
         return $this->color ?? Color::black();
+    }
+
+    /**
+     * This border as a Stroke, for the primitives that take one.
+     *
+     * A rule is a stroke with the edges picked out separately, so keeping
+     * one conversion here is what stops the two descriptions drifting.
+     */
+    public function stroke(): Stroke
+    {
+        return new Stroke(
+            $this->colorOrBlack(),
+            $this->widthPt,
+            $this->dash ?? new Dash([]),
+        );
     }
 }

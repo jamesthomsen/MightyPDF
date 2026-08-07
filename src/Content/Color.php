@@ -18,8 +18,11 @@ namespace MightyPDF\Content;
  * Out-of-range channels raise rather than clamp, on the same reasoning
  * as SvgColor: a caller passing 300 has a bug, and silently drawing it
  * as 255 hides which of the two numbers was wrong.
+ *
+ * One of three Paints, and the one everything defaults to. See CmykColor
+ * for ink coverage and SpotColor for a named plate.
  */
-final class Color
+final class Color implements Paint
 {
     public function __construct(
         public readonly float $r,
@@ -106,6 +109,27 @@ final class Color
     public function rgb(): array
     {
         return [$this->r, $this->g, $this->b];
+    }
+
+    /** Already RGB, so this is the identity -- see Paint::toRgb(). */
+    public function toRgb(): self
+    {
+        return $this;
+    }
+
+    public function paintKey(): string
+    {
+        return "rgb:$this->r,$this->g,$this->b";
+    }
+
+    public function applyFill(ContentStream $operators, \Closure $nameColorSpace): void
+    {
+        $operators->setFillColorRgb($this->r, $this->g, $this->b);
+    }
+
+    public function applyStroke(ContentStream $operators, \Closure $nameColorSpace): void
+    {
+        $operators->setStrokeColorRgb($this->r, $this->g, $this->b);
     }
 
     /** Lowercase, with the leading '#', e.g. "#1a2b3c". */
