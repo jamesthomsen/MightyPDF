@@ -325,7 +325,7 @@ final class Flow
             $this->toPointsX($x),
             $this->toPointsY($y),
             $this->drawable($text, $style),
-            ...$style->color->rgb(),
+            paint: $style->color,
         );
 
         return $this;
@@ -382,7 +382,7 @@ final class Flow
             $style->align,
             $style->valign,
             $lineHeight === null ? null : $this->unit->toPoints($lineHeight),
-            ...$style->color->rgb(),
+            paint: $style->color,
         );
 
         $this->y += $height;

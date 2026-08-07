@@ -1,8 +1,9 @@
 # MightyPDF
 
 A from-scratch PDF library for PHP: raw PDF assembly plus a content layer
-for text, drawing, images, SVG, and AcroForm fields — and a reader that
-can open an existing PDF and edit it in place.
+for text, drawing, images, SVG, barcodes and AcroForm fields, a layout
+layer with cells and tables on top of it — and a reader that can open an
+existing PDF and edit it in place.
 
 Requires **PHP 8.3+**, `ext-iconv`, `ext-openssl`, and `ext-zlib`.
 
@@ -51,6 +52,12 @@ output is written to `examples/output/`.
 | [13-merging-documents.php](examples/13-merging-documents.php) | Combining pages from multiple PDFs into one with `PdfMerger` |
 | [14-embedding-a-font.php](examples/14-embedding-a-font.php) | Embedding a TrueType or OpenType font, and pointing a form field at one |
 | [15-links-and-bookmarks.php](examples/15-links-and-bookmarks.php) | Links out of and inside a document, and a bookmark tree |
+| [16-a-report-with-the-layout-layer.php](examples/16-a-report-with-the-layout-layer.php) | A business report through `Flow`: cells, a table, a chart, a footer on every page |
+| [17-shapes-transforms-and-transparency.php](examples/17-shapes-transforms-and-transparency.php) | Paths, ellipses, polygons, dashes, and scoped transforms, clips and alpha |
+| [18-a-table-that-breaks-across-pages.php](examples/18-a-table-that-breaks-across-pages.php) | `Table`: wrapping cells, a repeating header, colspans, striping |
+| [19-barcodes-and-qr-codes.php](examples/19-barcodes-and-qr-codes.php) | Code 39, Code 128, EAN-13, UPC-A, and QR at all four levels |
+| [20-print-colours.php](examples/20-print-colours.php) | CMYK, a spot colour at five tints, and a dieline separation |
+| [21-attachments-and-viewer-preferences.php](examples/21-attachments-and-viewer-preferences.php) | An invoice carrying its own XML, viewer preferences, a rotated page |
 
 ## Core concepts
 
@@ -296,7 +303,7 @@ needs 0.359 of the size and Courier 0.281.
 tables directly, keyed by WinAnsi code, for callers working in encoded
 bytes.
 
-## Lines and shapes
+## Drawing
 
 ```php
 // Filled rectangle (r, g, b each 0.0-1.0)
@@ -312,8 +319,115 @@ $content->drawLine(x1: 72, y1: 560, x2: 410, y2: 560, lineWidthPt: 1.0, r: 0.0, 
 All three accept named arguments; color and line width default to black
 and `1.0`pt.
 
-For anything not covered by these convenience methods, drop down to
-`ContentStream` directly and hand it to the page with `drawCustom()`:
+### The general shapes
+
+Those three take float triples and draw one thing each. The rest take a
+`Paint` and a `Stroke`, and cover everything else:
+
+```php
+use MightyPDF\Content\{Color, Stroke};
+
+$content->drawEllipse(cx: 200, cy: 600, radiusX: 60, radiusY: 30, fill: Color::fromHex('#2563eb'));
+$content->drawCircle(320, 600, 30, stroke: new Stroke(Color::black(), 2.0));
+$content->drawRoundedRectangle(72, 480, 200, 80, radius: 12,
+    fill: Color::gray(0.94), stroke: Stroke::hairline());
+$content->drawRegularPolygon(cx: 400, cy: 480, radius: 40, sides: 6, fill: Color::black());
+$content->drawPolyline([[72.0, 400.0], [140.0, 440.0], [210.0, 380.0]], Stroke::dashed());
+```
+
+Both `fill` and `stroke` are optional, and a shape asked for neither
+draws nothing rather than raising — which is what lets the layout layer
+hand a style straight through without first asking whether there is
+anything to paint.
+
+`drawPath()` is the general form. The closure is handed a `PathSink` —
+`moveTo`, `lineTo`, `curveTo`, `closePath`, which is everything PDF can
+draw:
+
+```php
+use MightyPDF\Content\PathSink;
+
+$content->drawPath(
+    fn (PathSink $path) => $path->moveTo(72, 72)->lineTo(172, 172)
+        ->curveTo(200, 200, 240, 160, 272, 172)->closePath(),
+    fill: Color::fromHex('#334155'),
+    stroke: Stroke::hairline(),
+);
+```
+
+Pass `evenOdd: true` to switch the fill rule — the default nonzero rule
+fills a subpath drawn inside another one in the same direction, while
+even-odd leaves it as a hole. That is the whole difference between a
+washer and a disc.
+
+### Strokes
+
+A `Stroke` gathers the five bits of graphics state an outline needs:
+
+```php
+use MightyPDF\Content\{Dash, LineCap, LineJoin, Stroke};
+
+new Stroke(Color::black(), widthPt: 2.0, dash: new Dash([6.0, 2.0]),
+    cap: LineCap::Round, join: LineJoin::Bevel);
+
+Stroke::hairline();                    // 0.25pt, the weight a style guide means
+Stroke::dashed(1.0, lengthPt: 3.0);
+Stroke::dotted(1.0, spacingPt: 2.0);   // sets the round cap too -- see below
+```
+
+`Dash` has named constructors for what documents actually ask for:
+`solid()`, `dashed()`, `dotted()`, `dashDot()`. One trap it removes: a
+dotted line is zero-length "on" segments, which have no area under the
+default butt cap and draw *nothing at all* — `Stroke::dotted()` sets
+`LineCap::Round` with them, which is why it exists.
+
+### Transforms, clipping and transparency
+
+Each of these draws whatever the closure draws under some change to the
+graphics state, and puts the state back afterwards:
+
+```php
+$content->rotated(90.0, originX: 300, originY: 400, draw: function (PageBuilder $content) {
+    $content->drawText(StandardFont::Helvetica, 10.0, 300, 400, 'Reads bottom-to-top');
+});
+
+$content->translated(50, 0, fn (PageBuilder $c) => $c->drawSvg($logo, 0, 0, 60, 60));
+$content->scaled(2.0, 2.0, 100, 100, fn (PageBuilder $c) => /* ... */);
+$content->transformed([$a, $b, $c, $d, $e, $f], fn (PageBuilder $content) => /* ... */);
+
+$content->clippedToRectangle(72, 400, 200, 100, function (PageBuilder $content) {
+    $content->drawCircle(172, 450, 200, fill: Color::black());   // cut to the box
+});
+
+$content->faded(0.15, function (PageBuilder $content) {
+    $content->drawText(StandardFont::HelveticaBold, 90.0, 100, 400, 'DRAFT');
+});
+```
+
+**The closure is the point.** There is no way to leave a transform, a
+clip or an alpha in effect by forgetting to close it, which is exactly
+what a paired `startTransform()`/`stopTransform()` invites — and the
+restore is in a `finally`, so a closure that throws does not leave the
+page's content stream with an unbalanced `q`. That would corrupt
+everything drawn afterwards, on a page a caller may well go on using
+after catching. They nest, and the closure is handed the same
+`PageBuilder`, so anything drawable is drawable inside one.
+
+Positive rotation is **counter-clockwise** here, following PDF's Y-up
+axes: 90 degrees reads bottom-to-top. (The layout layer measures down
+from the top-left, so there it is positive-clockwise — see below.)
+
+`drawTextRotated()` is the common case, turning one line about its own
+baseline origin so the caller does not have to work out where the
+rotation moved it to:
+
+```php
+$content->drawTextRotated(StandardFont::Helvetica, 9.0, x: 40, y: 300,
+    degrees: 90.0, text: 'Revenue');
+```
+
+For anything still not covered, drop down to `ContentStream` directly and
+hand it to the page with `drawCustom()`:
 
 ```php
 use MightyPDF\Content\ContentStream;
@@ -322,6 +436,138 @@ $ops = (new ContentStream())->setLineWidth(2.0)->setStrokeColorRgb(0, 0, 0)
     ->moveTo(100, 100)->lineTo(200, 200)->stroke();
 $content->drawCustom($ops);
 ```
+
+See [`examples/17-shapes-transforms-and-transparency.php`](examples/17-shapes-transforms-and-transparency.php).
+
+## Colour: RGB, CMYK and named inks
+
+A colour is not always three numbers, and the three kinds are the
+`Paint` interface:
+
+```php
+use MightyPDF\Content\{CmykColor, Color, SpotColor};
+
+Color::fromHex('#334155');                          // RGB -- what a screen wants
+CmykColor::fromPercentages(60, 40, 40, 100);        // ink coverage -- what a press wants
+SpotColor::named('PANTONE 300 C', $alternate);      // a plate of its own
+```
+
+**Why CMYK is not just RGB with more steps.** Rich black
+(`C60 M40 Y40 K100`) prints as a deep black; plain black (`K100`) prints
+noticeably washed out beside a photograph. Both are `#000000` in RGB, so
+a library holding only RGB cannot tell a press which one was meant.
+`CmykColor` writes its four numbers into the file untouched.
+
+**A spot colour is a named ink**, and becomes a PDF `/Separation`: a
+press mounts that ink and prints a plate for it, so the colour comes out
+right by construction rather than by approximation. It is also how a
+varnish, a die-cut line or a white underprint is marked up — none of
+which are colours at all.
+
+```php
+$brand = SpotColor::named('PANTONE 300 C', CmykColor::fromPercentages(100, 44, 0, 0));
+
+$content->drawRectangle($x, $y, $w, $h, fill: $brand);
+$content->drawRectangle($x, $y2, $w, $h, fill: $brand->withTint(0.15));
+```
+
+Every separation carries an **alternate** — the CMYK a device without
+that ink should use instead — written as a linear tint transform from
+bare paper to the full colour. So the document still looks right on a
+screen and in an office printer, and prints from the correct plate on a
+press. The tint is an operand rather than part of the colour space, so
+**every tint of one ink shares one `/Separation` resource**: one plate,
+as a press would see it.
+
+Two reserved names pass through unchanged: `All` marks every plate at
+once (registration marks), `None` marks none of them.
+
+`toRgb()` converts any of the three, and is only ever a preview: a real
+conversion needs the destination profile, and the answer moves visibly
+between one press and another. Nothing here attempts colour management —
+`DeviceCMYK` is uncalibrated by design and this library writes it
+through as given, which is what a caller specifying ink coverage wants.
+
+**Where paints are taken.** The general shapes above, `Layout\Style` and
+`Layout\Border`, and the text calls through their `paint:` argument. The
+original float-triple primitives are unchanged: `fillRectangle($x, $y,
+$w, $h, ...$color->rgb())` still means what it always did.
+
+```php
+$content->drawText($font, 12.0, $x, $y, 'Brand', paint: $brand);
+$flow->cell(50.0, 8.0, 'Heading', new Style(color: $brand));
+```
+
+See [`examples/20-print-colours.php`](examples/20-print-colours.php).
+
+## Barcodes
+
+```php
+use MightyPDF\Content\Barcode\Symbology;
+
+$content->drawBarcode('MightyPDF v2.0.0', x: 72, y: 600, width: 200, height: 40,
+    symbology: Symbology::Code128, quietZone: true);
+```
+
+Four linear symbologies, and only the bars are drawn — the
+human-readable line underneath is the caller's, via `drawText()`.
+
+| | Carries | Notes |
+|---|---|---|
+| `Symbology::Code39` | 43 characters | Simple and verbose: 12–16 modules per character, no lowercase |
+| `Symbology::Code128` | all of ASCII | Two-thirds the width, and digits packed two to a symbol |
+| `Symbology::Ean13` | 13 digits | Retail packaging; check digit computed or verified |
+| `Symbology::UpcA` | 12 digits | The same symbol with a leading zero |
+
+**Code 128 chooses its own code sets** — start in C for four leading
+digits, switch in for a run of six, shift for a single character out of
+set and switch for two — and always carries the check symbol the
+standard requires, which is not the caller's to supply.
+
+**EAN-13 computes its check digit** from twelve digits, or verifies a
+thirteenth against it and refuses a mismatch rather than correcting it: a
+wrong check digit is a barcode that scans as a different product.
+`Ean13::normalize()` gives back the full thirteen digits for the printed
+line, so it says what the symbol actually encodes.
+
+### QR codes
+
+```php
+use MightyPDF\Content\Barcode\QrEccLevel;
+
+$content->drawQrCode('https://example.com/invoice/2026-0417',
+    x: 400, y: 600, size: 100, level: QrEccLevel::Medium);
+```
+
+Versions 1 to 40, all four error-correction levels, and numeric,
+alphanumeric or byte mode chosen as whichever is compact enough to hold
+the whole string. Byte mode is UTF-8.
+
+The module count follows the data and the level, so a long string and a
+short one come out at different densities in the same box. `minVersion`
+pins it, which is what a run of labels or a sheet of tickets wants.
+
+`QrEccLevel` trades capacity for damage tolerance: `Low` ≈ 7%
+recoverable, `Medium` ≈ 15% (the default and the usual choice),
+`Quartile` ≈ 25%, `High` ≈ 30%. Reach for the higher two when the code
+will be printed small, on something that creases, or with a logo over
+the middle.
+
+### Quiet zones
+
+A barcode printed hard against other content does not scan, and that is
+invisible on the page. `quietZone: true` reserves the clear space
+*inside* the box you gave, so the bars shrink and the layout is
+undisturbed.
+
+It is **on by default for QR codes and everywhere in the layout layer**,
+where a symbol sits against other content. It is **off by default for
+`PageBuilder::drawBarcode()`**, which is what that method has always
+done — a caller leaving it off is undertaking to leave the space itself.
+`Symbology::quietZoneModules()` says how much (it is asymmetric for
+EAN-13).
+
+See [`examples/19-barcodes-and-qr-codes.php`](examples/19-barcodes-and-qr-codes.php).
 
 ## Images
 
@@ -635,6 +881,112 @@ without drawing.
 drawing take part in the same decision. An element taller than the page
 body overflows one page rather than breaking forever.
 
+### Tables
+
+A table drawn as a run of `cell()` calls restates its column widths on
+every row, takes three edits to add a column, and loses its header the
+moment an automatic break lands in the middle of it — leaving a reader
+on page four with no way to know what the columns are. `table()` owns
+all three:
+
+```php
+use MightyPDF\Content\Text\HorizontalAlign;
+
+$flow->table([70.0, 60.0, 30.0], $body, $heading)
+    ->align(2, HorizontalAlign::Right)
+    ->striped(Color::gray(0.96))
+    ->header(['Control', 'Owner', 'Status'])
+    ->rows($controls, fn (Control $c) => [$c->name, $c->owner, $c->status])
+    ->end();
+```
+
+**The header comes back at the top of every page the table runs onto.**
+Detected from the page number after asking `Flow` to break, rather than
+by predicting what `Flow` would do — so a `Flow` built with
+`autoPageBreak: false` does not get a break here either.
+
+**Cells wrap and rows size themselves** to the tallest cell in the row,
+plus the table's vertical padding, floored at `minRowHeight`. That is why
+the measuring lives here: nothing that sees a single cell can know a
+row's height.
+
+```php
+$table->row(['Component', 'A licence with enough wording to wrap over three lines', '4.2.1']);
+$table->heightOf([...]);   // what that row would take, without drawing it
+```
+
+**Cells are strings, or a `Cell` where a string will not do** — a style
+of its own, or a colspan:
+
+```php
+use MightyPDF\Layout\Cell;
+
+$table->row([new Cell('Total seats', $bold, colspan: 2), new Cell('4,485', $boldRight)]);
+```
+
+A row with the wrong number of cells is **refused** rather than drawn
+crooked: every column after the mistake would sit under the wrong
+heading, which reads as data rather than as an error.
+
+**Styling layers**, most specific last: the row's style, then
+`columnStyle()`/`align()`, then the cell's own, then the stripe — which
+is decoration, so a cell that names its own fill keeps it. Striping
+counts body rows only and carries across a page break, so a row keeps its
+shade wherever it lands.
+
+`Flow::table()` also takes `minRowHeight` and `verticalPaddingPt`. The
+padding lives on the table rather than on `Style` because it is a
+property of how a row is *sized*, which `Style` deliberately has no say
+in.
+
+See [`examples/18-a-table-that-breaks-across-pages.php`](examples/18-a-table-that-breaks-across-pages.php).
+
+### Shapes, transforms and barcodes in the same coordinates
+
+Everything from the content layer, in this Flow's unit and measured from
+the top-left:
+
+```php
+$flow->circle(30.0, 20.0, 5.0, fill: $brand);
+$flow->ellipse(60.0, 20.0, 12.0, 6.0, stroke: Stroke::hairline());
+$flow->roundedRect(10.0, 40.0, 60.0, 20.0, radius: 3.0, fill: Color::gray(0.95));
+$flow->polygon([[10.0, 80.0], [40.0, 80.0], [25.0, 100.0]], fill: $ink);
+$flow->polyline($series, new Stroke($blue, 1.2));
+$flow->line(10.0, 120.0, 190.0, 120.0, 0.5, $ink, Dash::dashed());
+
+$flow->barcode('MightyPDF v2.0.0', 15.0, 130.0, 90.0, 16.0);
+$flow->qrCode('https://example.com', 120.0, 130.0, 38.0);
+```
+
+`path()` takes the same closure `drawPath()` does, through a `PathSink`
+that converts as it goes — so a curve is not the one thing in this layer
+measured the other way up:
+
+```php
+$flow->path(
+    fn (PathSink $path) => $path->moveTo(20, 100)->curveTo(60, 60, 100, 140, 140, 100),
+    stroke: new Stroke($blue, 1.2),
+);
+```
+
+The scoped graphics states come across too, and take a `Flow`:
+
+```php
+$flow->faded(0.12, fn (Flow $flow) => $flow->rotatedTextAt(60.0, 200.0, -45.0, 'DRAFT', $huge));
+$flow->clippedToBox(10.0, 10.0, 50.0, 20.0, fn (Flow $flow) => /* ... */);
+$flow->rotated(90.0, 20.0, 100.0, fn (Flow $flow) => /* ... */);
+```
+
+**Rotation is positive-clockwise here**, the opposite of the content
+layer and for the same reason the Y axis is: this layer measures down
+from the top-left the way a screen does, and in that space a positive
+angle turns clockwise, as it does in CSS and SVG. So `-90` reads
+bottom-to-top up the left edge of the sheet.
+
+`Flow::barcode()` defaults to **Code 128** rather than the Code 39
+`PageBuilder::drawBarcode()` keeps for compatibility, and reserves its
+quiet zone by default. New code should be printing Code 128.
+
 ### Something on every page
 
 ```php
@@ -720,9 +1072,10 @@ Color::gray(0.96);
 Color::black();  Color::white();
 ```
 
-Out-of-range channels throw rather than clamp. The layout layer takes
-`Color` directly; the drawing primitives keep their float triples, and
-`rgb()` spreads into them:
+Out-of-range channels throw rather than clamp. The layout layer takes any
+`Paint` — RGB, CMYK or a named ink (see [Colour](#colour-rgb-cmyk-and-named-inks));
+the original drawing primitives keep their float triples, and `rgb()`
+spreads into them:
 
 ```php
 $content->fillRectangle($x, $y, $w, $h, ...$color->rgb());
@@ -736,6 +1089,23 @@ use MightyPDF\Assembler\PageSize;
 $document->newPage(PageSize::A4);          // or ::A3, ::A5, ::Letter, ::Legal, ::Tabloid
 $document->newPage(PageSize::A4->landscape());
 ```
+
+### Turning a page
+
+```php
+$document->newPage(PageSize::A4, rotation: 90);
+$page->setRotation(270);                       // or afterwards
+```
+
+Multiples of 90 only, normalised into 0–270, and omitted from the file
+when zero.
+
+**This is not how to make a landscape page.** `/Rotate` turns the page as
+displayed and printed while leaving the coordinate system underneath it
+exactly as it was, so everything already drawn stays where it was drawn
+and comes out sideways. That makes it the right tool for a scanned page
+that arrived the wrong way up, and the wrong one for a landscape report —
+which wants a landscape media box: `PageSize::A4->landscape()`.
 
 ### Serving a PDF over HTTP
 
@@ -844,6 +1214,106 @@ rather than being transliterated or mangled. `setCreationDate()` takes any
 
 See [`examples/12-document-metadata.php`](examples/12-document-metadata.php)
 for a runnable version.
+
+## Attachments
+
+A document can carry files inside it:
+
+```php
+use MightyPDF\Assembler\Attachment\AttachmentRelationship;
+
+$document->attach(
+    'invoice-2026-0417.xml',
+    $xml,
+    description: 'The same invoice, machine-readable',
+    mediaType: 'application/xml',
+    relationship: AttachmentRelationship::Data,
+);
+```
+
+`$name` is what a reader shows and the key the file is filed under, so
+two attachments cannot share one. The bytes go in as a deflated
+`/EmbeddedFile` stream carrying the uncompressed size and an MD5
+checksum, which is what the spec specifies for it — a file-identity
+check with no security claim attached.
+
+**The relationship is what makes an attachment machine-readable.** An
+e-invoice is a PDF a person reads with an XML file inside it that a
+system reads, and that the two are the *same invoice* is a claim the file
+has to make rather than one a consumer can infer from a filename.
+`AttachmentRelationship::Data` says so, and is what Factur-X, ZUGFeRD and
+the rest of the EU e-invoicing formats are built on. The others are
+`Source`, `Alternative`, `Supplement` and `Unspecified` (the default,
+which writes no entry at all).
+
+Note that a conforming Factur-X file also needs PDF/A-3, which this
+library does not produce — see "Known limitations".
+
+### An attachment on the page
+
+`attach()` puts a file in the reader's attachments panel, which is where
+a machine-readable companion belongs and where a person will never look
+for it. To put it next to whatever it relates to:
+
+```php
+use MightyPDF\Assembler\Annotation\AttachmentIcon;
+
+$workings = $document->attach('migration-hours.csv', $csv, mediaType: 'text/csv');
+
+$content->addFileAttachment($workings, x: 500, y: 640, size: 18,
+    icon: AttachmentIcon::Paperclip, note: 'Hours behind this line');
+```
+
+This takes the specification `attach()` returned rather than bytes of its
+own, so the icon and the panel entry point at **one** embedded stream.
+The file is therefore in both places — which is the intent, though it
+means a tool that enumerates attachments naively (poppler's `pdfdetach
+-list`, say) reports it twice.
+
+The icon is drawn by the reader from `AttachmentIcon` (`PushPin`,
+`Paperclip`, `Graph`, `Tag`) and they differ noticeably between readers,
+so the rectangle is a hint at the size rather than a frame it is fitted
+to.
+
+## How the document asks to be opened
+
+```php
+use MightyPDF\Assembler\{Duplex, PageLayout, PageMode, PrintScaling};
+
+$document->viewerPreferences()
+    ->displayDocumentTitle()
+    ->printScaling(PrintScaling::None);
+
+$document->setPageLayout(PageLayout::TwoPageRight);
+$document->setPageMode(PageMode::Thumbnails);
+```
+
+Every one of these is a request a reader may ignore, and most readers do
+ignore the window-chrome ones. Two are worth setting on almost any
+document:
+
+- **`displayDocumentTitle()`** makes the window show the document's
+  `/Title` instead of its filename, so a file received as
+  `invoice_final_v3(2).pdf` still says what it is. Set the title too, or
+  this asks a reader to display nothing.
+- **`printScaling(PrintScaling::None)`** stops a reader shrinking the
+  page by a few percent to clear its printer's margins. That is the
+  default behaviour and it is wrong for anything measured: a form that
+  has to line up with a pre-printed one, a drawing at a stated scale, a
+  sheet of labels, a barcode whose module width was chosen for a scanner.
+
+The rest: `hideToolbar()`, `hideMenubar()`, `hideWindowUi()`,
+`fitWindow()`, `centerWindow()`, `nonFullScreenPageMode()`,
+`duplex()`, `pickTrayByPageSize()`, `numberOfCopies()`. Nothing is
+written unless set, so a document that asks for nothing carries no
+`/ViewerPreferences` at all.
+
+`PageMode` also drives the panel a document opens with — and both
+`outline()` and `attach()` ask for their own panel *only* where the
+document has not already said what it wants, so a document does not open
+differently depending on the order of two unrelated calls.
+
+See [`examples/21-attachments-and-viewer-preferences.php`](examples/21-attachments-and-viewer-preferences.php).
 
 ## Encrypting a document you create
 
@@ -1195,7 +1665,31 @@ foreach ($importer->pages() as $index => $page) {
 See [`examples/13-merging-documents.php`](examples/13-merging-documents.php)
 for a runnable version.
 
-## Upgrading from 1.x
+## Upgrading
+
+### From 2.0
+
+**2.1.0** is additive: general shapes, scoped transforms and clipping,
+CMYK and spot colour, `Table`, Code 128 / EAN-13 / QR, attachments,
+viewer preferences and page rotation. Existing code keeps working —
+`Color` is now one implementation of the new `Paint` interface, so
+everything that took a `Color` still does.
+
+Three things to know:
+
+1. **`Layout\Style` and `Layout\Border` widened from `Color` to
+   `Paint`.** Reading `$style->color` back out and calling `rgb()` on it
+   no longer type-checks, since it may be a `CmykColor` or a
+   `SpotColor`. Call `toRgb()->rgb()`, or hand the paint to something
+   that takes one.
+2. **`Border` gained a `$dash` parameter**, positioned after `$color`.
+   Only positional callers of the constructor with six arguments are
+   affected; the named constructors are unchanged.
+3. **A filled shape now goes out as one path and one fill operator**
+   rather than one per rectangle, and the general primitives wrap
+   themselves in `q`/`Q`. Snapshot tests of PDF bytes will diff.
+
+### From 1.x
 
 **2.0.0** adds the layout layer. Almost all of it is additive, but two
 changes are breaking, which is why it is a major version.
@@ -1286,6 +1780,27 @@ second apart is still identical bytes, and there is still no automatic
   — this library has no code anywhere to hash a byte range, embed a
   certificate, or validate one, so nothing in it can actually sign a
   document.
+- **Colour management**: none. `DeviceRGB` and `DeviceCMYK` are
+  uncalibrated by design and this library writes both through as given,
+  which is what a caller specifying ink coverage wants and is also all
+  there is: no ICC profiles, no output intent, and `toRgb()` on a
+  `CmykColor` is the naive conversion rather than a managed one. A
+  spot colour's alternate is stated as CMYK and nothing else.
+- **PDF/A**: not produced. That matters for one thing in particular —
+  a conforming Factur-X or ZUGFeRD e-invoice needs PDF/A-3, and while
+  the attachment half of it is here (an embedded file with
+  `AFRelationship::Data`, listed in `/AF`), the conformance half —
+  output intent, embedded ICC profile, XMP metadata, and the
+  restrictions that go with them — is not.
+- **Barcodes**: four linear symbologies (Code 39, Code 128, EAN-13,
+  UPC-A) and QR. No EAN-8, ITF, Codabar or the postal symbologies, and
+  no PDF417 or DataMatrix. Code 128 encodes ASCII only, and its code-set
+  choice is the standard's greedy strategy rather than an optimal search
+  — it produces the shortest symbol for ordinary input and is
+  occasionally a symbol or two longer than the theoretical minimum. A QR
+  code is encoded in one mode throughout rather than segmented into runs
+  of different modes, which is likewise conforming and occasionally one
+  version larger than optimal.
 - **Merging**: named destinations on imported links are dropped, and a
   bookmark whose pages were all left behind goes with them (see "Merging
   PDFs" for both). The merged document always gets a fresh, flat page

@@ -189,6 +189,31 @@ final class FlowGraphicsTest extends TestCase
         self::assertStringContainsString('/Separation /PANTONE#20300#20C', $document->save());
     }
 
+    /**
+     * Every one of the three text paths, because they reach the content
+     * layer by three different routes -- cell() through drawTextInBox(),
+     * paragraph() through drawParagraph(), textAt() through drawText() --
+     * and a Style's colour has to survive all three.
+     */
+    public function testEveryTextPathCarriesTheStylesPaintThrough(): void
+    {
+        $brand = SpotColor::named('PANTONE 300 C', CmykColor::fromPercentages(100, 44, 0, 0));
+        $style = new Style(color: $brand);
+
+        foreach ([
+            'cell' => static fn (Flow $flow) => $flow->cell(50.0, 8.0, 'Heading', $style),
+            'paragraph' => static fn (Flow $flow) => $flow->paragraph(80.0, 'Some wrapped body copy here', $style),
+            'textAt' => static fn (Flow $flow) => $flow->textAt(20.0, 40.0, 'A label', $style),
+            'cellAt' => static fn (Flow $flow) => $flow->cellAt(20.0, 60.0, 50.0, 8.0, 'A caption', $style),
+            'paragraphAt' => static fn (Flow $flow) => $flow->paragraphAt(20.0, 80.0, 50.0, 16.0, 'A note', $style),
+        ] as $name => $draw) {
+            $document = new Document();
+            $draw($this->flow($document));
+
+            self::assertStringContainsString('/CS1 cs', $this->contentOf($document->pages()[0]), $name);
+        }
+    }
+
     public function testARuleCanBeDashed(): void
     {
         $document = new Document();

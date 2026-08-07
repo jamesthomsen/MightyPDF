@@ -110,11 +110,12 @@ final class Table
 
     /**
      * The common case of columnStyle(): change one column's alignment and
-     * leave everything else to the row's style.
+     * leave everything else alone.
      *
-     * Applied on top of whatever style the row turns out to have rather
-     * than captured now, so it keeps working when a row is drawn with a
-     * style of its own.
+     * Laid over whatever style the row turns out to be drawn with rather
+     * than captured now, so it keeps working for a row given a style of
+     * its own. A *cell* with its own style is taken whole and this does
+     * not apply -- see styleFor().
      */
     public function align(int $index, HorizontalAlign $align): static
     {
@@ -326,23 +327,31 @@ final class Table
     }
 
     /**
-     * What a cell is actually drawn with: the row's style, then the
-     * column's, then the cell's own, then the stripe.
+     * What a cell is actually drawn with.
      *
-     * Layered in that order because each is more specific than the last,
-     * and the stripe is last because it is decoration rather than
-     * intent -- a cell that names its own fill keeps it.
+     * Most specific wins, and a cell that names a style of its own is as
+     * specific as it gets: it is taken whole, alignment included, because
+     * a caller writing one out has said what they want and merging half
+     * of something else into it is a rule nobody can predict.
+     *
+     * Otherwise the column's style, or the row's, with the column's
+     * alignment laid over it -- alignment separately because it is the
+     * one thing a column almost always wants to say and a whole Style is
+     * a heavy way to say it.
+     *
+     * The stripe goes on last and only where nothing else claimed a fill,
+     * since it is decoration rather than intent.
      */
     private function styleFor(Cell $cell, int $index, Style $rowStyle, ?Paint $shade): Style
     {
+        if ($cell->style !== null) {
+            return $cell->style;
+        }
+
         $style = $this->columnStyles[$index] ?? $rowStyle;
 
         if (isset($this->alignments[$index])) {
             $style = $style->with(align: $this->alignments[$index]);
-        }
-
-        if ($cell->style !== null) {
-            return $cell->style;
         }
 
         return $shade === null || $style->fill !== null ? $style : $style->with(fill: $shade);
