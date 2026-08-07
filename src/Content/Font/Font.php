@@ -59,6 +59,31 @@ interface Font
     public function ascentPt(float $sizePt): float;
 
     /**
+     * How far it drops below the baseline at $sizePt, as a *positive*
+     * distance -- the opposite sign to AFM's Descender and the PDF
+     * descriptor's /Descent, both of which are negative.
+     *
+     * The sign is chosen for the formulas that use it: everything that
+     * places text vertically wants ascent + descent, and writing that as
+     * ascent - descent invites a slip that is a fraction of a point at
+     * 10pt and centimetres at poster sizes. See TextPlacement, which is
+     * where those formulas live so that no caller has to restate them.
+     */
+    public function descentPt(float $sizePt): float;
+
+    /**
+     * The height of a capital letter at $sizePt, baseline to cap.
+     *
+     * Separate from the ascent because they answer different questions:
+     * the ascent bounds the em box and centres running prose, while cap
+     * height bounds what is actually inked in a label, a table heading
+     * or a single large letter, and centres those. The difference is
+     * proportional to the type size, so choosing wrong is invisible in
+     * body copy and unmissable in display sizes.
+     */
+    public function capHeightPt(float $sizePt): float;
+
+    /**
      * This font as it exists in $document, creating and registering its
      * PDF objects on first use and reusing them after that.
      */

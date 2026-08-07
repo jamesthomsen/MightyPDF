@@ -2,7 +2,38 @@
 
 declare(strict_types=1);
 
-/** See Helvetica.php for provenance/scope notes. */
+/**
+ * WinAnsi code point => advance width (1/1000 em units) for Times-Italic.
+ *
+ * Adobe's Core 14 AFM metrics (public domain, universally republished
+ * across PDF tooling), covering the whole WinAnsiEncoding repertoire
+ * rather than just its ASCII range. The upper half matters as much as
+ * the lower one for anything not written in English: an em dash is
+ * 1000 units and a curly quote 222, so measuring either as the 500-unit
+ * default -- which is what an absent entry falls back to -- misplaces
+ * every centred, right-aligned, wrapped or justified line containing
+ * one.
+ *
+ * Read out of the URW base-35 AFMs by glyph name rather than by the
+ * AFM's own encoding column, which is AdobeStandardEncoding and
+ * disagrees with WinAnsi at codes 39 and 96. URW's fonts are metric
+ * clones of the Core 14 -- that is why Ghostscript substitutes them --
+ * and the 95 ASCII widths transcribed here by hand beforehand all
+ * agree with them exactly, in all six families, which is the check
+ * that says the two sources are the same numbers.
+ *
+ * Codes 0xA0 and 0xAD are a non-breaking space and a soft hyphen; per
+ * ISO 32000-2 Annex D a reader draws and measures them as an ordinary
+ * space and hyphen, so they carry those widths. The five codes CP1252
+ * leaves undefined (0x81, 0x8D, 0x8F, 0x90, 0x9D) are absent, and
+ * WinAnsiEncoding never emits them.
+ *
+ * The codes below 0x20, and 0x7F, are absent for a different reason:
+ * WinAnsiEncoding assigns them no glyph, so a reader draws nothing and
+ * advances nothing. They are still encodable, which is why they measure
+ * zero rather than falling to the default width -- see
+ * FontMetrics::forWinAnsi().
+ */
 return [
     32 => 250, 33 => 333, 34 => 420, 35 => 500, 36 => 500, 37 => 833, 38 => 778, 39 => 214,
     40 => 333, 41 => 333, 42 => 500, 43 => 675, 44 => 250, 45 => 333, 46 => 250, 47 => 278,
@@ -15,5 +46,21 @@ return [
     96 => 333, 97 => 500, 98 => 500, 99 => 444, 100 => 500, 101 => 444, 102 => 278, 103 => 500,
     104 => 500, 105 => 278, 106 => 278, 107 => 444, 108 => 278, 109 => 722, 110 => 500, 111 => 500,
     112 => 500, 113 => 500, 114 => 389, 115 => 389, 116 => 278, 117 => 500, 118 => 444, 119 => 667,
-    120 => 444, 121 => 444, 122 => 389, 123 => 400, 124 => 275, 125 => 400, 126 => 541,
+    120 => 444, 121 => 444, 122 => 389, 123 => 400, 124 => 275, 125 => 400, 126 => 541, 128 => 500,
+    130 => 333, 131 => 500, 132 => 556, 133 => 889, 134 => 500, 135 => 500, 136 => 333, 137 => 1000,
+    138 => 500, 139 => 333, 140 => 944, 142 => 556, 145 => 333, 146 => 333, 147 => 556, 148 => 556,
+    149 => 350, 150 => 500, 151 => 889, 152 => 333, 153 => 980, 154 => 389, 155 => 333, 156 => 667,
+    158 => 389, 159 => 556, 160 => 250, 161 => 389, 162 => 500, 163 => 500, 164 => 500, 165 => 500,
+    166 => 275, 167 => 500, 168 => 333, 169 => 760, 170 => 276, 171 => 500, 172 => 675, 173 => 333,
+    174 => 760, 175 => 333, 176 => 400, 177 => 675, 178 => 300, 179 => 300, 180 => 333, 181 => 500,
+    182 => 523, 183 => 250, 184 => 333, 185 => 300, 186 => 310, 187 => 500, 188 => 750, 189 => 750,
+    190 => 750, 191 => 500, 192 => 611, 193 => 611, 194 => 611, 195 => 611, 196 => 611, 197 => 611,
+    198 => 889, 199 => 667, 200 => 611, 201 => 611, 202 => 611, 203 => 611, 204 => 333, 205 => 333,
+    206 => 333, 207 => 333, 208 => 722, 209 => 667, 210 => 722, 211 => 722, 212 => 722, 213 => 722,
+    214 => 722, 215 => 675, 216 => 722, 217 => 722, 218 => 722, 219 => 722, 220 => 722, 221 => 556,
+    222 => 611, 223 => 500, 224 => 500, 225 => 500, 226 => 500, 227 => 500, 228 => 500, 229 => 500,
+    230 => 667, 231 => 444, 232 => 444, 233 => 444, 234 => 444, 235 => 444, 236 => 278, 237 => 278,
+    238 => 278, 239 => 278, 240 => 500, 241 => 500, 242 => 500, 243 => 500, 244 => 500, 245 => 500,
+    246 => 500, 247 => 675, 248 => 500, 249 => 500, 250 => 500, 251 => 500, 252 => 500, 253 => 444,
+    254 => 500, 255 => 444,
 ];

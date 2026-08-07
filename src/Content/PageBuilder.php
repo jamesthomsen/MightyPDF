@@ -38,7 +38,10 @@ use MightyPDF\Content\Svg\SvgSoftMask;
 use MightyPDF\Content\Svg\SvgStyle;
 use MightyPDF\Content\Svg\SvgTextFont;
 use MightyPDF\Content\Svg\SvgTilingPattern;
+use MightyPDF\Content\Text\HorizontalAlign;
+use MightyPDF\Content\Text\TextPlacement;
 use MightyPDF\Content\Text\TextWrapper;
+use MightyPDF\Content\Text\VerticalAlign;
 
 /**
  * The content-layer entry point for drawing on a page: text now, shapes
@@ -109,6 +112,50 @@ final class PageBuilder
     }
 
     /**
+     * Draws one line of text placed inside a (x, y, width, height) box --
+     * (x, y) is the box's bottom-left corner, matching fillRectangle()
+     * elsewhere in this class. The text is not wrapped and not clipped:
+     * a string wider than the box overflows it, because silently
+     * truncating a total or a name is worse than a visibly tight column.
+     *
+     * This is the call that makes "centre this in that box" a thing the
+     * library does rather than a thing every caller re-derives. Doing it
+     * by hand needs the font's ascent, descent and cap height, and
+     * before those were on Font the only way through was a magic
+     * fraction of the type size copied from FPDF -- correct to about a
+     * point at body sizes and centimetres out at display sizes. See
+     * TextPlacement, which owns the arithmetic, and VerticalAlign for
+     * why there are two kinds of middle.
+     *
+     * Lines up with drawParagraph() by construction: the same box, font
+     * and alignment put a single line on the same baseline through
+     * either call.
+     */
+    public function drawTextInBox(
+        Font $font,
+        float $sizePt,
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        string $text,
+        HorizontalAlign $align = HorizontalAlign::Left,
+        VerticalAlign $valign = VerticalAlign::Middle,
+        ?Color $color = null,
+    ): static {
+        $color ??= Color::black();
+
+        return $this->drawText(
+            $font,
+            $sizePt,
+            TextPlacement::lineX($align->forSingleLine(), $x, $width, $font->widthOfPt($text, $sizePt)),
+            TextPlacement::baselineY($font, $sizePt, $y, $height, $valign),
+            $text,
+            ...$color->rgb(),
+        );
+    }
+
+    /**
      * Draws word-wrapped text into a (x, y, width, height) box -- (x, y)
      * is the box's bottom-left corner, matching fillRectangle()/images
      * elsewhere in this class. $height is required: this method only
@@ -121,33 +168,33 @@ final class PageBuilder
      * undo (contrast this with TCPDF's startTransaction()/MultiCell()/
      * rollbackTransaction() measurement dance).
      *
-     * $align: 'L' (default), 'C', 'R', or 'J' (justified -- every line
-     * except the last gets extra inter-word spacing to fill the box's
-     * width; a line with no spaces to stretch is left as-is).
-     * $valign: 'T' (default), 'M', or 'B' -- vertical placement of the
-     * wrapped text block within the box when it's shorter than $height.
+     * $align: HorizontalAlign, or the strings 'L' (default), 'C', 'R',
+     * 'J' this has always taken. Justified means every line except the
+     * last gets extra inter-word spacing to fill the box's width; a line
+     * with no spaces to stretch is left as-is.
+     * $valign: VerticalAlign, or the strings 'T' (default), 'M', 'B'.
      * $r/$g/$b: see drawText()'s doc comment -- set explicitly per line
      * for the same reason.
      *
      * **Where the first baseline lands**, which is what a caller mixing
-     * this with drawText() needs: at $valign 'T', exactly
+     * this with drawText() needs: TextPlacement::firstBaselineY() says,
+     * for every alignment, and at VerticalAlign::Top that is exactly
      *
      *     $y + $height - $font->ascentPt($sizePt)
      *
      * -- the text's ascent hung from the box's top edge. A single-line
      * cell drawn with drawText() at that same y sits on the same
      * baseline as this method's first line, which is how the two are
-     * lined up side by side. Drawing that cell with drawParagraph() and
-     * the same box is the other way, and stays right without the caller
-     * restating the formula.
+     * lined up side by side. drawTextInBox() with the same box does it
+     * without the caller restating the formula, and agrees with this
+     * method line for line because both ask TextPlacement.
      *
      * Note that the ascent is the *font's*, not the size's, so two boxes
      * of identical geometry do not line up if they are set in different
-     * kinds of font: a standard font reports a flat 0.8 of the nominal
-     * size (its shipped metrics carry no ascent -- see
-     * StandardFont::ascentPt()), while an embedded font reports what its
-     * hhea table actually says, commonly nearer 0.95. Align a row on one
-     * font, or place its baselines from one ascentPt() call.
+     * kinds of font: Helvetica rises 0.718 of the nominal size and Times
+     * 0.683, while an embedded font reports what its hhea table says,
+     * commonly nearer 0.95. Align a row on one font, or place its
+     * baselines from one ascentPt() call.
      */
     public function drawParagraph(
         Font $font,
@@ -157,44 +204,47 @@ final class PageBuilder
         float $width,
         float $height,
         string $text,
-        string $align = 'L',
-        string $valign = 'T',
+        HorizontalAlign|string $align = HorizontalAlign::Left,
+        VerticalAlign|string $valign = VerticalAlign::Top,
         ?float $lineHeightPt = null,
         float $r = 0.0,
         float $g = 0.0,
         float $b = 0.0,
     ): static {
+        $align = $align instanceof HorizontalAlign ? $align : HorizontalAlign::fromLegacy($align);
+        $valign = $valign instanceof VerticalAlign ? $valign : match (strtoupper($valign)) {
+            'M' => VerticalAlign::Middle,
+            'B' => VerticalAlign::Bottom,
+            default => VerticalAlign::Top,
+        };
+
         $lineHeightPt ??= $sizePt * 1.15;
         $writer = $font->writerFor($this->document);
         $lines = TextWrapper::wrapUtf8($text, $font, $sizePt, $width);
         $lastIndex = count($lines) - 1;
 
-        // Places the first baseline just inside the box's top edge --
-        // consistent with how drawText()'s $y is documented as a
-        // baseline, not a box top.
-        $ascent = $font->ascentPt($sizePt);
-        $blockHeight = count($lines) * $lineHeightPt;
-        $topY = match ($valign) {
-            'M' => $y + $height / 2 + min($blockHeight, $height) / 2,
-            'B' => $y + min($blockHeight, $height),
-            default => $y + $height,
-        };
-
         $resourceName = $this->fontResourceName($font, $writer);
         $operators = new ContentStream();
-        $lineY = $topY - $ascent;
+        $lineY = TextPlacement::firstBaselineY(
+            $font,
+            $sizePt,
+            $y,
+            $height,
+            count($lines),
+            $lineHeightPt,
+            $valign,
+        );
 
         foreach ($lines as $index => $line) {
             $lineWidth = $font->widthOfPt($line, $sizePt);
             $spaceCount = substr_count($line, ' ');
 
             $wordSpacing = 0.0;
-            $lineX = $x;
-            if ($align === 'C') {
-                $lineX = $x + ($width - $lineWidth) / 2;
-            } elseif ($align === 'R') {
-                $lineX = $x + $width - $lineWidth;
-            } elseif ($align === 'J' && $index !== $lastIndex && $spaceCount > 0 && $lineWidth < $width) {
+            $lineX = TextPlacement::lineX($align, $x, $width, $lineWidth);
+
+            if ($align === HorizontalAlign::Justify
+                && $index !== $lastIndex && $spaceCount > 0 && $lineWidth < $width
+            ) {
                 $wordSpacing = ($width - $lineWidth) / $spaceCount;
             }
 
@@ -628,7 +678,7 @@ final class PageBuilder
     private function svgTextFont(SvgStyle $style, ?\Closure $resolver): ?SvgTextFont
     {
         $font = $resolver === null
-            ? self::standardFontFor($style->fontFamily, $style->bold, $style->italic)
+            ? StandardFont::matching($style->fontFamily, $style->bold, $style->italic)
             : $resolver($style->fontFamily ?? '', $style->bold, $style->italic);
 
         if (!$font instanceof Font) {
@@ -638,43 +688,6 @@ final class PageBuilder
         $writer = $font->writerFor($this->document);
 
         return new SvgTextFont($this->fontResourceName($font, $writer), $font, $writer);
-    }
-
-    private static function standardFontFor(?string $family, bool $bold, bool $italic): StandardFont
-    {
-        $family = strtolower($family ?? '');
-
-        // The first family named that this can honour wins, which is
-        // what the CSS font-family list means.
-        foreach (preg_split('/\s*,\s*/', $family) ?: [] as $name) {
-            $name = trim($name, " \t'\"");
-
-            if ($name === 'monospace' || str_contains($name, 'courier') || str_contains($name, 'mono')) {
-                return match (true) {
-                    $bold && $italic => StandardFont::CourierBoldOblique,
-                    $bold => StandardFont::CourierBold,
-                    $italic => StandardFont::CourierOblique,
-                    default => StandardFont::Courier,
-                };
-            }
-
-            if ($name === 'serif' || str_contains($name, 'times') || str_contains($name, 'georgia')
-                || str_contains($name, 'garamond') || str_contains($name, 'roman')) {
-                return match (true) {
-                    $bold && $italic => StandardFont::TimesBoldItalic,
-                    $bold => StandardFont::TimesBold,
-                    $italic => StandardFont::TimesItalic,
-                    default => StandardFont::TimesRoman,
-                };
-            }
-        }
-
-        return match (true) {
-            $bold && $italic => StandardFont::HelveticaBoldOblique,
-            $bold => StandardFont::HelveticaBold,
-            $italic => StandardFont::HelveticaOblique,
-            default => StandardFont::Helvetica,
-        };
     }
 
     /**

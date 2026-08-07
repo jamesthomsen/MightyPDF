@@ -142,6 +142,24 @@ final class EmbeddedFont implements Font
         return $metrics->toGlyphSpace($metrics->ascent) / 1000.0 * $sizePt;
     }
 
+    /**
+     * hhea records the descent as a negative number, which this reports
+     * as the distance it stands for -- see Font::descentPt(). A font
+     * whose hhea is positive there (a handful of older files are) would
+     * otherwise report a descent that lifts text instead of dropping it.
+     */
+    public function descentPt(float $sizePt): float
+    {
+        $metrics = $this->file->metrics();
+
+        return abs($metrics->toGlyphSpace($metrics->descent)) / 1000.0 * $sizePt;
+    }
+
+    public function capHeightPt(float $sizePt): float
+    {
+        return $this->file->metrics()->capHeightInGlyphSpace() / 1000.0 * $sizePt;
+    }
+
     /** Whether every character of $utf8Text has a glyph in this font. */
     public function supports(string $utf8Text): bool
     {

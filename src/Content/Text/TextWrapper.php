@@ -50,16 +50,43 @@ final class TextWrapper
     }
 
     /**
+     * Repeating the last call is free, which is what makes the
+     * measure-then-draw pattern this class exists for cost one wrap
+     * rather than two: a caller sizing a box asks for the line count and
+     * then hands the same text, font, size and width to a drawing call
+     * that wraps it again to place it (Layout\Flow::paragraph() is
+     * exactly this, and PageBuilder::drawParagraph() wraps internally by
+     * design). One entry rather than a cache, because that is the shape
+     * of the pattern -- measure, draw, move on -- and an unbounded cache
+     * of every paragraph in a long document is a memory leak wearing a
+     * performance fix's clothes.
+     *
+     * The size and width go into the key as their raw bytes rather than
+     * as decimal text, so two widths that differ below the printing
+     * precision cannot collide into one another's lines.
+     *
      * @return list<string> one UTF-8 line per element, always at least
      *   one element (a single empty string for empty input)
      */
     public static function wrapUtf8(string $utf8Text, Font $font, float $sizePt, float $maxWidthPt): array
     {
-        return self::wrapBy(
+        static $lastKey = null;
+        static $lastLines = [];
+
+        $key = $font->cacheKey() . "\0" . pack('dd', $sizePt, $maxWidthPt) . "\0" . $utf8Text;
+
+        if ($key === $lastKey) {
+            return $lastLines;
+        }
+
+        $lastLines = self::wrapBy(
             $utf8Text,
             static fn (string $text): float => $font->widthOfPt($text, $sizePt),
             $maxWidthPt,
         );
+        $lastKey = $key;
+
+        return $lastLines;
     }
 
     /**
@@ -87,6 +114,26 @@ final class TextWrapper
     }
 
     /**
+     * Measuring the accumulated line, rather than each word, is what
+     * made this quadratic: a line of k words measured its own prefix k
+     * times, and for a standard font re-encoded it each time too. On a
+     * page-width box that is invisible, because k is small; on a wide
+     * one it is not -- 4000 words on a single line took 1.6 seconds, and
+     * four times the words took sixteen times as long.
+     *
+     * So widths accumulate instead. Every measurer in this library sums
+     * per-glyph advances and so is additive -- width("a b") is
+     * width("a") + width(" ") + width("b") -- but that is a property of
+     * these fonts rather than of the \Closure signature, and it is only
+     * additive to within floating-point rounding either way. Near the
+     * boundary the running total is therefore not trusted: a candidate
+     * whose estimate lands within a hair of the limit is measured for
+     * real, which is also what resyncs the total against any drift. The
+     * guard band is nine orders of magnitude wider than the error it
+     * covers and costs at most one extra measurement per line, so the
+     * wrap this produces is the wrap the naive loop produced, character
+     * for character.
+     *
      * @param \Closure(string): float $widthOf
      * @return list<string>
      */
@@ -94,18 +141,37 @@ final class TextWrapper
     {
         $lines = [];
         $current = '';
+        $currentWidth = 0.0;
+        $spaceWidth = $widthOf(' ');
+        $tolerance = 1e-9 * max(1.0, abs($maxWidthPt));
 
         foreach (preg_split('/ +/', $paragraph) as $word) {
-            $candidate = $current === '' ? $word : "$current $word";
+            $wordWidth = $widthOf($word);
 
             // A lone word wider than the max width is placed on its own
             // line rather than split mid-word -- there's no hyphenation
-            // here, and breaking a word arbitrarily would be worse.
-            if ($current !== '' && $widthOf($candidate) > $maxWidthPt) {
+            // here, and breaking a word arbitrarily would be worse. That
+            // is this branch: nothing to break away from.
+            if ($current === '') {
+                $current = $word;
+                $currentWidth = $wordWidth;
+
+                continue;
+            }
+
+            $candidateWidth = $currentWidth + $spaceWidth + $wordWidth;
+
+            if (abs($candidateWidth - $maxWidthPt) <= $tolerance) {
+                $candidateWidth = $widthOf("$current $word");
+            }
+
+            if ($candidateWidth > $maxWidthPt) {
                 $lines[] = $current;
                 $current = $word;
+                $currentWidth = $wordWidth;
             } else {
-                $current = $candidate;
+                $current = "$current $word";
+                $currentWidth = $candidateWidth;
             }
         }
 

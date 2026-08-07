@@ -8,11 +8,14 @@ use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\Form\TextField;
 use MightyPDF\Assembler\Page;
+use MightyPDF\Assembler\Types\PdfNumberFormat;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Content\ContentStream;
 use MightyPDF\Content\Font\EmbeddedFont;
 use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\Font\TrueType\FontException;
+use MightyPDF\Content\Text\HorizontalAlign;
+use MightyPDF\Content\Text\VerticalAlign;
 use MightyPDF\Content\PageBuilder;
 use MightyPDF\Tests\Support\SyntheticTrueTypeFont;
 use PHPUnit\Framework\TestCase;
@@ -123,19 +126,34 @@ final class PageBuilderTest extends TestCase
         self::assertStringContainsString('1 0 0 1 28 ', $this->decompressedContentStreamBytes($page));
     }
 
+    /**
+     * Both ends of the box, stated in the font's own metrics rather than
+     * in numbers: the top baseline hangs the ascent from the top edge,
+     * and the bottom one stands the descent on the bottom edge, so a
+     * descender just touches it. The bottom used to be placed a whole
+     * line height up from the edge instead, which left a single line
+     * floating clear of the box it was aligned to.
+     */
     public function testDrawParagraphValignTopAndBottomPositionTheBaselineDifferently(): void
     {
+        $font = StandardFont::Courier;
+
         $document = new Document();
         $topPage = $document->newPage();
-        (new PageBuilder($document, $topPage))->drawParagraph(StandardFont::Courier, 10.0, 0, 0, 100, 100, 'Hi', valign: 'T');
+        (new PageBuilder($document, $topPage))->drawParagraph($font, 10.0, 0, 0, 100, 100, 'Hi', valign: 'T');
 
         $bottomDocument = new Document();
         $bottomPage = $bottomDocument->newPage();
-        (new PageBuilder($bottomDocument, $bottomPage))->drawParagraph(StandardFont::Courier, 10.0, 0, 0, 100, 100, 'Hi', valign: 'B');
+        (new PageBuilder($bottomDocument, $bottomPage))->drawParagraph($font, 10.0, 0, 0, 100, 100, 'Hi', valign: 'B');
 
-        // T: baseline = (0 + 100) - ascent(8) = 92. B: baseline = (0 + lineHeight(11.5)) - ascent(8) = 3.5.
-        self::assertStringContainsString('1 0 0 1 0 92 Tm', $this->decompressedContentStreamBytes($topPage));
-        self::assertStringContainsString('1 0 0 1 0 3.5 Tm', $this->decompressedContentStreamBytes($bottomPage));
+        self::assertStringContainsString(
+            sprintf('1 0 0 1 0 %s Tm', PdfNumberFormat::format(100.0 - $font->ascentPt(10.0))),
+            $this->decompressedContentStreamBytes($topPage),
+        );
+        self::assertStringContainsString(
+            sprintf('1 0 0 1 0 %s Tm', PdfNumberFormat::format($font->descentPt(10.0))),
+            $this->decompressedContentStreamBytes($bottomPage),
+        );
     }
 
     /**
@@ -159,6 +177,93 @@ final class PageBuilderTest extends TestCase
             "1 0 0 1 20 $expected Tm",
             $this->decompressedContentStreamBytes($page),
         );
+    }
+
+    /**
+     * The call that made "centre this in that box" something the library
+     * does. Checked against the geometry rather than against the formula:
+     * cap-middle means equal air above the capitals and below the
+     * baseline, which is true of exactly one placement.
+     */
+    public function testDrawTextInBoxCentresOnTheCapHeightWhenAsked(): void
+    {
+        $font = StandardFont::Helvetica;
+        $document = new Document();
+        $page = $document->newPage();
+
+        (new PageBuilder($document, $page))
+            ->drawTextInBox($font, 48.0, 0, 100, 200, 90, 'B', valign: VerticalAlign::CapMiddle);
+
+        preg_match('/1 0 0 1 [\d.]+ ([\d.]+) Tm/', $this->decompressedContentStreamBytes($page), $matches);
+        $baseline = (float) $matches[1];
+
+        self::assertEqualsWithDelta(
+            $baseline - 100.0,
+            190.0 - ($baseline + $font->capHeightPt(48.0)),
+            1e-4,
+        );
+    }
+
+    public function testDrawTextInBoxAlignsHorizontallyWithinTheBox(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+
+        // "Hi" is 12pt wide in Courier at 10pt, so a 100pt box centres it at 44.
+        (new PageBuilder($document, $page))
+            ->drawTextInBox(StandardFont::Courier, 10.0, 0, 0, 100, 20, 'Hi', HorizontalAlign::Center);
+
+        self::assertStringContainsString('1 0 0 1 44 ', $this->decompressedContentStreamBytes($page));
+    }
+
+    /**
+     * The gap that forced hand-wrapping before: a wrapped single line
+     * and an unwrapped one could not be lined up, because one was placed
+     * by ascent and the other by box height. Both now ask TextPlacement.
+     */
+    public function testDrawTextInBoxAndDrawParagraphAgreeOnASingleLine(): void
+    {
+        foreach (VerticalAlign::cases() as $valign) {
+            $boxDocument = new Document();
+            $boxPage = $boxDocument->newPage();
+            (new PageBuilder($boxDocument, $boxPage))
+                ->drawTextInBox(StandardFont::Helvetica, 14.0, 20, 100, 200, 60, 'One line', valign: $valign);
+
+            $paragraphDocument = new Document();
+            $paragraphPage = $paragraphDocument->newPage();
+            (new PageBuilder($paragraphDocument, $paragraphPage))
+                ->drawParagraph(StandardFont::Helvetica, 14.0, 20, 100, 200, 60, 'One line', valign: $valign);
+
+            self::assertSame(
+                $this->firstTextMatrix($boxPage),
+                $this->firstTextMatrix($paragraphPage),
+                $valign->name,
+            );
+        }
+    }
+
+    public function testDrawParagraphStillAcceptsItsOriginalStringAlignments(): void
+    {
+        $stringDocument = new Document();
+        $stringPage = $stringDocument->newPage();
+        (new PageBuilder($stringDocument, $stringPage))
+            ->drawParagraph(StandardFont::Courier, 10.0, 0, 0, 40, 100, 'Hi', align: 'R', valign: 'B');
+
+        $enumDocument = new Document();
+        $enumPage = $enumDocument->newPage();
+        (new PageBuilder($enumDocument, $enumPage))->drawParagraph(
+            StandardFont::Courier,
+            10.0,
+            0,
+            0,
+            40,
+            100,
+            'Hi',
+            align: HorizontalAlign::Right,
+            valign: VerticalAlign::Bottom,
+        );
+
+        self::assertSame($this->firstTextMatrix($stringPage), $this->firstTextMatrix($enumPage));
     }
 
     public function testDrawTextAtTheDocumentedOffsetSharesDrawParagraphsFirstBaseline(): void

@@ -63,6 +63,57 @@ enum StandardFont implements Font
         };
     }
 
+    /**
+     * The cut of a family matching a name and a weight/slope, for code
+     * holding a font as data rather than as a case: a style sheet, a
+     * config file, an SVG's font-family, a report ported from a library
+     * whose API was setFont('Arial', 'B').
+     *
+     * $family is a CSS-style list of preferences, and the first name
+     * that can be honoured wins -- which is what such a list means.
+     * Anything Times-like becomes Times and anything monospaced Courier;
+     * everything else, including an unrecognised name and none at all,
+     * becomes Helvetica.
+     *
+     * "Arial" landing on Helvetica is the useful case and not an
+     * accident: Arial is not one of the standard 14, the two share
+     * metrics, and every PDF toolchain has substituted one for the other
+     * for thirty years.
+     */
+    public static function matching(?string $family, bool $bold = false, bool $italic = false): self
+    {
+        foreach (preg_split('/\s*,\s*/', strtolower($family ?? '')) ?: [] as $name) {
+            $name = trim($name, " \t'\"");
+
+            if ($name === 'monospace' || str_contains($name, 'courier') || str_contains($name, 'mono')) {
+                return match (true) {
+                    $bold && $italic => self::CourierBoldOblique,
+                    $bold => self::CourierBold,
+                    $italic => self::CourierOblique,
+                    default => self::Courier,
+                };
+            }
+
+            if ($name === 'serif' || str_contains($name, 'times') || str_contains($name, 'georgia')
+                || str_contains($name, 'garamond') || str_contains($name, 'roman')
+            ) {
+                return match (true) {
+                    $bold && $italic => self::TimesBoldItalic,
+                    $bold => self::TimesBold,
+                    $italic => self::TimesItalic,
+                    default => self::TimesRoman,
+                };
+            }
+        }
+
+        return match (true) {
+            $bold && $italic => self::HelveticaBoldOblique,
+            $bold => self::HelveticaBold,
+            $italic => self::HelveticaOblique,
+            default => self::Helvetica,
+        };
+    }
+
     public function usesWinAnsiEncoding(): bool
     {
         return $this !== self::Symbol && $this !== self::ZapfDingbats;
@@ -109,15 +160,57 @@ enum StandardFont implements Font
         return WinAnsiEncoding::unrepresentableCharacters($utf8Text);
     }
 
-    /**
-     * The standard-14 metrics shipped here are advance widths only, with
-     * no ascent among them, so this is the conventional approximation
-     * (~0.8 of the nominal size) rather than a measurement. An embedded
-     * font states its own; see EmbeddedFont.
-     */
     public function ascentPt(float $sizePt): float
     {
-        return $sizePt * 0.8;
+        return $this->verticalMetrics()->ascentPt($sizePt);
+    }
+
+    public function descentPt(float $sizePt): float
+    {
+        return $this->verticalMetrics()->descentPt($sizePt);
+    }
+
+    public function capHeightPt(float $sizePt): float
+    {
+        return $this->verticalMetrics()->capHeightPt($sizePt);
+    }
+
+    /**
+     * The vertical extents from Adobe's Core 14 AFM files, transcribed
+     * the same way and from the same source as the width tables in
+     * Data/ -- Ascender, Descender and CapHeight, with the descender's
+     * sign flipped to the positive distance Font::descentPt() reports.
+     *
+     * These replace the flat 0.8-of-nominal-size ascent this enum used
+     * to return, which was a guess standing in for numbers nothing here
+     * had. Helvetica actually rises 0.718, so the guess sat text 0.082
+     * of the type size off: under a point in body copy, and most of a
+     * centimetre at the sizes a cover letter or a scorecard grade is
+     * set in. That error scaling with type size is exactly what makes
+     * this kind of approximation survive review and fail in print.
+     *
+     * Symbol and ZapfDingbats state no Ascender, Descender or CapHeight
+     * at all -- their AFMs describe glyphs that are not letters -- so
+     * their font bounding box stands in, and cap height follows
+     * FontFileMetrics's 0.7-of-ascent estimate for the same reason it
+     * does there: a plausible value is worth more than an absent one.
+     */
+    private function verticalMetrics(): VerticalMetrics
+    {
+        static $memo = [];
+
+        return $memo[$this->name] ??= match ($this) {
+            self::Helvetica, self::HelveticaOblique,
+            self::HelveticaBold, self::HelveticaBoldOblique => new VerticalMetrics(718, 207, 718),
+            self::TimesRoman => new VerticalMetrics(683, 217, 662),
+            self::TimesBold => new VerticalMetrics(683, 217, 676),
+            self::TimesItalic => new VerticalMetrics(683, 217, 653),
+            self::TimesBoldItalic => new VerticalMetrics(683, 217, 669),
+            self::Courier, self::CourierOblique,
+            self::CourierBold, self::CourierBoldOblique => new VerticalMetrics(629, 157, 562),
+            self::Symbol => new VerticalMetrics(1010, 293, 707),
+            self::ZapfDingbats => new VerticalMetrics(820, 143, 574),
+        };
     }
 
     public function writerFor(DocumentContext $document): FontWriter
@@ -160,12 +253,12 @@ enum StandardFont implements Font
     private function loadMetrics(): FontMetrics
     {
         return match ($this) {
-            self::Helvetica, self::HelveticaOblique => new FontMetrics(require __DIR__ . '/Data/Helvetica.php'),
-            self::HelveticaBold, self::HelveticaBoldOblique => new FontMetrics(require __DIR__ . '/Data/HelveticaBold.php'),
-            self::TimesRoman => new FontMetrics(require __DIR__ . '/Data/TimesRoman.php'),
-            self::TimesBold => new FontMetrics(require __DIR__ . '/Data/TimesBold.php'),
-            self::TimesItalic => new FontMetrics(require __DIR__ . '/Data/TimesItalic.php'),
-            self::TimesBoldItalic => new FontMetrics(require __DIR__ . '/Data/TimesBoldItalic.php'),
+            self::Helvetica, self::HelveticaOblique => FontMetrics::forWinAnsi(require __DIR__ . '/Data/Helvetica.php'),
+            self::HelveticaBold, self::HelveticaBoldOblique => FontMetrics::forWinAnsi(require __DIR__ . '/Data/HelveticaBold.php'),
+            self::TimesRoman => FontMetrics::forWinAnsi(require __DIR__ . '/Data/TimesRoman.php'),
+            self::TimesBold => FontMetrics::forWinAnsi(require __DIR__ . '/Data/TimesBold.php'),
+            self::TimesItalic => FontMetrics::forWinAnsi(require __DIR__ . '/Data/TimesItalic.php'),
+            self::TimesBoldItalic => FontMetrics::forWinAnsi(require __DIR__ . '/Data/TimesBoldItalic.php'),
             self::Courier, self::CourierBold, self::CourierOblique, self::CourierBoldOblique => FontMetrics::fixedWidth(600),
             // No per-glyph table shipped -- see class doc comment.
             self::Symbol, self::ZapfDingbats => FontMetrics::fixedWidth(500),
