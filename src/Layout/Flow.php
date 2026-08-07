@@ -7,6 +7,8 @@ namespace MightyPDF\Layout;
 use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\PageSize;
 use MightyPDF\Assembler\Types\PdfRectangle;
+use MightyPDF\Content\Barcode\QrEccLevel;
+use MightyPDF\Content\Barcode\Symbology;
 use MightyPDF\Content\Color;
 use MightyPDF\Content\Dash;
 use MightyPDF\Content\PageBuilder;
@@ -784,6 +786,67 @@ final class Flow
             fn (array $point): array => [$this->toPointsX($point[0]), $this->toPointsY($point[1])],
             $points,
         );
+    }
+
+    /**
+     * A linear barcode in a box, in this Flow's coordinates.
+     *
+     * **The default here is Code 128**, not the Code 39 that
+     * PageBuilder::drawBarcode() defaults to for compatibility. Code 128
+     * carries the whole of ASCII in two-thirds the width and packs digits
+     * two to a symbol, so it is what new code should be printing; the
+     * older default is kept only where it already was.
+     *
+     * The quiet zone is on by default too, for the reason it is on for QR
+     * codes: a barcode flowed into a document sits against other content
+     * rather than in a label's white space, and a symbol with no clear
+     * border does not scan.
+     */
+    public function barcode(
+        string $value,
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        Symbology|string $symbology = Symbology::Code128,
+        bool $quietZone = true,
+        ?Paint $paint = null,
+    ): static {
+        [$xPt, $bottomYPt, $widthPt, $heightPt] = $this->boxToPoints($x, $y, $width, $height);
+
+        $this->content()->drawBarcode(
+            $value,
+            $xPt,
+            $bottomYPt,
+            $widthPt,
+            $heightPt,
+            $symbology,
+            $quietZone,
+            $paint,
+        );
+
+        return $this;
+    }
+
+    /**
+     * A QR code, square, with ($x, $y) its top-left corner in this Flow's
+     * coordinates and $size its whole side including the quiet zone.
+     */
+    public function qrCode(
+        string $value,
+        float $x,
+        float $y,
+        float $size,
+        QrEccLevel $level = QrEccLevel::Medium,
+        bool $quietZone = true,
+        int $minVersion = 1,
+        ?Paint $paint = null,
+    ): static {
+        [$xPt, $bottomYPt, $sizePt] = $this->boxToPoints($x, $y, $size, $size);
+
+        $this->content()->drawQrCode($value, $xPt, $bottomYPt, $sizePt, $level, $quietZone, $minVersion, $paint);
+
+        return $this;
     }
 
     public function image(string $path, float $x, float $y, float $width, float $height): static

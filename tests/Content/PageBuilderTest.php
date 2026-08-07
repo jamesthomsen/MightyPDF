@@ -474,7 +474,10 @@ final class PageBuilderTest extends TestCase
         // 'A' framed as *A* is 3 characters * 9 elements = 27, of which
         // ceil(9/2)=5 are bars per character -> 15 filled rectangles total.
         self::assertSame(15, substr_count($bytes, ' re'));
-        self::assertSame(15, substr_count($bytes, 'f'));
+        // All fifteen in one path and one fill: they are the same colour
+        // by construction, and a Code 128 symbol has several times as
+        // many.
+        self::assertSame(1, substr_count($bytes, "\nf\n"));
         self::assertStringContainsString('0 0 0 rg', $bytes);
 
         // The last bar's right edge should reach (very close to) the

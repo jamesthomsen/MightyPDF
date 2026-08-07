@@ -22,7 +22,9 @@ use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReal;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfRectangle;
-use MightyPDF\Content\Barcode\Code39;
+use MightyPDF\Content\Barcode\QrCode;
+use MightyPDF\Content\Barcode\QrEccLevel;
+use MightyPDF\Content\Barcode\Symbology;
 use MightyPDF\Content\Font\EmbeddedFont;
 use MightyPDF\Content\Font\Font;
 use MightyPDF\Content\Font\FontWriter;
@@ -401,9 +403,23 @@ final class PageBuilder
      * stays a single-responsibility primitive.
      *
      * Bar width is uniform-narrow-element-scaled to exactly fill $width
-     * (Code39::elements() reports the barcode's width in abstract
+     * (Symbology::elements() reports the barcode's width in abstract
      * "module" units; this divides $width by the total module count to
      * get the actual point width of one narrow module).
+     *
+     * **$quietZone reserves the clear space a scanner needs** inside the
+     * box, rather than adding it outside: the bars shrink and the box
+     * stays the size the caller asked for, which is the behaviour that
+     * composes with a layout. It is off by default because that is what
+     * this method has always done -- but a barcode printed with no clear
+     * space around it does not scan, so a caller leaving it off is
+     * undertaking to leave the space itself. The amount differs by
+     * symbology and is asymmetric for EAN-13; Symbology::quietZoneModules()
+     * says what it is.
+     *
+     * $paint is for the rare case of a barcode that is not black. Be
+     * careful with it: scanners read contrast, and the usual advice is
+     * black bars on white and nothing else.
      */
     public function drawBarcode(
         string $value,
@@ -411,31 +427,106 @@ final class PageBuilder
         float $y,
         float $width,
         float $height,
-        string $symbology = 'code39',
+        Symbology|string $symbology = Symbology::Code39,
+        bool $quietZone = false,
+        ?Paint $paint = null,
     ): static {
-        if ($symbology !== 'code39') {
-            throw new \InvalidArgumentException("Unsupported barcode symbology '$symbology'.");
-        }
+        $symbology = Symbology::coerce($symbology);
+        $elements = $symbology->elements($value);
 
-        $elements = Code39::elements($value);
         $totalModules = array_sum(array_column($elements, 'widthModules'));
-        $moduleWidthPt = $width / $totalModules;
+        [$leftQuiet, $rightQuiet] = $quietZone ? $symbology->quietZoneModules() : [0, 0];
 
-        $operators = new ContentStream();
-        $cursor = $x;
+        $moduleWidthPt = $width / ($totalModules + $leftQuiet + $rightQuiet);
+
+        // One path with every bar in it rather than one fill per bar: a
+        // Code 128 symbol is a few dozen of them, and they all take the
+        // same colour by construction.
+        $cursor = $x + $leftQuiet * $moduleWidthPt;
+        $bars = [];
+
         foreach ($elements as $element) {
             $elementWidthPt = $element['widthModules'] * $moduleWidthPt;
+
             if ($element['isBar']) {
-                $operators->setFillColorRgb(0, 0, 0)
-                    ->rect($cursor, $y, $elementWidthPt, $height)
-                    ->fill();
+                $bars[] = [$cursor, $elementWidthPt];
             }
+
             $cursor += $elementWidthPt;
         }
 
-        $this->append($operators->bytes());
+        return $this->paintPath(
+            static function (ContentStream $path) use ($bars, $y, $height): void {
+                foreach ($bars as [$barX, $barWidth]) {
+                    $path->rect($barX, $y, $barWidth, $height);
+                }
+            },
+            $paint ?? Color::black(),
+        );
+    }
 
-        return $this;
+    /**
+     * Draws a QR code as a square of $size points, with ($x, $y) its
+     * bottom-left corner.
+     *
+     * Square because a QR code is: it is a grid of equal modules, and a
+     * box of some other shape would either distort it or leave the caller
+     * guessing where the code actually ended up. $size is the whole
+     * thing, quiet zone included.
+     *
+     * **The quiet zone is on by default here**, unlike the 1D barcodes.
+     * A QR code is normally placed against other content rather than in a
+     * label's white space, so leaving four modules of clear border to the
+     * caller is leaving it to be forgotten -- and the symbol then fails to
+     * scan for a reason that is invisible on the page.
+     *
+     * The module count is chosen from the data and the error-correction
+     * level, so two codes of different lengths come out at different
+     * densities in the same box. $minVersion pins the density where that
+     * matters -- a sheet of tickets, a run of labels.
+     */
+    public function drawQrCode(
+        string $value,
+        float $x,
+        float $y,
+        float $size,
+        QrEccLevel $level = QrEccLevel::Medium,
+        bool $quietZone = true,
+        int $minVersion = 1,
+        ?Paint $paint = null,
+    ): static {
+        $code = QrCode::encode($value, $level, $minVersion);
+
+        $margin = $quietZone ? QrCode::QUIET_ZONE_MODULES : 0;
+        $modules = $code->size();
+        $moduleSize = $size / ($modules + 2 * $margin);
+
+        // Each dark module is a square of exactly $moduleSize, placed on
+        // an exact grid. Rounding them to device pixels is the reader's
+        // business and it does it better than arithmetic here could --
+        // what matters is that the geometry is exact, since a module a
+        // fraction narrow makes a symbol a scanner has to work at.
+        return $this->paintPath(
+            static function (ContentStream $path) use ($code, $modules, $moduleSize, $margin, $x, $y, $size): void {
+                for ($row = 0; $row < $modules; ++$row) {
+                    for ($column = 0; $column < $modules; ++$column) {
+                        if (!$code->isDark($column, $row)) {
+                            continue;
+                        }
+
+                        $path->rect(
+                            $x + ($margin + $column) * $moduleSize,
+                            // Row 0 is the top of the symbol and PDF's y
+                            // runs up, so the rows are laid bottom-first.
+                            $y + $size - ($margin + $row + 1) * $moduleSize,
+                            $moduleSize,
+                            $moduleSize,
+                        );
+                    }
+                }
+            },
+            $paint ?? Color::black(),
+        );
     }
 
     // -- General shapes -------------------------------------------------
