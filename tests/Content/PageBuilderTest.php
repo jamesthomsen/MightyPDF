@@ -8,8 +8,11 @@ use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\Form\TextField;
 use MightyPDF\Assembler\Page;
+use MightyPDF\Assembler\Stream;
+use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Assembler\Types\PdfNumberFormat;
 use MightyPDF\Assembler\Types\PdfReference;
+use MightyPDF\Editor\PdfEditor;
 use MightyPDF\Content\ContentStream;
 use MightyPDF\Content\Font\EmbeddedFont;
 use MightyPDF\Content\Font\StandardFont;
@@ -1094,6 +1097,43 @@ final class PageBuilderTest extends TestCase
 
         preg_match('/\/Fields \[([^\]]*)\]/', $output, $fields);
         self::assertSame(1, substr_count($fields[1], ' 0 R'));
+    }
+
+    /**
+     * An unsigned signature field has no value to lay out, so
+     * /NeedAppearances gives a reader nothing to work from and it needs
+     * an appearance stream of its own -- blank, but present. Ghostscript
+     * 10.02 reports the absence ("AcroForm field 'Sig' with no AP not
+     * implemented"); 10.06 does not, which is why this was found in CI
+     * rather than here.
+     */
+    public function testASignatureFieldCarriesABlankAppearance(): void
+    {
+        $document = new Document();
+        $page = $document->newPage();
+        (new PageBuilder($document, $page))->addSignatureField('Signature', 72, 700, 200, 40);
+
+        $editor = PdfEditor::fromBytes($document->save());
+        $form = $editor->resolveDictionary($editor->catalog()->get('AcroForm'));
+        $fields = $editor->resolve($form?->get('Fields'));
+        self::assertInstanceOf(PdfArray::class, $fields);
+
+        $field = $editor->resolveDictionary($fields->items()[0]);
+        $appearances = $editor->resolveDictionary($field?->get('AP'));
+        self::assertInstanceOf(Dictionary::class, $appearances, 'a signature widget needs an /AP');
+
+        // A single-state widget's /AP /N is the stream itself, not a
+        // dictionary of states -- that form belongs to buttons.
+        $normal = $editor->resolve($appearances->get('N'));
+        self::assertInstanceOf(Stream::class, $normal);
+        self::assertSame('', $editor->store()->decodedStream($normal), 'blank, but present');
+
+        // A PdfArray rather than a PdfRectangle: the rectangle type is a
+        // writer-side convenience and the reader parses what is on disk,
+        // which is an array of four numbers.
+        $box = $normal->get('BBox');
+        self::assertInstanceOf(PdfArray::class, $box);
+        self::assertSame('[0 0 200 40]', $box->format());
     }
 
     public function testResultingPdfWithChoiceAndSignatureFieldsIsStructurallyValid(): void

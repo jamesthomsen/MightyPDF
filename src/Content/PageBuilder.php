@@ -1714,11 +1714,32 @@ final class PageBuilder
      */
     public function addSignatureField(string $name, float $x, float $y, float $width, float $height): static
     {
-        $field = new SignatureField($this->document->allocate(), $name, new PdfRectangle($x, $y, $x + $width, $y + $height));
+        // Blank, but present -- see SignatureField, and buildMarkAppearance()
+        // for the same shape of object one field type over.
+        $appearance = $this->buildEmptyAppearance($width, $height);
+        $this->document->register($appearance);
+
+        $field = new SignatureField(
+            $this->document->allocate(),
+            $name,
+            new PdfRectangle($x, $y, $x + $width, $y + $height),
+            $appearance,
+        );
 
         $this->registerField($field);
 
         return $this;
+    }
+
+    /** A form XObject the size of a widget with nothing drawn in it. */
+    private function buildEmptyAppearance(float $width, float $height): Stream
+    {
+        $stream = new Stream($this->document->allocate(), '', compress: false);
+        $stream->set('Type', new PdfName('XObject'));
+        $stream->set('Subtype', new PdfName('Form'));
+        $stream->set('BBox', new PdfRectangle(0, 0, $width, $height));
+
+        return $stream;
     }
 
     /**
