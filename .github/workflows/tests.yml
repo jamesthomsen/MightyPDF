@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    # Every version composer.json claims to support. The library is
+    # developed on the newest of them, so the older ones are the ones
+    # this is actually here to catch.
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4', '8.5']
+
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, iconv, libxml, openssl, simplexml, zlib
+          coverage: none
+
+      # composer.lock is not committed, so this resolves fresh rather
+      # than installing from a lock file that is not there.
+      - name: Install dependencies
+        run: composer update --no-interaction --no-progress --prefer-dist
+
+      - name: Tests
+        run: vendor/bin/phpunit
+
+      # The examples are the documentation, and nothing in the suite
+      # would notice one of them going stale. Each writes to
+      # examples/output/ and is expected to exit 0.
+      - name: Examples
+        run: |
+          for example in examples/*.php; do
+            echo "--- $example"
+            php "$example" > /dev/null
+          done
