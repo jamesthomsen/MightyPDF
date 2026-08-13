@@ -163,6 +163,20 @@ final class PdfEditor
         return $this->changed;
     }
 
+    /**
+     * How many bytes the document had when it was opened -- which is to
+     * say where the update save() appends begins.
+     *
+     * For a caller that has to find something it just added in the saved
+     * bytes, and must not find a copy of it that the original file
+     * happened to contain. See Signature\DeferredSignature::locate(),
+     * which is the one such caller and the reason this is public.
+     */
+    public function originalLength(): int
+    {
+        return strlen($this->originalBytes);
+    }
+
     public function save(): string
     {
         // Opening a file and saving it without changing anything must not
