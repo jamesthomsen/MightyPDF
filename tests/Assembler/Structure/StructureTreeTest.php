@@ -14,6 +14,7 @@ use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\PageBuilder;
 use MightyPDF\Editor\PageTree;
 use MightyPDF\Editor\PdfEditor;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 final class StructureTreeTest extends TestCase
@@ -25,11 +26,16 @@ final class StructureTreeTest extends TestCase
 
         (new PageBuilder($document, $page))->drawText(StandardFont::Helvetica, 12.0, 60, 700, 'Plain');
 
-        $pdf = $document->save();
+        $saved = SavedDocument::of($document);
 
-        self::assertStringNotContainsString('/StructTreeRoot', $pdf);
-        self::assertStringNotContainsString('/MarkInfo', $pdf);
-        self::assertStringNotContainsString('BDC', $pdf);
+        self::assertNull($saved->at('StructTreeRoot'));
+        self::assertNull($saved->at('MarkInfo'));
+
+        // Against the *decoded* content stream. Searching the saved file
+        // for "BDC" proved nothing at all: content streams are deflated,
+        // so the operator never appears literally and the assertion
+        // passed on tagged and untagged documents alike.
+        self::assertStringNotContainsString('BDC', $saved->contentOf(0));
     }
 
     public function testDrawingDoesNotTurnTaggingOn(): void
@@ -79,7 +85,7 @@ final class StructureTreeTest extends TestCase
 
         self::assertStringContainsString('/H1 << /MCID 0 >> BDC', self::firstPageContent($pdf));
         self::assertStringContainsString('EMC', self::firstPageContent($pdf));
-        self::assertStringContainsString('/StructParents 0', $pdf);
+        self::assertSame(0, SavedDocument::scalar(SavedDocument::fromBytes($pdf)->page(0)->get('StructParents')));
     }
 
     public function testMarkedContentIsClosedEvenWhenDrawingThrows(): void
@@ -237,7 +243,13 @@ final class StructureTreeTest extends TestCase
 
         $content->tagged($figure, fn (PageBuilder $b) => $b->fillRectangle(60, 400, 100, 80));
 
-        self::assertStringContainsString('(A bar chart of revenue by region.)', $document->save());
+        $saved = SavedDocument::of($document);
+        // The document element's sole child is written directly rather
+        // than wrapped in an array -- see the /K 0 test below.
+        $element = $saved->dictionary('StructTreeRoot', 'K', 'K');
+
+        self::assertSame('Figure', $element->get('S')?->value());
+        self::assertSame('A bar chart of revenue by region.', SavedDocument::scalar($element->get('Alt')));
     }
 
     public function testRefusesToSkipAHeadingLevel(): void
@@ -288,7 +300,11 @@ final class StructureTreeTest extends TestCase
 
         // /K 0 rather than /K [0]: §14.7.2 permits both, and readers that
         // trip over a single-element array are commoner than the reverse.
-        self::assertStringContainsString('/K 0', $document->save());
+        // So the type is the claim, not just the number.
+        $kids = SavedDocument::of($document)->at('StructTreeRoot', 'K', 'K', 'K');
+
+        self::assertInstanceOf(PdfInteger::class, $kids);
+        self::assertSame(0, $kids->value());
     }
 
     public function testARoleCanBeMappedOntoAStandardOne(): void
@@ -298,7 +314,7 @@ final class StructureTreeTest extends TestCase
 
         $document->structure()->mapRole('Recital', StructureRole::Paragraph);
 
-        self::assertStringContainsString('/RoleMap << /Recital /P >>', $document->save());
+        self::assertSame('P', SavedDocument::of($document)->value('StructTreeRoot', 'RoleMap', 'Recital'));
     }
 
     public function testHeadingLevelsAreKnownToTheRole(): void
@@ -331,7 +347,9 @@ final class StructureTreeTest extends TestCase
         $overlay->content()->drawText(StandardFont::Helvetica, 12.0, 60, 700, 'Stamped');
         $overlay->apply();
 
-        self::assertStringNotContainsString('BDC', $editor->save());
+        // Decoded, for the same reason as above -- the compressed form
+        // of this assertion could never have failed.
+        self::assertStringNotContainsString('BDC', SavedDocument::fromBytes($editor->save())->contentOf(0));
     }
 
     /** The decoded content of the first page -- streams are compressed. */
