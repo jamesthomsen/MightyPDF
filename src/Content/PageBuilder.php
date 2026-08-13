@@ -38,6 +38,7 @@ use MightyPDF\Content\Font\TrueType\FontException;
 use MightyPDF\Content\Image\GifImage;
 use MightyPDF\Content\Image\JpegImage;
 use MightyPDF\Content\Image\PngImage;
+use MightyPDF\Content\Image\TiffImage;
 use MightyPDF\Content\Svg\SvgDocument;
 use MightyPDF\Content\Svg\SvgGradient;
 use MightyPDF\Content\Svg\SvgPattern;
@@ -1073,6 +1074,45 @@ final class PageBuilder
         $image = $this->loadImage($path, 'gif', fn (string $bytes) => GifImage::fromBytes($this->document, $bytes));
 
         return $this->placeImage($image, $x, $y, $width, $height);
+    }
+
+    /**
+     * Places a TIFF, which is what a scanner or a fax gateway produces.
+     *
+     * A fax-coded (CCITT G3/G4) TIFF is relayed into the page without
+     * being decoded, so a scanned batch embeds at the size it arrived
+     * rather than as bitmaps -- see TiffImage.
+     *
+     * @param int $page which image in the file; a TIFF may hold many, and
+     *        a multi-page fax does
+     */
+    public function drawTiff(
+        string $path,
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        int $page = 0,
+    ): static {
+        $image = $this->loadImage(
+            $path,
+            "tiff#$page",
+            fn (string $bytes) => TiffImage::fromBytes($this->document, $bytes, $page),
+        );
+
+        return $this->placeImage($image, $x, $y, $width, $height);
+    }
+
+    /** How many images a TIFF file holds. */
+    public static function tiffPageCount(string $path): int
+    {
+        $bytes = file_get_contents($path);
+
+        if ($bytes === false) {
+            throw new \RuntimeException("Unable to read image file: $path");
+        }
+
+        return TiffImage::pageCount($bytes);
     }
 
     /**
