@@ -40,6 +40,8 @@ final class Document implements DocumentContext
     private ?Outline $outline = null;
     private ?DocumentInfo $info = null;
     private ?ViewerPreferences $viewerPreferences = null;
+    private ?PageLabels $pageLabels = null;
+    private ?XmpMetadata $metadata = null;
 
     /** @var array<string, FileSpecification> attachment name => its file specification */
     private array $attachments = [];
@@ -240,6 +242,54 @@ final class Document implements DocumentContext
         return $this->viewerPreferences;
     }
 
+    /**
+     * What the reader calls each page -- roman front matter, an appendix
+     * numbered A-1, a cover with no number at all.
+     *
+     * Created lazily like the rest, so a document that says nothing about
+     * its numbering carries no /PageLabels and readers count from 1 as
+     * they always did.
+     */
+    public function pageLabels(): PageLabels
+    {
+        if ($this->pageLabels === null) {
+            $this->pageLabels = new PageLabels($this->registry->allocate());
+            $this->registry->register($this->pageLabels);
+            $this->catalog->setPageLabels($this->pageLabels->objectId());
+
+            // Checked at save rather than as runs are declared: whether
+            // page 0 has been covered is only knowable once the caller
+            // has stopped declaring them.
+            $this->onBeforeSave(fn () => $this->pageLabels?->validate());
+        }
+
+        return $this->pageLabels;
+    }
+
+    /**
+     * The document's XMP packet -- the metadata everything except a PDF
+     * reader's properties box actually reads.
+     *
+     * Asking for it is what turns it on. The packet is generated from
+     * info() at save, so the two cannot drift apart; see XmpMetadata for
+     * why that direction rather than the other.
+     */
+    public function metadata(): XmpMetadata
+    {
+        if ($this->metadata === null) {
+            $this->metadata = new XmpMetadata($this->registry->allocate());
+            $this->registry->register($this->metadata->stream());
+            $this->catalog->setMetadata($this->metadata->objectId());
+
+            // At save rather than now: info() may not have been touched
+            // yet, and which of the two calls comes first must not change
+            // what the file says.
+            $this->onBeforeSave(fn () => $this->metadata?->buildFrom($this->info));
+        }
+
+        return $this->metadata;
+    }
+
     /** Which panel the reader shows when the document opens. */
     public function setPageMode(PageMode $mode): void
     {
@@ -384,11 +434,20 @@ final class Document implements DocumentContext
      * So: an empty user password gives a document that anyone can read and
      * that politely asks to be treated a certain way. A real one gives a
      * document that cannot be read without it.
+     *
+     * @param bool $encryptMetadata whether the XMP packet is enciphered
+     *        along with everything else. True is the default and the
+     *        spec's; false leaves metadata() readable in the clear, which
+     *        is the point of having it -- an indexer or asset manager with
+     *        no password can still see the title and author of a document
+     *        whose contents it cannot read. Only turn it off knowing that
+     *        those fields become public.
      */
     public function encrypt(
         string $ownerPassword,
         string $userPassword = '',
         ?int $permissions = null,
+        bool $encryptMetadata = true,
     ): void {
         if ($this->encryptObjectId !== null) {
             throw new \LogicException('This document is already encrypted.');
@@ -398,6 +457,7 @@ final class Document implements DocumentContext
             $userPassword,
             $ownerPassword,
             $permissions ?? Permissions::all(),
+            $encryptMetadata,
         );
 
         $dictionary = new Dictionary($this->registry->allocate());
@@ -540,6 +600,14 @@ final class Document implements DocumentContext
      * tells a reader how to decrypt everything else, so enciphering it
      * would leave a file nothing could open.
      *
+     * So is the XMP packet of a document that said /EncryptMetadata
+     * false. That entry is a promise to the reader about where the
+     * plaintext is, and a file that makes it and then enciphers the
+     * packet anyway does not produce unreadable metadata -- it produces
+     * metadata a conforming reader confidently reads as noise. See
+     * CryptTransform::isNeverEncrypted(), which the reader has always
+     * consulted from the other direction.
+     *
      * @return (\Closure(PdfObject): PdfObject)|null
      */
     private function encryptionPass(): ?\Closure
@@ -554,6 +622,11 @@ final class Document implements DocumentContext
 
         return static function (PdfObject $object) use ($security, $encryptObjectId): PdfObject {
             if ($object->objectId() === $encryptObjectId) {
+                return $object;
+            }
+
+            if ($object instanceof Dictionary
+                && CryptTransform::isNeverEncrypted($object, $security->encryptsMetadata())) {
                 return $object;
             }
 

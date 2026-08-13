@@ -64,6 +64,18 @@ final class Catalog extends Dictionary
         $this->set('ViewerPreferences', new PdfReference($objectId));
     }
 
+    /** What the reader calls each page (§12.4.2, /PageLabels). */
+    public function setPageLabels(int $objectId): void
+    {
+        $this->set('PageLabels', new PdfReference($objectId));
+    }
+
+    /** The document's XMP packet (§14.3.2, /Metadata). */
+    public function setMetadata(int $objectId): void
+    {
+        $this->set('Metadata', new PdfReference($objectId));
+    }
+
     /**
      * The document's name trees (§7.7.4) -- of which this library builds
      * exactly one, /EmbeddedFiles.

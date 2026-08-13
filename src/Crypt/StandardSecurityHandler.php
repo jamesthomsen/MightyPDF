@@ -73,8 +73,12 @@ final class StandardSecurityHandler
      * re-encrypting the document, and why an empty user password leaves
      * the key readable by anyone.
      */
-    public static function create(string $userPassword, string $ownerPassword, int $permissions): self
-    {
+    public static function create(
+        string $userPassword,
+        string $ownerPassword,
+        int $permissions,
+        bool $encryptMetadata = true,
+    ): self {
         $fileKey = random_bytes(32);
 
         $userValidationSalt = random_bytes(8);
@@ -112,9 +116,16 @@ final class StandardSecurityHandler
                 $fileKey,
                 self::modernHash($userPassword, $userKeySalt, '', 6),
             )))
-            ->set('Perms', PdfString::raw(self::permissionsBlock($permissions, $fileKey)));
+            ->set('Perms', PdfString::raw(self::permissionsBlock($permissions, $fileKey, $encryptMetadata)));
 
-        return new self($fileKey, 6, CryptMethod::Aes256, CryptMethod::Aes256, true, $dictionary);
+        // Written only when false: true is the default (Table 21), and a
+        // reader that has to be told its own default is a reader being
+        // given noise to parse.
+        if (!$encryptMetadata) {
+            $dictionary->set('EncryptMetadata', new PdfBoolean(false));
+        }
+
+        return new self($fileKey, 6, CryptMethod::Aes256, CryptMethod::Aes256, $encryptMetadata, $dictionary);
     }
 
     /**
@@ -433,13 +444,17 @@ final class StandardSecurityHandler
      * in the clear. Without it the flags could be rewritten by anyone with
      * a hex editor, since /P itself is not protected.
      */
-    private static function permissionsBlock(int $permissions, string $fileKey): string
+    private static function permissionsBlock(int $permissions, string $fileKey, bool $encryptMetadata): string
     {
         $block = pack('V', $permissions & 0xFFFFFFFF)
             . "\xFF\xFF\xFF\xFF"
-            // 'T' for "metadata is encrypted", then the literal marker
-            // bytes the spec requires, then four bytes of anything.
-            . 'T'
+            // 'T' or 'F' for whether metadata is encrypted, then the
+            // literal marker bytes the spec requires, then four bytes of
+            // anything. This byte has to agree with /EncryptMetadata: it
+            // is the enciphered copy a reader checks the plaintext one
+            // against, so disagreeing is how a document reports itself as
+            // tampered with.
+            . ($encryptMetadata ? 'T' : 'F')
             . 'adb'
             . random_bytes(4);
 

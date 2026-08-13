@@ -18,6 +18,19 @@ use MightyPDF\Assembler\Types\PdfString;
  */
 final class DocumentInfo extends Dictionary
 {
+    /**
+     * The dates as they were handed over, kept alongside the formatted
+     * strings in the dictionary.
+     *
+     * XMP states the same two dates in ISO 8601 (see XmpMetadata), and
+     * recovering a \DateTimeInterface by parsing "D:20260807120000+01'00'"
+     * back out of the dictionary would be a lossy round trip through a
+     * format that exists to be written rather than read. Keeping the
+     * original costs two properties and means the two never disagree.
+     */
+    private ?\DateTimeInterface $creationDate = null;
+    private ?\DateTimeInterface $modificationDate = null;
+
     public function setTitle(string $title): void
     {
         $this->set('Title', PdfString::text($title));
@@ -56,7 +69,39 @@ final class DocumentInfo extends Dictionary
      */
     public function setCreationDate(\DateTimeInterface $date): void
     {
+        $this->creationDate = $date;
         $this->set('CreationDate', PdfString::latin1(self::formatDate($date)));
+    }
+
+    /** /ModDate, in the same format -- when the document was last changed. */
+    public function setModificationDate(\DateTimeInterface $date): void
+    {
+        $this->modificationDate = $date;
+        $this->set('ModDate', PdfString::latin1(self::formatDate($date)));
+    }
+
+    public function creationDate(): ?\DateTimeInterface
+    {
+        return $this->creationDate;
+    }
+
+    public function modificationDate(): ?\DateTimeInterface
+    {
+        return $this->modificationDate;
+    }
+
+    /**
+     * One of the text entries as plain UTF-8, or null if it was never set.
+     *
+     * The dictionary holds PdfStrings, which may be UTF-16BE with a BOM;
+     * anything restating this information elsewhere (XMP) needs the text
+     * rather than the encoding it was written in.
+     */
+    public function text(string $key): ?string
+    {
+        $value = $this->get($key);
+
+        return $value instanceof PdfString ? $value->toUtf8() : null;
     }
 
     private static function formatDate(\DateTimeInterface $date): string
