@@ -58,6 +58,8 @@ output is written to `examples/output/`.
 | [19-barcodes-and-qr-codes.php](examples/19-barcodes-and-qr-codes.php) | Code 39, Code 128, EAN-13, UPC-A, and QR at all four levels |
 | [20-print-colours.php](examples/20-print-colours.php) | CMYK, a spot colour at five tints, and a dieline separation |
 | [21-attachments-and-viewer-preferences.php](examples/21-attachments-and-viewer-preferences.php) | An invoice carrying its own XML, viewer preferences, a rotated page |
+| [24-a-print-ready-flyer-with-bleed.php](examples/24-a-print-ready-flyer-with-bleed.php) | Bleed and trim boxes, artwork off the edge, margins from the cut |
+| [25-form-data-in-and-out.php](examples/25-form-data-in-and-out.php) | Exporting a filled form as XFDF and JSON, and importing both back |
 
 ## Core concepts
 
@@ -553,6 +555,33 @@ recoverable, `Medium` ≈ 15% (the default and the usual choice),
 will be printed small, on something that creases, or with a logo over
 the middle.
 
+### Data Matrix
+
+The 2D symbology of small things — a component, a vial, a postal item, a
+form field that has to survive a fax. It packs more into a small area than
+QR and, unlike QR, needs only a one-module quiet zone.
+
+```php
+$content->drawDataMatrix('LOT-4471/A', x: 72, y: 560, size: 60);
+```
+
+Square by default. The six rectangular sizes exist for marking things that
+are themselves long and thin, and are a choice rather than an optimisation
+— a rectangle almost never comes out smaller:
+
+```php
+use MightyPDF\Content\Barcode\DataMatrixShape;
+
+$content->drawDataMatrix('LOT-4471/A', 72, 560, 60, DataMatrixShape::Rectangular);
+```
+
+Encoding is ASCII mode throughout, which puts **two digits in one
+codeword** — the case that dominates, since the things Data Matrix is
+printed on are mostly numbered rather than described. Long runs of letters
+come out up to about a third larger than C40 would manage. The symbol
+sizes were checked module-for-module against libdmtx, and every one of
+them round-trips through it.
+
 ### Quiet zones
 
 A barcode printed hard against other content does not scan, and that is
@@ -589,6 +618,29 @@ cropped).
   (1/2/4, grayscale or indexed) relay verbatim when not interlaced, and
   are widened to one byte per pixel when they are.
 - **GIF**: decoded to indexed color; transparency is supported.
+- **TIFF**: the format scanners and fax gateways produce.
+
+```php
+$content->drawTiff($path, x: 72, y: 400, width: 200, height: 120);
+$content->drawTiff($path, 72, 400, 200, 120, page: 2);   // a multi-page fax
+```
+
+**CCITT Group 3 and Group 4 strips are relayed, not decoded.** That is the
+point rather than an optimisation: a G4 strip is already what PDF's
+`/CCITTFaxDecode` expects, so a scan embeds as the same bytes it arrived
+as — no decode, no re-encode, no generation loss, and a 30 MB batch of
+scans that embeds in about 30 MB rather than swelling to hundreds.
+
+Everything else is decoded and re-emitted as Flate: uncompressed, LZW,
+PackBits and Deflate, in bilevel, grayscale, RGB or palette, with the
+horizontal predictor undone. `PageBuilder::tiffPageCount($path)` says how
+many images a file holds.
+
+Refused rather than mis-rendered: JPEG-in-TIFF, tiled images, separated
+planes (`/PlanarConfiguration 2`), CMYK and YCbCr. A fax split across
+several strips is refused too — each strip is coded independently, so
+concatenating them decodes correctly until the second strip and then to
+noise.
 
 ## SVG vector graphics
 
@@ -762,7 +814,7 @@ $content->addSignatureField('signature', x: 200, y: 390, width: 200, height: 40)
 
 `addListBox(string $name, array $options, float $x, float $y, float $width, float $height, ?string $value = null, Font $font = StandardFont::Helvetica, float $fontSizePt = 10.0)` and `addDropdown(...)` (same signature) — `$options` is a plain list of strings; a dropdown is a list box with the spec's "Combo" flag set, which is the only difference between the two.
 
-`addSignatureField(string $name, float $x, float $y, float $width, float $height)` — reserves a `/Rect` and an `/AcroForm` entry for a signature to be added later by some other process. This library does not sign documents (hashing a byte range, embedding a certificate, and validating trust are a different feature this project doesn't touch anywhere else), so the field is always created unsigned, with no `/V`.
+`addSignatureField(string $name, float $x, float $y, float $width, float $height)` — reserves a `/Rect` and an `/AcroForm` entry for a signature to be added later. The field is created unsigned, with no `/V` (which is what the spec says an unsigned field looks like). To actually put a signature in it, see [Signing](#signing-a-document): this library prepares and completes the signature, and an external signer holding the key produces the CMS.
 
 ### The font a field is filled in with
 
@@ -875,11 +927,133 @@ table row is a run of cells and a `newLine()`.
 and auto-sizes its box unless you pass a height. Both place text through
 the same `TextPlacement`, so a wrapped cell and an unwrapped one of the
 same geometry sit on the same baselines. `paragraphHeight()` measures
-without drawing.
+without drawing. `write()` is the third shape — a run rather than a
+block, for a phrase inside a sentence (see "Runs" below).
 
 **Page breaks.** Automatic, and `willFit()`/`breakIfNeeded()` let custom
 drawing take part in the same decision. An element taller than the page
-body overflows one page rather than breaking forever.
+body overflows one page rather than breaking forever. `onPageBreak()`
+takes the decision over, which is how a page gets columns.
+
+**Margins.** `margins()` reads them and `setMargins()` moves them. They
+are cursor state rather than configuration: where a line starts and
+ends, what `contentWidth()` is, and how far down the page runs before it
+breaks.
+
+### Runs: text inside a sentence
+
+`paragraph()` is a block. It takes a width, starts a line of its own and
+ends one — so a phrase in a second colour, or behind a link, in the
+middle of a sentence has nowhere to go. `write()` is the other half of
+the pair: it starts where the cursor is, wraps between the margins, and
+leaves the cursor at the end of the last line rather than on the next
+one.
+
+```php
+$flow->write('These goods are supplied under the ', $body)
+     ->write('standard conditions of sale', $body->with(color: $blue),
+         link: 'https://example.com/conditions')
+     ->write(', which are incorporated by reference. ', $body)
+     ->write('Nothing here varies them.', $body->with(font: StandardFont::HelveticaBoldOblique))
+     ->newLine(6.0);
+```
+
+Between them there is no need for an inline layout engine. A run wraps,
+breaks the page between its lines, and gets one link rectangle per line,
+so a link broken across a line break is clickable on both halves.
+
+A run is **not a box**, so the style's `fill`, `border`, `paddingPt` and
+horizontal alignment do not apply — there is nothing to align a fragment
+of a line within, and a background belongs to the block that holds the
+run. Its font, size, colour and vertical alignment do apply, and the
+last of those is what makes a run and a `cell()` of the same height sit
+on one baseline.
+
+The spaces at the ends of a run are kept. Wrapping normally discards
+them, which is right inside a paragraph and would silently glue
+`write('Visit ')` to `write('the site')`.
+
+### Links, in millimetres
+
+The content layer's `addLink()` has always taken points from the
+bottom-left. `link()` and `linkTo()` are the same rectangles in the
+layout layer's own coordinates, and `cell()` takes them as arguments —
+because the target of a link in a table is usually the row, not the
+eleven characters of blue text in it.
+
+```php
+$flow->link(20.0, 30.0, 60.0, 10.0, 'https://example.com/');
+$flow->linkTo(20.0, 45.0, 60.0, 10.0, Destination::fitPage($appendix));
+
+$flow->cell(60.0, 8.0, 'Terms of service', $body, link: 'https://example.com/tos');
+$flow->cell(60.0, 8.0, 'Appendix A', $body, destination: Destination::of($appendix));
+```
+
+Neither draws anything. The blue underline that makes a link *look* like
+one is yours, which is what lets a link cover an image, a table cell or
+a whole panel just as easily.
+
+### Columns
+
+`onPageBreak()` is handed the `Flow` and the height that would not fit,
+and returns `true` to let the page break or `false` to say it has dealt
+with it. A column is a left edge and a right edge — which is to say a
+pair of margins — so dealing with it is moving those:
+
+```php
+$column = 0;
+
+$flow->onPageBreak(function (Flow $flow) use (&$column, $left, $right): bool {
+    $column = 1 - $column;
+
+    if ($column === 0) {
+        $flow->setMargins($flow->margins()->with(left: $left, right: $right));
+
+        return true;                    // second column full: turn the page
+    }
+
+    $flow->setMargins($flow->margins()->with(left: $right, right: 15.0));
+    $flow->moveTo($right, $flow->margins()->top);
+
+    return false;                       // first column full: move across
+});
+```
+
+Move the **margins**, not only the cursor. `newLine()` returns to the
+left margin and wrapping stops at the right, so a hook that moves the
+cursor alone gets one correct line and then drifts back to the page
+edge.
+
+The hook governs automatic breaks only: `newPage()` is an instruction
+rather than a question, including the hook's own call to it. Automatic
+breaks are suppressed while the hook runs, so a hook that positions
+itself by drawing cannot ask itself whether to break, forever.
+
+### A page of another size
+
+`newPage()` takes one, and every measurement afterwards follows the page
+being drawn on — `pageWidth()`, `contentWidth()`, `bottomLimit()`, the
+conversion to points, and the margins, which hold against that page's
+edges. A portrait report with one landscape table in it is a document,
+not two.
+
+```php
+$flow->newPage(PageSize::A4->landscape());
+$flow->table([70.0, 45.0, 45.0, 45.0, 62.0]);   // 267mm of body, not 180mm
+$flow->newPage();                               // back to the Flow's own size
+```
+
+Left out, the page is the size the `Flow` was built with rather than the
+size of the page just finished. An **automatic** break goes the other
+way and continues at the current size: a run of rows that started on a
+wide sheet was measured against it, and continuing on a narrower one
+would overflow columns that were correct when they were sized.
+
+`onEachPage()` hooks see the geometry of the page they are drawing on,
+so one footer expression puts a centred page number on both.
+
+See [`examples/22-runs-columns-and-a-landscape-page.php`](examples/22-runs-columns-and-a-landscape-page.php)
+for all three in one document.
 
 ### Tables
 
@@ -1090,6 +1264,10 @@ $document->newPage(PageSize::A4);          // or ::A3, ::A5, ::Letter, ::Legal, 
 $document->newPage(PageSize::A4->landscape());
 ```
 
+`Flow::newPage()` takes the same thing, and the whole layout layer
+measures against the page it is drawing on — see "A page of another
+size" above.
+
 ### Turning a page
 
 ```php
@@ -1215,6 +1393,63 @@ rather than being transliterated or mangled. `setCreationDate()` takes any
 See [`examples/12-document-metadata.php`](examples/12-document-metadata.php)
 for a runnable version.
 
+### XMP
+
+`/Info` is what a PDF reader shows in its properties box. **XMP** is what
+asset managers, search indexes, print workflows and every conformance
+level above plain PDF look at, and a file with only `/Info` is invisible
+to the second group.
+
+```php
+$document->metadata();                              // that is all it takes
+$document->metadata()->setRights('© 2026 Acme Ltd');
+```
+
+The packet is **generated from `info()`**, not set beside it. Two
+hand-maintained copies of the same six fields disagree eventually, and a
+document whose `/Info` says one title and whose XMP says another is worse
+than one that says it once — which of the two a given tool believes is not
+something the document gets to decide. So the flow is one way: set
+metadata through `info()`, and this restates it in RDF/XML at save. Things
+with no `/Info` equivalent (`dc:rights`, the asset ids) are set here and
+live only here. `setPacket()` takes a complete packet of your own — for a
+Factur-X profile, say — and then nothing is generated and nothing checked.
+
+In an encrypted document the packet is enciphered like everything else,
+which is the spec's default and the safe one: a title can be as revealing
+as the page it describes. `encrypt(..., encryptMetadata: false)` leaves it
+readable, so an indexer with no password still gets the title of a
+document whose pages it cannot read.
+
+### Page labels
+
+What the reader calls each page — the number in its toolbar, its
+thumbnails and its "go to page" box. Without them a reader counts from 1
+and has no other idea, so a report with roman front matter shows "page 5
+of 40" while the paper in your hand says 1.
+
+```php
+use MightyPDF\Assembler\PageLabelStyle;
+
+$document->pageLabels()
+    ->from(0, PageLabelStyle::LowercaseRoman)                    // i, ii, iii, iv
+    ->from(4, PageLabelStyle::Decimal)                           // 1, 2, 3, …
+    ->from(30, PageLabelStyle::Decimal, prefix: 'A-')            // A-1, A-2, …
+    ->from(40, PageLabelStyle::None, prefix: 'Cover');           // the prefix alone
+```
+
+Runs may be declared in any order and are sorted on the way out, because
+the number tree needs ascending keys and a reader handed them unsorted
+does not search it — it gets the wrong answer. A tree that never says what
+page 0 is called is refused at save, that being the one mistake here every
+reader handles differently.
+
+`labelFor(int $pageIndex)` says what a reader will show, so a table of
+contents printing "see page A-4" uses the same string the toolbar will,
+rather than working it out a second time and coming to disagree. The
+letter styles are doubled — A…Z, then AA, BB — as Table 159 specifies,
+and not the spreadsheet columns everyone reaches for.
+
 ## Attachments
 
 A document can carry files inside it:
@@ -1314,6 +1549,111 @@ document has not already said what it wants, so a document does not open
 differently depending on the order of two unrelated calls.
 
 See [`examples/21-attachments-and-viewer-preferences.php`](examples/21-attachments-and-viewer-preferences.php).
+
+## Print production: bleed and trim
+
+A page has more boxes than the one it is drawn on. `/MediaBox` is the
+sheet, and it is the only one a screen reader cares about — but a
+commercial printer wants to be told two more things: where the
+guillotine cuts, and how far past that line the ink runs.
+
+```php
+use MightyPDF\Assembler\PageSize;
+use MightyPDF\Layout\Unit;
+
+$bleed = Unit::Millimetres->toPoints(3.0);
+
+$page = $document->newPage(PageSize::A4->withBleed($bleed));
+$page->setBleed($bleed);
+```
+
+`withBleed()` makes the sheet — A4 plus 3mm on every side, at the origin
+— and `setBleed()` says how much of it is bleed: the trim box becomes
+the A4 back out of the middle, and the bleed box becomes the whole
+sheet. A shop's preflight check looks for exactly that pair, and a file
+with neither is one where nothing in the document says how big the
+finished piece is.
+
+The four boxes can also be set outright, in points, when the geometry
+isn't a uniform bleed:
+
+```php
+$page->setCropBox(new PdfRectangle(10, 10, 602, 782));
+$page->setBleedBox(...);
+$page->setTrimBox(...);
+$page->setArtBox(...);
+```
+
+Only `/CropBox` changes what an ordinary reader shows; the other three
+are messages to a print workflow and are ignored on screen. Each is
+checked against the media box on the way in. §14.11.2 lets a reader
+quietly reduce a box that hangs off the sheet to the overlap of the two,
+which is the one behaviour worth refusing outright — a trim box a hair
+too big does not announce itself, it silently becomes a *different* trim
+box, and the first anyone hears of it is a print run cut to the wrong
+size.
+
+Reading them back resolves the spec's inheritance: `cropBox()` falls
+back to the media box, and `bleedBox()`, `trimBox()` and `artBox()` fall
+back to the crop box.
+
+### Bleed in the layout layer
+
+`Flow` takes the same number in its own unit, and does the part that
+makes it usable:
+
+```php
+$flow = new Flow($document, PageSize::A4->withBleed($bleed));
+$flow->setBleed(3.0);                       // millimetres
+```
+
+Every page gets the boxes, the ones already made and the ones still to
+come. **And the margins move in by the bleed.** That is the point of
+having it at this layer: a page's origin sits at the corner of the
+*sheet*, so without the shift a 15mm margin is 12mm from the finished
+edge and every page of the job is 3mm out. After `setBleed()`, a margin
+means what a designer means by one — a distance from the cut — and
+`contentWidth()` is still the finished page less its margins.
+
+Artwork that runs off the edge is drawn from `-3.0`, like anything else
+outside the margins. A document has one bleed, so `setBleed()` is
+settable once.
+
+See [`examples/24-a-print-ready-flyer-with-bleed.php`](examples/24-a-print-ready-flyer-with-bleed.php).
+
+## Making the file smaller
+
+```php
+$document->compressObjects();
+```
+
+A PDF's dictionaries are the compressible part of it, and the writer has
+never compressed them: individually they are far too small for a deflate
+stream of their own to pay for itself, and there was nowhere to compress
+them together. An **object stream** (§7.5.7) is that somewhere — one
+stream holding the bodies of a few hundred objects, deflated as a block
+— and a document that is mostly dictionaries by count is most documents:
+a form has two objects per field, a tagged document one per structure
+element, an outline one per bookmark. On a twelve-bookmark document it
+is around a 60% saving; on a plain one-page invoice, nothing worth
+having.
+
+Streams stay outside, because a stream's data has to be findable by byte
+offset without decoding anything first. So does the encryption
+dictionary, which a reader must read before it can decrypt the object
+stream that would otherwise contain it. Everything else goes in.
+
+Off by default, for two reasons worth knowing before turning it on. The
+file stops being greppable — `/Type /Page` is no longer findable with
+`strings(1)`, which matters more than it sounds like it should when
+something has gone wrong at three in the morning. And the
+cross-reference section becomes a stream rather than a table, so the
+file needs a PDF 1.5 reader: everything current, and not everything
+embedded.
+
+Nothing about the document changes, only how it is written. The same
+calls produce the same pages either way, and saving twice still gives
+the same bytes twice.
 
 ## Encrypting a document you create
 
@@ -1492,6 +1832,53 @@ would look correct in every tool except the one most people use.
 See [`examples/10-filling-an-existing-form.php`](examples/10-filling-an-existing-form.php)
 for a runnable version.
 
+### Getting the data back out, and putting it back in
+
+Filling a form is half of what anyone does with one. The values have to
+come from somewhere, and usually have to go somewhere afterwards.
+
+```php
+$filler = new FormFiller($editor);
+
+file_put_contents('data.xfdf', $filler->toXfdf('invoice.pdf'));
+file_put_contents('data.json', $filler->toJson());
+
+$filler->fillFromXfdf(file_get_contents('data.xfdf'));
+$filler->fillFromJson('{"first_name": "Ada", "subscribe": "Yes"}');
+```
+
+**XFDF** (ISO 19444-1) is the format the other end already speaks: it is
+what Acrobat's "Export Data" writes and its "Import Data" reads, and
+what a browser submits when a form's `/SubmitForm` action asks for one.
+The `href` is a hint about which document the data belongs to, and
+nothing checks it on the way back in.
+
+Field names nest in XFDF. A form's `address.city` is one field with a
+dotted full name, and the file writes it as a `<field name="city">`
+inside a `<field name="address">`; both directions here deal in the flat
+dotted names `FormFiller` uses and do the nesting on the way through.
+Files that flatten it instead — which plenty of hand-rolled exporters do
+— are read too.
+
+**JSON** is for the ordinary case where the far end is an application
+rather than a PDF reader. A field with no value comes out as `null`
+rather than being left out, so the shape of the object is the shape of
+the form and a consumer can tell an empty field from one that isn't on
+the form at all. Values must be scalars: a nested object is refused
+rather than flattened into dotted names, since a caller who sent
+`{"address": {"city": …}}` is as likely to have sent the wrong
+document's data as to have meant `address.city`.
+
+Both go through `fill()`, so both get its checking — an unknown field
+name is reported with the same nearest-match suggestion, an over-long
+value against `/MaxLen` is still refused, and a checkbox is still
+written to `/V` *and* `/AS`.
+
+`Xfdf::export()` and `Xfdf::parse()` are public if you want the array
+rather than the round trip.
+
+See [`examples/25-form-data-in-and-out.php`](examples/25-form-data-in-and-out.php).
+
 ## Drawing on an existing page
 
 `PageOverlay` gives you the same `PageBuilder` used for a fresh page,
@@ -1557,6 +1944,255 @@ appearance is drawn directly.
 
 See [`examples/11-stamping-an-existing-page.php`](examples/11-stamping-an-existing-page.php)
 for a runnable version covering both the stamp and the added field.
+
+## Reading text back out
+
+```php
+use MightyPDF\Reader\Text\TextExtractor;
+
+$extractor = new TextExtractor(PdfEditor::open('report.pdf'));
+
+echo $extractor->page(0)->text();   // one page
+echo $extractor->text();            // the whole document
+```
+
+A PDF does not contain text in any form a program can simply read; it
+contains instructions for putting marks on paper. Extracting means running
+those instructions far enough to know what was drawn and where — tracking
+the graphics and text matrices, resolving each font's encoding — and then
+inferring lines and words from geometry that never stated either. It is
+reconstruction, and it is imperfect by construction. It is good for
+searching, checking, indexing and testing; it is not a faithful round trip.
+
+What a code means is a property of its font, and there are three sources
+for the answer, trusted in this order: `/ToUnicode` (definitive, being the
+writer stating what it meant), `/Encoding` with its `/Differences` glyph
+names, and the standard-14 encoding. A font with none of them — a subset
+with invented glyph names and no `/ToUnicode` — genuinely cannot be read
+back; those codes come out as `U+FFFD` rather than being dropped, so you
+can tell "text I could not decode" from "no text".
+
+Text inside form XObjects is followed, so a stamped or flattened page
+extracts properly. Text drawn as vector outlines or living in a scanned
+image is not text and no amount of trying makes it so — a scanned page
+yields nothing, which is the honest answer and the reason OCR exists.
+
+Following those XObjects is also why there are limits on how much work one
+page may cause: a page can invoke one as often as it likes, and a few
+hundred bytes of file can otherwise ask for more work than there is time in
+the day. A page that reaches a limit returns the text it did read and says
+so, rather than throwing — extraction is forgiving everywhere else, and
+refusing a page outright would be the one place it was not:
+
+```php
+$page = $extractor->page(0);
+
+if ($page->isTruncated()) {
+    // There was more of this page than the extractor would follow.
+}
+```
+
+`text()` cannot report it, a string having nowhere to say "and there was
+more of me", so ask page by page when it matters.
+
+For anything needing better than the built-in line and word inference —
+multi-column reading order, tables, right-to-left — `fragments()` hands
+back every run with its position:
+
+```php
+foreach ($extractor->page(0)->fragments() as $run) {
+    printf("%6.1f, %6.1f  %4.1fpt  %s\n", $run->x, $run->y, $run->fontSize, $run->text);
+}
+```
+
+## Flattening a form
+
+A filled form is still a form: the recipient's reader will happily let
+them retype the numbers in it. Flattening turns the fields into ordinary
+page content — what the form showed stays exactly where it was, and there
+is no longer a form to edit.
+
+```php
+use MightyPDF\Editor\Form\FormFlattener;
+
+$editor = PdfEditor::open('filled.pdf');
+
+(new FormFlattener($editor))->flatten();          // every field
+(new FormFlattener($editor))->flatten(['total']); // just this one; the rest stay fillable
+
+$editor->saveToFile('flattened.pdf');
+```
+
+**Nothing is re-drawn.** A widget's appearance stream already contains
+what a reader displays, so flattening *places that stream* rather than
+reconstructing it from `/V` and `/DA`. A flattened form is therefore
+pixel-identical to the form rather than a best-effort reproduction of it.
+
+It follows that a field with no appearance stream flattens to blank paper
+— permanently, and indistinguishably from a field left empty on purpose.
+That is refused, naming the fields, before anything is written:
+
+```
+These fields have no appearance stream, so flattening would draw nothing
+where they are … "first_name". The document has /NeedAppearances set, so
+it is relying on the reader to draw these — fill them through FormFiller
+first, which draws them for real.
+```
+
+Fill through `FormFiller` first (which draws them), or pass
+`allowBlankFields: true`. A signature field holding a signature is refused
+outright: flattening would delete the signature while leaving a picture of
+one on the page.
+
+## Taking pages apart
+
+Extracting, reordering, deleting and splitting are one operation seen from
+different angles, so they are one class.
+
+```php
+use MightyPDF\Editor\PageSelection;
+
+PageSelection::from('report.pdf')->range(0, 4)->toFile('summary.pdf');
+PageSelection::from('report.pdf')->except(0)->toFile('no-cover.pdf');
+PageSelection::from('report.pdf')->pages(3, 0, 1)->toFile('reordered.pdf');
+PageSelection::from('report.pdf')->reversed()->toFile('backwards.pdf');
+
+foreach (PageSelection::from('report.pdf')->split() as $n => $page) {
+    $page->saveToFile("page-$n.pdf");
+}
+```
+
+A selection is a value: every method returns a new one, so the same
+starting point can be narrowed twice without the first narrowing leaking
+into the second. Nothing is read or written until it becomes a document.
+
+**Page numbers are zero-based**, like every other index here and unlike a
+reader's toolbar — so an out-of-range index says so in as many words:
+
+```
+This document has 3 pages, and page indexes are zero-based, so they run
+0 to 2. You asked for 3 — if you meant page 3 as a reader numbers it,
+that is 2 here.
+```
+
+Selections from different files combine, which is what a merge is:
+
+```php
+PageSelection::combine(
+    PageSelection::from('cover.pdf')->pages(0),
+    PageSelection::from('body.pdf')->range(2),
+)->saveToFile('combined.pdf');
+```
+
+`PdfMerger::merge()` is exactly this with every page of every file.
+
+## Signing a document
+
+This library does not sign and holds no keys. Signing means a private key,
+a CMS structure and a decision about whose certificates to trust — three
+things belonging to a key store, an HSM or a signing service. What *is* a
+PDF writer's job is the part around them, and getting it wrong is the
+usual reason a signed PDF reports itself as altered.
+
+```php
+use MightyPDF\Editor\Signature\DeferredSignature;
+
+$prepared = DeferredSignature::prepare(
+    PdfEditor::open('contract.pdf'),
+    signerName: 'James Thomsen',
+    reason: 'I approve this document',
+);
+
+// Whatever holds the key signs these exact bytes, detached.
+$cms = $signer->sign($prepared->signedBytes());   // or ->digest('sha256')
+
+file_put_contents('signed.pdf', $prepared->complete($cms));
+```
+
+`prepare()` reserves a `/Contents` placeholder, computes a `/ByteRange`
+covering the whole file except that placeholder, and hands you exactly the
+bytes it covers. `complete()` splices the blob back **without moving a
+single byte** — which is what makes the byte range it was measured against
+still true.
+
+The signature is an incremental update, so the original bytes are
+untouched and a signature already over them stays valid; that is the only
+way a second signature can be added at all. Pass `fieldName:` to sign an
+existing empty signature field; without one, an invisible field is added.
+
+Nothing here validates the CMS, the chain, or that the blob signs what it
+was given — splice in the wrong thing and you get a document that says it
+is signed and fails validation. Encrypted documents are refused: a
+signature dictionary's `/Contents` is exempt from encryption while the
+rest of the update is not, and that exemption is not implemented.
+
+## Tagging: structure and accessibility
+
+A tagged PDF says two things a plain one does not: what each piece of
+content *is*, and what order it is meant to be read in. Neither is
+recoverable from the page — text is drawn wherever the producer put it, and
+a two-column page drawn column-by-column reads as columns to a person and
+as interleaved nonsense to anything working from the stream.
+
+This is where the layout layer earns its keep. Tagging a document built
+from raw drawing calls means restating, element by element, what everything
+is — because a canvas genuinely does not know. A `Flow` does:
+
+```php
+use MightyPDF\Assembler\Structure\StructureRole;
+
+$flow = new Flow($document);
+$flow->tagged('en-GB');          // that is the whole of turning it on
+
+$flow->inside(StructureRole::Section, function (Flow $flow) use ($h1, $body) {
+    $flow->tag(StructureRole::Heading1, fn (Flow $f) => $f->paragraph(180, 'Annual Report', $h1));
+    $flow->paragraph(180, 'Revenue rose twelve per cent.', $body);
+
+    $flow->table([60, 40])->header(['Region', 'Revenue'])->row(['UK', '2.4m'])->end();
+});
+
+$flow->finish();
+```
+
+From `tagged()` on, `paragraph()` tags itself `/P`, a table's rows and
+cells become `/TR` and `/TH`/`/TD`, a wrapped `write()` run is one `/Span`
+however many lines it takes, and everything drawn through `onEachPage()`
+becomes an **artifact** — outside the structure entirely, which is what
+stops a screen reader announcing "Page 3 of 7" in the middle of a
+sentence. You only say what the layout cannot infer: which paragraphs are
+headings, where a section begins, what a figure depicts.
+
+Headings are checked as they are added. A document whose headings go H1,
+H3 has an outline that every tool building one gets wrong, so skipping a
+level is refused rather than written.
+
+Below the layout layer the same thing is available directly, for drawing
+that does not go through a `Flow`:
+
+```php
+$structure = $document->structure();
+$figure = $structure->document()->child(StructureRole::Figure);
+$figure->setAlternateText('A bar chart of revenue by region.');
+
+$content->tagged($figure, fn (PageBuilder $b) => $b->drawSvg($chart, 60, 400, 200, 150));
+$content->artifact(fn (PageBuilder $b) => $b->drawText($font, 9, 60, 40, 'Page 1'));
+```
+
+The closure form is not decoration: a marked-content sequence has to be
+closed on the stream it was opened on, and an unmatched one makes every
+mark after it belong to the wrong element — silently, and only for the
+people who cannot see the page.
+
+The `/ParentTree` is built for you. It is the index letting a reader go
+back *up* from a mark to its element, both directions are required, and a
+document with a correct structure and a missing one is rejected by
+validators and ignored by assistive technology while looking perfectly
+correct in a viewer.
+
+Tagging an existing document is **not** supported: `PageOverlay` draws
+untagged, because a file's structure tree is one this library did not
+build, and adding marks without attaching them is worse than not claiming
+to be tagged.
 
 ## Merging PDFs
 
@@ -1671,9 +2307,12 @@ for a runnable version.
 
 **2.1.0** is additive: general shapes, scoped transforms and clipping,
 CMYK and spot colour, `Table`, Code 128 / EAN-13 / QR, attachments,
-viewer preferences and page rotation. Existing code keeps working —
-`Color` is now one implementation of the new `Paint` interface, so
-everything that took a `Color` still does.
+viewer preferences and page rotation, and in the layout layer runs
+(`write()`), links in millimetres, columns (`onPageBreak()`, `setMargins()`)
+and a page size per page. Existing code keeps working — `Color` is now
+one implementation of the new `Paint` interface, so everything that took
+a `Color` still does, and `Flow::newPage()` and `cell()` only gained
+optional arguments.
 
 Three things to know:
 
@@ -1776,10 +2415,22 @@ second apart is still identical bytes, and there is still no automatic
   in a page that does not move. Within what *is* supported, one known
   gap: CSS pseudo-classes and attribute selectors are not matched
   (combinators are).
-- **Signing**: `addSignatureField()` only reserves an unsigned placeholder
-  — this library has no code anywhere to hash a byte range, embed a
-  certificate, or validate one, so nothing in it can actually sign a
-  document.
+- **Runs**: `write()` is one style per call, and a run knows nothing
+  about what precedes or follows it on the line. So there is no inline
+  markup to parse, and no justification across runs — the last is not a
+  gap that could be closed by trying harder, since stretching the spaces
+  on a line means knowing every run on it, and a run is drawn as it is
+  called. A hanging indent, a drop cap or text flowed around a figure is
+  built from `setMargins()` and `moveTo()` rather than declared.
+- **Signing**: this library does not sign, and holds no keys. What it
+  does is the half around signing — `DeferredSignature` reserves the
+  `/Contents` placeholder, computes the `/ByteRange`, hands you exactly
+  the bytes to be signed, and splices the result back without moving one
+  of them. An external signer (an HSM, `openssl`, a signing service)
+  produces the CMS. Nothing here validates that blob, the certificate
+  chain, or that it signs what it was given: splice in the wrong thing
+  and you get a document that says it is signed and fails validation.
+  There is also no *verification* of signatures already in a file.
 - **Colour management**: none. `DeviceRGB` and `DeviceCMYK` are
   uncalibrated by design and this library writes both through as given,
   which is what a caller specifying ink coverage wants and is also all
@@ -1787,20 +2438,55 @@ second apart is still identical bytes, and there is still no automatic
   `CmykColor` is the naive conversion rather than a managed one. A
   spot colour's alternate is stated as CMYK and nothing else.
 - **PDF/A**: not produced. That matters for one thing in particular —
-  a conforming Factur-X or ZUGFeRD e-invoice needs PDF/A-3, and while
-  the attachment half of it is here (an embedded file with
-  `AFRelationship::Data`, listed in `/AF`), the conformance half —
-  output intent, embedded ICC profile, XMP metadata, and the
-  restrictions that go with them — is not.
+  a conforming Factur-X or ZUGFeRD e-invoice needs PDF/A-3. Two of the
+  three pieces are now here: the attachment (an embedded file with
+  `AFRelationship::Data`, listed in `/AF`) and the XMP packet, which
+  `metadata()->setPacket()` will take whole if you have a profile of your
+  own. What is missing is the output intent and its embedded ICC profile,
+  and the restrictions that go with the conformance level. **PDF/UA** is
+  closer: `structure()` produces the tagged structure, `/MarkInfo` and
+  `/Lang` it requires, but nothing here runs a conformance check, so a
+  document is tagged rather than certified.
 - **Barcodes**: four linear symbologies (Code 39, Code 128, EAN-13,
-  UPC-A) and QR. No EAN-8, ITF, Codabar or the postal symbologies, and
-  no PDF417 or DataMatrix. Code 128 encodes ASCII only, and its code-set
+  UPC-A), QR and Data Matrix. No EAN-8, ITF, Codabar or the postal
+  symbologies, and **no PDF417** — its low-level codeword table is a
+  929-of-1002 subset per cluster whose selection rule could not be
+  derived, and the alternatives were copying 2 787 constants out of an
+  LGPL implementation or shipping patterns nothing was checked against.
+  Data Matrix encodes in ASCII mode throughout, which is optimal for
+  digits (two per codeword) and up to about a third larger than it need
+  be for long runs of letters; its 144×144 symbol is not produced, being
+  the one size whose error-correction blocks are not all the same shape.
+  Code 128 encodes ASCII only, and its code-set
   choice is the standard's greedy strategy rather than an optimal search
   — it produces the shortest symbol for ordinary input and is
   occasionally a symbol or two longer than the theoretical minimum. A QR
   code is encoded in one mode throughout rather than segmented into runs
   of different modes, which is likewise conforming and occasionally one
   version larger than optimal.
+- **Form data**: XFDF and JSON, in both directions. **FDF is not
+  read or written** — it is the same data in PDF syntax rather than XML,
+  and Acrobat offers both from the same menu, so the gap is a real one
+  for anyone handed a `.fdf`; what it is not is a different capability.
+  A multi-select list box does not round-trip: XFDF gives such a field
+  one `<value>` per selection, and `fill()` sets a single value per
+  field, so an import takes the first and drops the rest.
+- **Print boxes**: declared, not verified. `setTrimBox()` and the rest
+  write what §14.11.2 asks for and refuse a box that hangs off the
+  sheet, but nothing here checks that the artwork actually *reaches* the
+  bleed box — a page laid out to the trim edge with 3mm of bleed
+  declared around it is a conforming file and a bad print job, and only
+  a rasterizer could tell the difference. There are no crop marks,
+  registration marks or colour bars either; those are drawn, and
+  `PageBuilder` will draw them.
+- **Object streams**: written, never read back into one. `compressObjects()`
+  packs a document this library assembles; the editor's incremental
+  updates append plain objects whatever the file it opened was doing, so
+  editing a packed document leaves the original packed and adds
+  uncompressed objects after it. Correct, and larger than it needed to be.
+  There is also no *repacking* of an existing file — no `qpdf
+  --object-streams=generate` equivalent, which would mean rewriting the
+  whole file rather than appending to it.
 - **Merging**: named destinations on imported links are dropped, and a
   bookmark whose pages were all left behind goes with them (see "Merging
   PDFs" for both). The merged document always gets a fresh, flat page
