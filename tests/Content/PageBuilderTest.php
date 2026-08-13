@@ -20,6 +20,7 @@ use MightyPDF\Content\Font\TrueType\FontException;
 use MightyPDF\Content\Text\HorizontalAlign;
 use MightyPDF\Content\Text\VerticalAlign;
 use MightyPDF\Content\PageBuilder;
+use MightyPDF\Tests\Support\SavedDocument;
 use MightyPDF\Tests\Support\SyntheticTrueTypeFont;
 use PHPUnit\Framework\TestCase;
 
@@ -647,17 +648,20 @@ final class PageBuilderTest extends TestCase
 
         $builder->addTextField('FirstName', 72, 700, 200, 20, value: 'Jane');
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
+        $field = $saved->field('FirstName');
 
-        self::assertStringContainsString('/AcroForm', $output);
-        self::assertStringContainsString('/FT /Tx', $output);
-        self::assertStringContainsString('/T (FirstName)', $output);
-        self::assertStringContainsString('/V (Jane)', $output);
-        self::assertStringContainsString('/NeedAppearances true', $output);
+        self::assertSame('Tx', $field->get('FT')?->value());
+        self::assertSame('Jane', SavedDocument::scalar($field->get('V')));
+        self::assertTrue($saved->value('AcroForm', 'NeedAppearances'));
 
         // The field's /DA references a font resource that must resolve
-        // via AcroForm's /DR, not the page's own /Resources.
-        self::assertStringContainsString('/DR << /Font <<', $output);
+        // via AcroForm's /DR, not the page's own /Resources -- so follow
+        // the name in the /DA and see that it lands on a font.
+        preg_match('#/(\S+) [\d.]+ Tf#', (string) SavedDocument::scalar($field->get('DA')), $named);
+
+        self::assertNotEmpty($named, 'the field should name a font in its /DA');
+        self::assertSame('Font', $saved->value('AcroForm', 'DR', 'Font', $named[1], 'Type'));
     }
 
     /**
@@ -687,10 +691,12 @@ final class PageBuilderTest extends TestCase
         // Allocates a later object id, which is what strands the leaked one.
         $builder->addTextField('email', 50.0, 600.0, 200.0, 20.0);
 
-        $output = $document->save();
-
-        self::assertStringContainsString('/T (email)', $output);
-        self::assertStringContainsString('%%EOF', $output);
+        // The field is reachable, which means the xref survived the
+        // stranded object id -- the failure this guards against was a
+        // "Xref has a gap" on save, so opening the result is the check.
+        self::assertSame('email', SavedDocument::scalar(
+            SavedDocument::of($document)->field('email')->get('T'),
+        ));
     }
 
     public function testDrawingTheSameFileAsADifferentFormatStillValidatesIt(): void
@@ -840,11 +846,14 @@ final class PageBuilderTest extends TestCase
         $page = $document->newPage();
         (new PageBuilder($document, $page))->addCheckbox('Agree', 72, 700, 12);
 
-        $output = $document->save();
+        $field = SavedDocument::of($document)->field('Agree');
 
-        self::assertStringContainsString('/FT /Btn', $output);
-        self::assertStringContainsString('/AS /Off', $output);
-        self::assertStringContainsString('/AP <<', $output);
+        self::assertSame('Btn', $field->get('FT')?->value());
+        self::assertSame('Off', $field->get('AS')?->value());
+
+        // The appearance the widget shows for the state it is in, rather
+        // than "an /AP is somewhere in the file".
+        self::assertNotNull(SavedDocument::of($document)->at('AcroForm', 'Fields', 0, 'AP', 'N', 'Off'));
     }
 
     public function testAddCheckboxChecked(): void
@@ -853,9 +862,7 @@ final class PageBuilderTest extends TestCase
         $page = $document->newPage();
         (new PageBuilder($document, $page))->addCheckbox('Agree', 72, 700, 12, checked: true);
 
-        $output = $document->save();
-
-        self::assertStringContainsString('/AS /Yes', $output);
+        self::assertSame('Yes', SavedDocument::of($document)->field('Agree')->get('AS')?->value());
     }
 
     public function testAddCheckboxWithCustomExportValue(): void
@@ -864,9 +871,13 @@ final class PageBuilderTest extends TestCase
         $page = $document->newPage();
         (new PageBuilder($document, $page))->addCheckbox('Term1', 72, 700, 12, checked: true, exportValue: 'Q1');
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
 
-        self::assertStringContainsString('/AS /Q1', $output);
+        self::assertSame('Q1', $saved->field('Term1')->get('AS')?->value());
+        self::assertNotNull(
+            $saved->at('AcroForm', 'Fields', 0, 'AP', 'N', 'Q1'),
+            'the appearance states are keyed by the export value',
+        );
     }
 
     public function testAddTextFieldWithAlignMultilineAndReadonly(): void
@@ -884,10 +895,10 @@ final class PageBuilderTest extends TestCase
             readonly: true,
         );
 
-        $output = $document->save();
+        $field = SavedDocument::of($document)->field('Notes');
 
-        self::assertStringContainsString('/Q 1', $output);
-        self::assertStringContainsString('/Ff 4097', $output);
+        self::assertSame(TextField::ALIGN_CENTER, $field->get('Q')?->value());
+        self::assertSame(4097, $field->get('Ff')?->value(), 'multiline (bit 13) plus read-only (bit 1)');
     }
 
     public function testAddRadioGroupCreatesParentFieldWithRadioFlagAndKids(): void
@@ -899,14 +910,22 @@ final class PageBuilderTest extends TestCase
             ['exportValue' => 'Blue', 'x' => 100, 'y' => 700, 'size' => 10],
         ], checkedExportValue: 'Blue');
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
+        $group = $saved->field('Color');
 
-        self::assertStringContainsString('/FT /Btn', $output);
-        self::assertStringContainsString('/Ff 32768', $output);
-        self::assertStringContainsString('/V /Blue', $output);
-        self::assertStringContainsString('/Subtype /Widget', $output);
-        self::assertStringContainsString('/AS /Blue', $output);
-        self::assertStringContainsString('/AS /Off', $output);
+        self::assertSame('Btn', $group->get('FT')?->value());
+        self::assertSame(32768, $group->get('Ff')?->value(), 'the Radio flag, bit 16');
+        self::assertSame('Blue', $group->get('V')?->value());
+
+        // The states belong to specific kids, which "/AS /Blue and
+        // /AS /Off both appear" never established: the checked one has
+        // to be Blue and the other one Off, not the other way round.
+        $red = $saved->dictionary('AcroForm', 'Fields', 0, 'Kids', 0);
+        $blue = $saved->dictionary('AcroForm', 'Fields', 0, 'Kids', 1);
+
+        self::assertSame('Widget', $red->get('Subtype')?->value());
+        self::assertSame('Off', $red->get('AS')?->value());
+        self::assertSame('Blue', $blue->get('AS')?->value());
     }
 
     public function testAddRadioGroupKidsAreOnPageAnnotsAndOnlyParentIsAnAcroFormField(): void
@@ -983,12 +1002,20 @@ final class PageBuilderTest extends TestCase
             value: 'Canada',
         );
 
-        $output = $document->save();
+        $field = SavedDocument::of($document)->field('Country');
 
-        self::assertStringContainsString('/FT /Ch', $output);
-        self::assertStringContainsString('/Opt [(USA) (Canada) (Mexico)]', $output);
-        self::assertStringContainsString('/V (Canada)', $output);
-        self::assertStringNotContainsString('/Ff ', $output, 'a list box carries no flags unless read-only');
+        self::assertSame('Ch', $field->get('FT')?->value());
+        self::assertSame('Canada', SavedDocument::scalar($field->get('V')));
+        self::assertSame(
+            ['USA', 'Canada', 'Mexico'],
+            array_map(SavedDocument::scalar(...), $field->get('Opt')?->items() ?? []),
+        );
+
+        // Asked of the field rather than of the file: "/Ff " appears in
+        // any document with a flagged field anywhere in it, so the old
+        // form of this would have started failing the day an unrelated
+        // test case grew one.
+        self::assertNull($field->get('Ff'), 'a list box carries no flags unless read-only');
     }
 
     public function testAddDropdownSetsTheComboFlag(): void
@@ -1005,12 +1032,12 @@ final class PageBuilderTest extends TestCase
             value: 'Express',
         );
 
-        $output = $document->save();
+        $field = SavedDocument::of($document)->field('Shipping');
 
-        self::assertStringContainsString('/FT /Ch', $output);
+        self::assertSame('Ch', $field->get('FT')?->value());
         // Table 230 bit 18, "Combo" -- 1 << 17.
-        self::assertStringContainsString('/Ff 131072', $output);
-        self::assertStringContainsString('/V (Express)', $output);
+        self::assertSame(131072, $field->get('Ff')?->value());
+        self::assertSame('Express', SavedDocument::scalar($field->get('V')));
     }
 
     public function testChoiceFieldWiresFontIntoAcroFormDrNotPageResources(): void
@@ -1019,9 +1046,12 @@ final class PageBuilderTest extends TestCase
         $page = $document->newPage();
         (new PageBuilder($document, $page))->addListBox('Country', ['USA', 'Canada'], 72, 700, 150, 60);
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
 
-        self::assertStringContainsString('/DR << /Font <<', $output);
+        preg_match('#/(\S+) [\d.]+ Tf#', (string) SavedDocument::scalar($saved->field('Country')->get('DA')), $named);
+
+        self::assertNotEmpty($named, 'the field should name a font in its /DA');
+        self::assertSame('Font', $saved->value('AcroForm', 'DR', 'Font', $named[1], 'Type'));
     }
 
     /**

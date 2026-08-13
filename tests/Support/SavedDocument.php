@@ -128,6 +128,59 @@ final class SavedDocument
         return $resolved;
     }
 
+    /**
+     * The document's form fields, in the order /Fields lists them.
+     *
+     * @return list<Dictionary>
+     */
+    public function fields(): array
+    {
+        $form = $this->editor->resolveDictionary($this->catalog()->get('AcroForm'));
+
+        Assert::assertInstanceOf(Dictionary::class, $form, 'the document has no /AcroForm');
+
+        $fields = $this->editor->resolve($form->get('Fields'));
+
+        Assert::assertInstanceOf(PdfArray::class, $fields, '/AcroForm has no /Fields array');
+
+        $resolved = [];
+
+        foreach ($fields->items() as $position => $item) {
+            $field = $this->editor->resolveDictionary($item);
+
+            Assert::assertInstanceOf(Dictionary::class, $field, "field $position does not resolve");
+
+            $resolved[] = $field;
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * The field with this /T, which is how a form is addressed by
+     * everything that fills one in -- and a stronger thing to assert
+     * than "a field with this name is somewhere in the bytes", since a
+     * field missing from /Fields is a field no reader will find however
+     * completely it was written.
+     */
+    public function field(string $name): Dictionary
+    {
+        foreach ($this->fields() as $field) {
+            if (self::scalar($field->get('T')) === $name) {
+                return $field;
+            }
+        }
+
+        Assert::fail(sprintf(
+            'no form field called "%s" -- /Fields lists %s',
+            $name,
+            implode(', ', array_map(
+                static fn (Dictionary $f): string => '"' . self::scalar($f->get('T')) . '"',
+                $this->fields(),
+            )) ?: 'nothing',
+        ));
+    }
+
     /** The decoded content of a page, for assertions about operators. */
     public function contentOf(int $pageIndex = 0): string
     {
