@@ -9,6 +9,8 @@ use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfString;
 use MightyPDF\Assembler\Types\PdfValue;
+use MightyPDF\Exception\InvalidArgumentException;
+use MightyPDF\Exception\LogicException;
 
 /**
  * What the reader calls each page (ISO 32000-2 §12.4.2) -- the number in
@@ -64,13 +66,13 @@ final class PageLabels extends Dictionary
         int $startAt = 1,
     ): static {
         if ($pageIndex < 0) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 "A run of page labels starts at a page, and there is no page $pageIndex.",
             );
         }
 
         if ($startAt < 1) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 "Page labels are numbered from 1 upwards (\u{a7}12.4.2 requires /St to be at least 1), "
                 . "so a run cannot start at $startAt.",
             );
@@ -135,7 +137,7 @@ final class PageLabels extends Dictionary
             return;
         }
 
-        throw new \LogicException(sprintf(
+        throw new LogicException(sprintf(
             'Page labels have to say what page 0 is called: §12.4.2 requires an entry at index 0, and '
             . 'the earliest run here starts at %d. Add a run from 0, or start that one at 0.',
             min(array_keys($this->runs)),

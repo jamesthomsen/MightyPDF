@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Barcode;
 
+use MightyPDF\Exception\InvalidArgumentException;
+use MightyPDF\Exception\LogicException;
+
 /**
  * A growing string of bits, which is what a QR code's data segment is
  * before it is cut into codewords.
@@ -25,11 +28,11 @@ final class BitBuffer
     public function append(int $value, int $width): void
     {
         if ($width < 0 || $width > 63) {
-            throw new \InvalidArgumentException("A field is between 0 and 63 bits wide, got $width.");
+            throw new InvalidArgumentException("A field is between 0 and 63 bits wide, got $width.");
         }
 
         if ($width < 63 && ($value < 0 || $value >= 1 << $width)) {
-            throw new \InvalidArgumentException("$value does not fit in $width bits.");
+            throw new InvalidArgumentException("$value does not fit in $width bits.");
         }
 
         for ($i = $width - 1; $i >= 0; --$i) {
@@ -54,7 +57,7 @@ final class BitBuffer
     public function toBytes(): array
     {
         if ($this->length() % 8 !== 0) {
-            throw new \LogicException(
+            throw new LogicException(
                 'This buffer is ' . $this->length() . ' bits long, which is not a whole number of bytes.',
             );
         }

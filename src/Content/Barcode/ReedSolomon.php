@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Barcode;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * Reed-Solomon error correction over GF(256), as QR codes and Data Matrix
  * use it.
@@ -59,7 +61,7 @@ final class ReedSolomon
         int $firstRoot = 1,
     ): array {
         if ($degree < 1 || $degree > 255) {
-            throw new \InvalidArgumentException("Between 1 and 255 check codewords, got $degree.");
+            throw new InvalidArgumentException("Between 1 and 255 check codewords, got $degree.");
         }
 
         $divisor = self::generator($degree, $primitive, $firstRoot);

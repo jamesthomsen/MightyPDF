@@ -10,6 +10,8 @@ use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Assembler\Types\PdfHexString;
 use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
+use MightyPDF\Exception\InvalidArgumentException;
+use MightyPDF\Exception\RuntimeException;
 
 /**
  * Builds an Image XObject (ISO 32000-2 §8.9.5) from a GIF file.
@@ -37,7 +39,7 @@ final class GifImage
     {
         $bytes = file_get_contents($path);
         if ($bytes === false) {
-            throw new \RuntimeException("Unable to read GIF file: $path");
+            throw new RuntimeException("Unable to read GIF file: $path");
         }
 
         return self::fromBytes($registry, $bytes);
@@ -54,7 +56,7 @@ final class GifImage
     {
         $length = strlen($bytes);
         if ($length < 13 || !(str_starts_with($bytes, 'GIF87a') || str_starts_with($bytes, 'GIF89a'))) {
-            throw new \InvalidArgumentException('Not a GIF file (bad header).');
+            throw new InvalidArgumentException('Not a GIF file (bad header).');
         }
 
         $packed = ord($bytes[10]);
@@ -102,10 +104,10 @@ final class GifImage
                 return self::readFirstImage($bytes, $pos, $globalColorTable, $transparentIndex, $registry);
             }
 
-            throw new \InvalidArgumentException(sprintf('Unrecognized GIF block introducer: 0x%02X', $introducer));
+            throw new InvalidArgumentException(sprintf('Unrecognized GIF block introducer: 0x%02X', $introducer));
         }
 
-        throw new \InvalidArgumentException('GIF has no image data (no Image Descriptor block found).');
+        throw new InvalidArgumentException('GIF has no image data (no Image Descriptor block found).');
     }
 
     private static function readFirstImage(
@@ -123,7 +125,7 @@ final class GifImage
         $pos += 9;
 
         if ($width <= 0 || $height <= 0) {
-            throw new \InvalidArgumentException("GIF image descriptor has invalid dimensions: {$width}x{$height}.");
+            throw new InvalidArgumentException("GIF image descriptor has invalid dimensions: {$width}x{$height}.");
         }
 
         $hasLocalColorTable = ($imgPacked & 0x80) !== 0;
@@ -138,7 +140,7 @@ final class GifImage
         }
 
         if ($colorTable === null) {
-            throw new \InvalidArgumentException('GIF has no color table (neither global nor local).');
+            throw new InvalidArgumentException('GIF has no color table (neither global nor local).');
         }
 
         self::requireBytes($bytes, $pos, 1);
@@ -235,7 +237,7 @@ final class GifImage
     private static function requireBytes(string $bytes, int $offset, int $count): void
     {
         if ($offset < 0 || $offset + $count > strlen($bytes)) {
-            throw new \InvalidArgumentException('Truncated GIF: the file ends mid-structure.');
+            throw new InvalidArgumentException('Truncated GIF: the file ends mid-structure.');
         }
     }
 

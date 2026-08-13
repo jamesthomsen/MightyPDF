@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Svg;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * Parses an SVG/CSS paint value (as used in "fill"/"stroke" attributes)
  * into an RGB triple, or null for "none"/"transparent" (no paint).
@@ -101,7 +103,7 @@ final class SvgColor
             return [$r / 255.0, $g / 255.0, $b / 255.0];
         }
 
-        throw new \InvalidArgumentException("Unrecognized SVG color value: \"$value\"");
+        throw new InvalidArgumentException("Unrecognized SVG color value: \"$value\"");
     }
 
     /** @return array{0: float, 1: float, 2: float} */
@@ -114,7 +116,7 @@ final class SvgColor
         }
 
         if (strlen($hex) !== 6 || !ctype_xdigit($hex)) {
-            throw new \InvalidArgumentException("Malformed hex color: \"$value\"");
+            throw new InvalidArgumentException("Malformed hex color: \"$value\"");
         }
 
         return [

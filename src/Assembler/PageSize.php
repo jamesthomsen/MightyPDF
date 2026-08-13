@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MightyPDF\Assembler;
 
 use MightyPDF\Assembler\Types\PdfRectangle;
+use MightyPDF\Exception\InvalidArgumentException;
 
 /**
  * The standard paper sizes, in PDF points (1/72 inch).
@@ -96,7 +97,7 @@ enum PageSize
     public function withBleed(float $bleed): PdfRectangle
     {
         if ($bleed < 0.0) {
-            throw new \InvalidArgumentException("Bleed is a margin outside the finished page, so it cannot be negative -- got $bleed.");
+            throw new InvalidArgumentException("Bleed is a margin outside the finished page, so it cannot be negative -- got $bleed.");
         }
 
         // At the origin, not this size's box expanded in place, which

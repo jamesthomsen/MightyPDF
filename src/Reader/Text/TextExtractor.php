@@ -15,6 +15,7 @@ use MightyPDF\Assembler\Types\PdfString;
 use MightyPDF\Assembler\Types\PdfValue;
 use MightyPDF\Editor\PageTree;
 use MightyPDF\Editor\PdfEditor;
+use MightyPDF\Exception\InvalidArgumentException;
 
 /**
  * Reads the text back out of an existing PDF.
@@ -173,7 +174,7 @@ final class TextExtractor
         $page = $this->tree->page($index);
 
         if ($page === null) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'This document has %d page%s, numbered 0 to %d; there is no page %d.',
                 $this->tree->count(),
                 $this->tree->count() === 1 ? '' : 's',

@@ -15,6 +15,8 @@ use MightyPDF\Editor\Form\FormException;
 use MightyPDF\Editor\Form\FormFiller;
 use MightyPDF\Editor\PageTree;
 use MightyPDF\Editor\PdfEditor;
+use MightyPDF\Exception\InvalidArgumentException;
+use MightyPDF\Exception\RuntimeException;
 
 /**
  * Prepares a document to be signed by somebody else.
@@ -109,7 +111,7 @@ final class DeferredSignature
         int $capacity = self::DEFAULT_CAPACITY,
     ): self {
         if ($capacity < 512) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 "A CMS signature does not fit in $capacity bytes; the smallest realistic one is "
                 . 'around 1.5 KB, and the placeholder cannot be grown afterwards.',
             );
@@ -194,11 +196,11 @@ final class DeferredSignature
     public function complete(string $cms): string
     {
         if ($cms === '') {
-            throw new \InvalidArgumentException('The signature is empty; there is nothing to splice in.');
+            throw new InvalidArgumentException('The signature is empty; there is nothing to splice in.');
         }
 
         if (strlen($cms) > $this->capacity) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'The signature is %d bytes and the placeholder reserved %d. It cannot be enlarged now '
                 . 'without moving the bytes the /ByteRange was measured against -- prepare again with '
                 . 'capacity: %d.',
@@ -447,7 +449,7 @@ final class DeferredSignature
         $contentsStart = strpos($bytes, $placeholder, $updateAt);
 
         if ($contentsStart === false) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 'The signature placeholder is not in the saved document. This should not be reachable; '
                 . 'it means the signature dictionary was not written.',
             );
@@ -459,7 +461,7 @@ final class DeferredSignature
         $rangeAt = strpos($bytes, $template, $updateAt);
 
         if ($rangeAt === false) {
-            throw new \RuntimeException('The /ByteRange placeholder is not in the saved document.');
+            throw new RuntimeException('The /ByteRange placeholder is not in the saved document.');
         }
 
         // One update, one signature, so a second copy of either pattern in
@@ -468,7 +470,7 @@ final class DeferredSignature
         // search window above exists to prevent.
         if (strpos($bytes, $placeholder, $contentsEnd) !== false
             || strpos($bytes, $template, $rangeAt + strlen($template)) !== false) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 'The signature update contains the placeholder twice, so which one to splice into is '
                 . 'ambiguous. This should not be reachable; prepare() adds exactly one signature.',
             );

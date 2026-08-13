@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace MightyPDF\Content\Svg;
 
 use MightyPDF\Content\ContentStream;
+use MightyPDF\Exception\InvalidArgumentException;
+use MightyPDF\Exception\RuntimeException;
 
 /**
  * Parses an SVG document: its coordinate system, its element tree, and
@@ -62,7 +64,7 @@ final class SvgDocument
     {
         $contents = file_get_contents($path);
         if ($contents === false) {
-            throw new \RuntimeException("Unable to read SVG file: $path");
+            throw new RuntimeException("Unable to read SVG file: $path");
         }
 
         return self::fromString($contents);
@@ -79,7 +81,7 @@ final class SvgDocument
         libxml_use_internal_errors($previousSetting);
 
         if ($root === false) {
-            throw new \InvalidArgumentException('Malformed SVG/XML.');
+            throw new InvalidArgumentException('Malformed SVG/XML.');
         }
 
         [$vx, $vy, $vw, $vh] = self::readViewBox($root);
@@ -93,7 +95,7 @@ final class SvgDocument
         // negative value for <width> or <height> is an error"), and its
         // symptom is a drawing silently mirrored rather than a refusal.
         if ($vw <= 0.0 || $vh <= 0.0) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'This SVG\'s coordinate system is %s x %s, so there is nothing to scale onto the page. '
                 . 'A viewBox (or a width and height) has to have a positive extent in both directions.',
                 self::describe($vw),
@@ -205,7 +207,7 @@ final class SvgDocument
             return [0.0, 0.0, $width, $height];
         }
 
-        throw new \InvalidArgumentException('SVG has neither a viewBox nor width/height; cannot establish its coordinate system.');
+        throw new InvalidArgumentException('SVG has neither a viewBox nor width/height; cannot establish its coordinate system.');
     }
 
     private static function parseLength(string $value): float
@@ -214,7 +216,7 @@ final class SvgDocument
         // numeric part as user units -- a practical simplification, not
         // real CSS unit conversion.
         if (!preg_match('/-?\d*\.?\d+/', $value, $m)) {
-            throw new \InvalidArgumentException("Malformed SVG length: \"$value\"");
+            throw new InvalidArgumentException("Malformed SVG length: \"$value\"");
         }
 
         return (float) $m[0];

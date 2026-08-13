@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Image;
 
+use MightyPDF\Exception\RuntimeException;
+
 /**
  * The GIF-specific variant of LZW decompression (GIF89a spec, Appendix
  * F). Not byte-compatible with either PDF/TIFF's LZWDecode filter or
@@ -82,7 +84,7 @@ final class GifLzwDecoder
             }
 
             if ($prevEntry === null) {
-                $entry = $dictionary[$code] ?? throw new \RuntimeException("Invalid GIF LZW code: $code");
+                $entry = $dictionary[$code] ?? throw new RuntimeException("Invalid GIF LZW code: $code");
                 $output .= $entry;
                 $prevEntry = $entry;
                 continue;
@@ -93,12 +95,12 @@ final class GifLzwDecoder
             } elseif ($code === $nextCode) {
                 $entry = $prevEntry . $prevEntry[0];
             } else {
-                throw new \RuntimeException("Invalid GIF LZW code: $code");
+                throw new RuntimeException("Invalid GIF LZW code: $code");
             }
 
             $output .= $entry;
             if (strlen($output) > $maxOutputBytes) {
-                throw new \RuntimeException('GIF LZW data decodes to more pixels than the image declares.');
+                throw new RuntimeException('GIF LZW data decodes to more pixels than the image declares.');
             }
 
             // Codes above MAX_CODE can never be read back, so once the

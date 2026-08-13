@@ -11,6 +11,7 @@ use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfString;
 use MightyPDF\Assembler\Types\PdfValue;
+use MightyPDF\Exception\LogicException;
 
 /**
  * One node of a document's structure tree (ISO 32000-2 §14.7.2) -- a
@@ -189,7 +190,7 @@ final class StructureElement extends Dictionary
             return;
         }
 
-        throw new \LogicException(sprintf(
+        throw new LogicException(sprintf(
             'This document\'s headings would go from %s to H%d. A heading level may only descend one '
             . 'at a time (§14.8.4.7): a document that skips one has an outline that every tool building '
             . 'one from the structure gets wrong, and no way to tell what the missing level was.',

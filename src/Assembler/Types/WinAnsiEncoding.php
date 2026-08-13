@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Assembler\Types;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * Encodes a PHP (UTF-8) string into WinAnsiEncoding bytes for use in PDF
  * literal strings and content-stream text-showing operators. Lives
@@ -259,7 +261,7 @@ final class WinAnsiEncoding
         $characters = preg_split('//u', $utf8Text, -1, PREG_SPLIT_NO_EMPTY);
 
         if ($characters === false) {
-            throw new \InvalidArgumentException('Text is not valid UTF-8.');
+            throw new InvalidArgumentException('Text is not valid UTF-8.');
         }
 
         return $characters;

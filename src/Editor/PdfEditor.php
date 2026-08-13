@@ -13,6 +13,7 @@ use MightyPDF\Assembler\Types\PdfValue;
 use MightyPDF\Assembler\Xref;
 use MightyPDF\Assembler\XrefStream;
 use MightyPDF\Crypt\CryptTransform;
+use MightyPDF\Exception\RuntimeException;
 use MightyPDF\Reader\ObjectStore;
 use MightyPDF\Reader\ParseException;
 
@@ -303,7 +304,7 @@ final class PdfEditor
     public function saveToFile(string $path): void
     {
         if (file_put_contents($path, $this->save()) === false) {
-            throw new \RuntimeException("Failed to write PDF to $path");
+            throw new RuntimeException("Failed to write PDF to $path");
         }
     }
 

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Text;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * Splitting UTF-8 text into what a font is asked about: code points.
  *
@@ -31,7 +33,7 @@ final class Utf8
         $utf32 = @iconv('UTF-8', 'UTF-32BE', $utf8Text);
 
         if ($utf32 === false) {
-            throw new \InvalidArgumentException('Text is not valid UTF-8.');
+            throw new InvalidArgumentException('Text is not valid UTF-8.');
         }
 
         return array_values(unpack('N*', $utf32));

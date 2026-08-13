@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * An RGB colour, held the way PDF wants it -- three channels from 0.0 to
  * 1.0 -- and constructed the way everything else states it.
@@ -31,7 +33,7 @@ final class Color implements Paint
     ) {
         foreach (['red' => $r, 'green' => $g, 'blue' => $b] as $name => $channel) {
             if ($channel < 0.0 || $channel > 1.0) {
-                throw new \InvalidArgumentException(
+                throw new InvalidArgumentException(
                     "The $name channel must be between 0.0 and 1.0, got $channel. "
                     . 'For 0-255 values use Color::fromRgb255().',
                 );
@@ -43,7 +45,7 @@ final class Color implements Paint
     {
         foreach (['red' => $r, 'green' => $g, 'blue' => $b] as $name => $channel) {
             if ($channel < 0 || $channel > 255) {
-                throw new \InvalidArgumentException("The $name channel must be between 0 and 255, got $channel.");
+                throw new InvalidArgumentException("The $name channel must be between 0 and 255, got $channel.");
             }
         }
 
@@ -64,7 +66,7 @@ final class Color implements Paint
         }
 
         if (preg_match('/^[0-9a-fA-F]{6}$/', $digits) !== 1) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 "\"$hex\" is not a hex colour -- expected three or six hex digits, optionally led by '#'.",
             );
         }

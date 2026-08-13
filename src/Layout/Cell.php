@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Layout;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * One cell of a table row, where a plain string will not do: because it
  * needs a style of its own, or because it spans more than one column.
@@ -25,7 +27,7 @@ final class Cell
         public readonly int $colspan = 1,
     ) {
         if ($colspan < 1) {
-            throw new \InvalidArgumentException("A cell must span at least one column, got $colspan.");
+            throw new InvalidArgumentException("A cell must span at least one column, got $colspan.");
         }
     }
 

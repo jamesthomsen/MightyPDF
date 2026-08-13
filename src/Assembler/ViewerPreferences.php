@@ -7,6 +7,7 @@ namespace MightyPDF\Assembler;
 use MightyPDF\Assembler\Types\PdfBoolean;
 use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
+use MightyPDF\Exception\InvalidArgumentException;
 
 /**
  * How a document asks to be displayed and printed (ISO 32000-2 §12.2,
@@ -101,7 +102,7 @@ final class ViewerPreferences extends Dictionary
     public function numberOfCopies(int $copies): static
     {
         if ($copies < 1) {
-            throw new \InvalidArgumentException("A document cannot ask for $copies copies.");
+            throw new InvalidArgumentException("A document cannot ask for $copies copies.");
         }
 
         return $this->set('NumCopies', new PdfInteger($copies));

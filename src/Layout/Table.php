@@ -9,6 +9,7 @@ use MightyPDF\Assembler\Structure\StructureRole;
 use MightyPDF\Content\Color;
 use MightyPDF\Content\Paint;
 use MightyPDF\Content\Text\HorizontalAlign;
+use MightyPDF\Exception\InvalidArgumentException;
 
 /**
  * A table: fixed column widths, cells that wrap, rows that size
@@ -81,12 +82,12 @@ final class Table
         private readonly float $verticalPaddingPt = 2.0,
     ) {
         if ($widths === []) {
-            throw new \InvalidArgumentException('A table needs at least one column.');
+            throw new InvalidArgumentException('A table needs at least one column.');
         }
 
         foreach ($widths as $width) {
             if ($width <= 0.0) {
-                throw new \InvalidArgumentException("A column must be wider than nothing, got $width.");
+                throw new InvalidArgumentException("A column must be wider than nothing, got $width.");
             }
         }
     }
@@ -346,7 +347,7 @@ final class Table
 
             for ($i = 0; $i < $cell->colspan; ++$i) {
                 if (!isset($this->widths[$column])) {
-                    throw new \InvalidArgumentException(sprintf(
+                    throw new InvalidArgumentException(sprintf(
                         'This row spans more than the table\'s %d column(s).',
                         count($this->widths),
                     ));
@@ -359,7 +360,7 @@ final class Table
         }
 
         if ($column !== count($this->widths)) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'This row covers %d of the table\'s %d column(s) -- pad it with empty cells, or widen one with a colspan.',
                 $column,
                 count($this->widths),
@@ -432,7 +433,7 @@ final class Table
     private function requireColumn(int $index): void
     {
         if (!isset($this->widths[$index])) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'Column %d does not exist -- this table has %d.',
                 $index,
                 count($this->widths),

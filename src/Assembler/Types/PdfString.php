@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Assembler\Types;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * A PDF literal string, "(...)" (ISO 32000-2 §7.3.4.2).
  *
@@ -80,7 +82,7 @@ final class PdfString implements PdfValue
     {
         $encoded = iconv('UTF-8', 'UTF-16BE', $text);
         if ($encoded === false) {
-            throw new \InvalidArgumentException('Text is not valid UTF-8, cannot convert to UTF-16BE.');
+            throw new InvalidArgumentException('Text is not valid UTF-8, cannot convert to UTF-16BE.');
         }
 
         return new self("\xFE\xFF" . $encoded);

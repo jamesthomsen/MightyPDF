@@ -16,6 +16,9 @@ use MightyPDF\Assembler\Types\PdfString;
 use MightyPDF\Crypt\CryptTransform;
 use MightyPDF\Crypt\Permissions;
 use MightyPDF\Crypt\StandardSecurityHandler;
+use MightyPDF\Exception\InvalidArgumentException;
+use MightyPDF\Exception\LogicException;
+use MightyPDF\Exception\RuntimeException;
 
 /**
  * Top-level facade for assembling a PDF document from scratch -- the
@@ -381,11 +384,11 @@ final class Document implements DocumentContext
         AttachmentRelationship $relationship = AttachmentRelationship::Unspecified,
     ): FileSpecification {
         if ($name === '') {
-            throw new \InvalidArgumentException('An attachment needs a name -- it is what a reader shows and files it under.');
+            throw new InvalidArgumentException('An attachment needs a name -- it is what a reader shows and files it under.');
         }
 
         if (isset($this->attachments[$name])) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 "This document already carries an attachment called \"$name\". "
                 . 'Names are the keys of a name tree, so they have to be distinct.',
             );
@@ -505,7 +508,7 @@ final class Document implements DocumentContext
         bool $encryptMetadata = true,
     ): void {
         if ($this->encryptObjectId !== null) {
-            throw new \LogicException('This document is already encrypted.');
+            throw new LogicException('This document is already encrypted.');
         }
 
         $this->security = StandardSecurityHandler::create(
@@ -690,7 +693,7 @@ final class Document implements DocumentContext
         $handle = @fopen($path, 'wb');
 
         if ($handle === false) {
-            throw new \RuntimeException("Failed to write PDF to $path");
+            throw new RuntimeException("Failed to write PDF to $path");
         }
 
         try {

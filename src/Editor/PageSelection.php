@@ -8,6 +8,7 @@ use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Editor\Form\FormImporter;
+use MightyPDF\Exception\InvalidArgumentException;
 
 /**
  * Which pages of an existing PDF to keep, and in what order -- extracting,
@@ -178,7 +179,7 @@ final class PageSelection
     public function chunks(int $size): array
     {
         if ($size < 1) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 "A chunk has to hold at least one page, and $size was asked for.",
             );
         }
@@ -281,7 +282,7 @@ final class PageSelection
             }
 
             if (isset($pages[$index]) && $this->hasWidgets($pages[$index])) {
-                throw new \InvalidArgumentException(sprintf(
+                throw new InvalidArgumentException(sprintf(
                     'Page %d is selected more than once and carries form fields. A field\'s widget '
                     . 'belongs to one page, so it cannot come across twice -- copy the page without its '
                     . 'form (flatten it first with FormFlattener), or select it once.',
@@ -313,12 +314,12 @@ final class PageSelection
         }
 
         if ($count === 0) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 'This document has no pages, so there is nothing to select.',
             );
         }
 
-        throw new \InvalidArgumentException(sprintf(
+        throw new InvalidArgumentException(sprintf(
             'This document has %d page%s, and page indexes are zero-based, so they run 0 to %d. '
             . 'You asked for %d%s.',
             $count,

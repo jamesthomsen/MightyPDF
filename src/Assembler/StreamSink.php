@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace MightyPDF\Assembler;
 
+use MightyPDF\Exception\InvalidArgumentException;
+use MightyPDF\Exception\RuntimeException;
+
 /**
  * A ByteSink that writes straight to an open stream -- a file, a socket,
  * php://output -- so that a document never has to exist as one string.
@@ -32,7 +35,7 @@ final class StreamSink implements ByteSink
         // at which point the document is already half-written and the
         // caller is holding a truncated file with no exception to say so.
         if (!is_resource($handle) || get_resource_type($handle) !== 'stream') {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 'A StreamSink needs an open stream resource, such as the return of fopen() -- '
                 . 'got ' . get_debug_type($handle) . '.',
             );
@@ -63,7 +66,7 @@ final class StreamSink implements ByteSink
             // anyone -- and a PDF writer is not the right place to
             // implement a retry policy for someone else's socket.
             if ($result === false || $result === 0) {
-                throw new \RuntimeException(sprintf(
+                throw new RuntimeException(sprintf(
                     'Failed writing the PDF to its destination after %d of %d bytes (%d written overall).',
                     $written,
                     $length,

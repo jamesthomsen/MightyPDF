@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace MightyPDF\Output;
 
+use MightyPDF\Exception\InvalidArgumentException;
+use MightyPDF\Exception\RuntimeException;
+
 /**
  * A finished PDF as an HTTP response: the four headers every web
  * consumer writes by hand, written once.
@@ -84,7 +87,7 @@ final class PdfResponse
     public function send(): void
     {
         if (headers_sent($file, $line)) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 "Cannot send a PDF response: output already started at $file line $line.",
             );
         }
@@ -121,14 +124,14 @@ final class PdfResponse
     private static function validated(string $filename): string
     {
         if (preg_match('/[\r\n\x00]/', $filename) === 1) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 'A PDF filename cannot contain a carriage return, newline or NUL byte -- '
                 . 'those end the header, and a filename that carries them is a header-injection attempt.',
             );
         }
 
         if (trim($filename) === '') {
-            throw new \InvalidArgumentException('A PDF filename cannot be empty.');
+            throw new InvalidArgumentException('A PDF filename cannot be empty.');
         }
 
         return $filename;

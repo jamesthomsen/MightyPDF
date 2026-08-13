@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * How an outline is drawn: its paint, its weight, and the four bits of
  * graphics state that make a line look like a rule, a fold mark or a
@@ -29,7 +31,7 @@ final class Stroke
         public readonly float $miterLimit = 10.0,
     ) {
         if ($widthPt < 0.0) {
-            throw new \InvalidArgumentException("A stroke width cannot be negative, got $widthPt.");
+            throw new InvalidArgumentException("A stroke width cannot be negative, got $widthPt.");
         }
     }
 

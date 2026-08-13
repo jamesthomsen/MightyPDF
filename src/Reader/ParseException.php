@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Reader;
 
+use MightyPDF\Exception\PdfException;
+
 /**
  * Thrown when a byte sequence cannot be interpreted as PDF syntax.
  *
@@ -15,7 +17,7 @@ namespace MightyPDF\Reader;
  * (cross-reference streams, encryption), where returning something
  * plausible-looking would be far worse than stopping.
  */
-final class ParseException extends \RuntimeException
+final class ParseException extends \RuntimeException implements PdfException
 {
     public static function at(int $offset, string $message): self
     {

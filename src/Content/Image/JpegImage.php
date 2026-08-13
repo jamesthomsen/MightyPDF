@@ -8,6 +8,8 @@ use MightyPDF\Assembler\ObjectHost;
 use MightyPDF\Assembler\Stream;
 use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
+use MightyPDF\Exception\InvalidArgumentException;
+use MightyPDF\Exception\RuntimeException;
 
 /**
  * Builds an Image XObject (ISO 32000-2 §8.9.5) from a JPEG file.
@@ -27,7 +29,7 @@ final class JpegImage
     {
         $bytes = file_get_contents($path);
         if ($bytes === false) {
-            throw new \RuntimeException("Unable to read JPEG file: $path");
+            throw new RuntimeException("Unable to read JPEG file: $path");
         }
 
         return self::fromBytes($registry, $bytes);
@@ -61,13 +63,13 @@ final class JpegImage
     {
         $length = strlen($bytes);
         if ($length < 4 || ord($bytes[0]) !== 0xFF || ord($bytes[1]) !== 0xD8) {
-            throw new \InvalidArgumentException('Not a JPEG file (missing SOI marker).');
+            throw new InvalidArgumentException('Not a JPEG file (missing SOI marker).');
         }
 
         $pos = 2;
         while ($pos < $length - 1) {
             if (ord($bytes[$pos]) !== 0xFF) {
-                throw new \InvalidArgumentException('Malformed JPEG: expected a marker.');
+                throw new InvalidArgumentException('Malformed JPEG: expected a marker.');
             }
 
             while ($pos < $length && ord($bytes[$pos]) === 0xFF) {
@@ -100,7 +102,7 @@ final class JpegImage
             if ($isSof) {
                 $payload = $pos + 2;
                 if ($payload + 5 >= $length) {
-                    throw new \InvalidArgumentException('Malformed JPEG: truncated SOF segment.');
+                    throw new InvalidArgumentException('Malformed JPEG: truncated SOF segment.');
                 }
 
                 $height = (ord($bytes[$payload + 1]) << 8) | ord($bytes[$payload + 2]);
@@ -113,6 +115,6 @@ final class JpegImage
             $pos += $segmentLength;
         }
 
-        throw new \InvalidArgumentException('Malformed JPEG: no SOF (start-of-frame) marker found.');
+        throw new InvalidArgumentException('Malformed JPEG: no SOF (start-of-frame) marker found.');
     }
 }

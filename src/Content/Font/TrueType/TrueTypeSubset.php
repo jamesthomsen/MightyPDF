@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Font\TrueType;
 
+use MightyPDF\Exception\LogicException;
+
 /**
  * Builds a new, smaller TrueType font containing only the glyphs a
  * document actually draws.
@@ -203,7 +205,7 @@ final class TrueTypeSubset
             $component = $reader->uint16($offset + 2);
 
             $subsetId = $this->subsetIds[$component]
-                ?? throw new \LogicException("Composite glyph $glyph refers to glyph $component, which the closure missed.");
+                ?? throw new LogicException("Composite glyph $glyph refers to glyph $component, which the closure missed.");
 
             $rewritten = substr_replace($rewritten, pack('n', $subsetId), $offset + 2, 2);
             $offset += self::componentRecordLength($flags);

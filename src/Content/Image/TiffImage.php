@@ -11,6 +11,7 @@ use MightyPDF\Assembler\Types\PdfBoolean;
 use MightyPDF\Assembler\Types\PdfHexString;
 use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
+use MightyPDF\Exception\InvalidArgumentException;
 use MightyPDF\Reader\Filter\DecodeParms;
 use MightyPDF\Reader\Filter\LzwDecode;
 use MightyPDF\Reader\Filter\Predictor;
@@ -78,7 +79,7 @@ final class TiffImage
         $directories = TiffDirectory::all($bytes);
 
         if (!isset($directories[$page])) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'This TIFF holds %d image%s, numbered 0 to %d; there is no image %d.',
                 count($directories),
                 count($directories) === 1 ? '' : 's',
@@ -102,11 +103,11 @@ final class TiffImage
         $height = $tiff->value(TiffTag::ImageLength->value, 0);
 
         if ($width < 1 || $height < 1) {
-            throw new \InvalidArgumentException("This TIFF image declares a size of {$width}x{$height}.");
+            throw new InvalidArgumentException("This TIFF image declares a size of {$width}x{$height}.");
         }
 
         if ($width * $height > self::MAX_PIXELS) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'This TIFF declares %dx%d pixels, which is more than this library will allocate for one '
                 . 'image. A file can claim any size it likes; decoding this one is how a small file asks '
                 . 'for a great deal of memory.',
@@ -136,14 +137,14 @@ final class TiffImage
         };
 
         if ($unsupported !== null) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 "This TIFF is $unsupported, which this library does not read. Convert it, or -- if the "
                 . 'payload really is JPEG -- extract it and place it with drawJpeg().',
             );
         }
 
         if ($tiff->value(TiffTag::PlanarConfiguration->value, 1) !== 1) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 'This TIFF stores its colour planes separately (/PlanarConfiguration 2) rather than '
                 . 'interleaved. PDF images are interleaved, so the samples would have to be rewoven, '
                 . 'which this library does not do.',
@@ -152,7 +153,7 @@ final class TiffImage
 
         // Tiled images use /TileOffsets in place of /StripOffsets.
         if ($tiff->stripCount() === 0) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 'This TIFF has no strips, which means it is tiled. Tiled TIFFs are a different layout '
                 . 'that this library does not reassemble.',
             );
@@ -161,7 +162,7 @@ final class TiffImage
         $photometric = $tiff->value(TiffTag::PhotometricInterpretation->value, 1);
 
         if ($photometric > 3) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'This TIFF is %s, which this library does not convert.',
                 match ($photometric) {
                     5 => 'CMYK (separated)',
@@ -192,7 +193,7 @@ final class TiffImage
         int $compression,
     ): Stream {
         if ($tiff->stripCount() > 1) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'This fax-coded TIFF is stored in %d strips, and each is coded independently, so they '
                 . 'cannot be relayed into PDF as one stream. Re-save it with every row in one strip '
                 . '(most tools call this "single strip" or a rows-per-strip of the image height).',
@@ -263,7 +264,7 @@ final class TiffImage
         $bits = $tiff->values(TiffTag::BitsPerSample->value)[0] ?? 1;
 
         if ($samplesPerPixel < 1 || $samplesPerPixel > self::MAX_SAMPLES_PER_PIXEL) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'This TIFF declares %d samples per pixel, and a pixel has at most %d. '
                 . 'A file can claim any number it likes; this one is how a hundred bytes ask for a '
                 . 'buffer of gigabytes.',
@@ -273,7 +274,7 @@ final class TiffImage
         }
 
         if (!in_array($bits, [1, 2, 4, 8, 16], true)) {
-            throw new \InvalidArgumentException("This TIFF has $bits bits per sample, which PDF has no image for.");
+            throw new InvalidArgumentException("This TIFF has $bits bits per sample, which PDF has no image for.");
         }
 
         $pixels = self::decompress($tiff, $compression, $width, $height, $samplesPerPixel, $bits);
@@ -321,7 +322,7 @@ final class TiffImage
         // their product still is not: a hundred million pixels of 16-bit
         // RGB is six hundred megabytes of entirely well-formed image.
         if ($expected > self::MAX_DECODED_BYTES) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'This TIFF decodes to %d bytes of samples, which is more than this library will '
                 . 'allocate for one image (%d). Its %dx%d pixels at %d bits across %d sample%s are '
                 . 'what add up to it.',
@@ -345,7 +346,7 @@ final class TiffImage
                 5 => self::lzw($strip),
                 8, 32_946 => self::inflate($strip),
                 32_773 => (new RunLengthDecode())->decode($strip, new DecodeParms()),
-                default => throw new \InvalidArgumentException(
+                default => throw new InvalidArgumentException(
                     "This TIFF uses compression $compression, which this library does not read.",
                 ),
             };
@@ -396,7 +397,7 @@ final class TiffImage
         }
 
         if ($out === false) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'This TIFF says it is Deflate-compressed and does not inflate -- either it is damaged, '
                 . 'or one strip of it expands past the %d bytes this library will hold.',
                 self::MAX_DECODED_BYTES,
@@ -439,7 +440,7 @@ final class TiffImage
         $entries = intdiv(count($map), 3);
 
         if ($entries < 1) {
-            throw new \InvalidArgumentException('This TIFF says it is a palette image and has no colour map.');
+            throw new InvalidArgumentException('This TIFF says it is a palette image and has no colour map.');
         }
 
         $table = '';

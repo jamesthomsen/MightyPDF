@@ -15,6 +15,7 @@ use MightyPDF\Assembler\Types\PdfRectangle;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfValue;
 use MightyPDF\Content\PageBuilder;
+use MightyPDF\Exception\LogicException;
 
 /**
  * Draws onto a page of an existing document -- a logo, a stamp, a
@@ -84,7 +85,7 @@ final class PageOverlay implements PageContext
     public function apply(): void
     {
         if ($this->applied) {
-            throw new \LogicException('This overlay has already been applied.');
+            throw new LogicException('This overlay has already been applied.');
         }
 
         $this->applied = true;

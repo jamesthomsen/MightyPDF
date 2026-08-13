@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Barcode;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * Data Matrix, ECC200 (ISO/IEC 16022).
  *
@@ -54,12 +56,12 @@ final class DataMatrix
     public static function encode(string $value, DataMatrixShape $shape = DataMatrixShape::Square): ModuleGrid
     {
         if ($value === '') {
-            throw new \InvalidArgumentException('A Data Matrix has to encode something; the value is empty.');
+            throw new InvalidArgumentException('A Data Matrix has to encode something; the value is empty.');
         }
 
         $codewords = self::toCodewords($value);
         $size = DataMatrixSize::smallestFor(count($codewords), $shape)
-            ?? throw new \InvalidArgumentException(sprintf(
+            ?? throw new InvalidArgumentException(sprintf(
                 'This value needs %d codewords and the largest %s Data Matrix holds %d. Shorten it%s.',
                 count($codewords),
                 $shape === DataMatrixShape::Square ? 'square' : 'rectangular',

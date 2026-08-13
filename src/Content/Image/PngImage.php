@@ -13,6 +13,8 @@ use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfValue;
+use MightyPDF\Exception\InvalidArgumentException;
+use MightyPDF\Exception\RuntimeException;
 use MightyPDF\Png\ScanlineFilter;
 
 /**
@@ -120,7 +122,7 @@ final class PngImage
     {
         $bytes = file_get_contents($path);
         if ($bytes === false) {
-            throw new \RuntimeException("Unable to read PNG file: $path");
+            throw new RuntimeException("Unable to read PNG file: $path");
         }
 
         return self::fromBytes($registry, $bytes);
@@ -129,18 +131,18 @@ final class PngImage
     public static function fromBytes(ObjectHost $registry, string $bytes): Stream
     {
         if (!str_starts_with($bytes, self::SIGNATURE)) {
-            throw new \InvalidArgumentException('Not a PNG file (bad signature).');
+            throw new InvalidArgumentException('Not a PNG file (bad signature).');
         }
 
         $chunks = self::readChunks($bytes);
 
         if (!isset($chunks['IHDR'])) {
-            throw new \InvalidArgumentException('PNG has no IHDR chunk.');
+            throw new InvalidArgumentException('PNG has no IHDR chunk.');
         }
 
         $ihdr = $chunks['IHDR'][0];
         if (strlen($ihdr) < 13) {
-            throw new \InvalidArgumentException('PNG IHDR chunk is truncated.');
+            throw new InvalidArgumentException('PNG IHDR chunk is truncated.');
         }
 
         $width = self::readUint32($ihdr, 0);
@@ -150,16 +152,16 @@ final class PngImage
         $interlace = ord($ihdr[12]);
 
         if (!in_array($interlace, [0, 1], true)) {
-            throw new \RuntimeException("Unknown PNG interlace method: $interlace.");
+            throw new RuntimeException("Unknown PNG interlace method: $interlace.");
         }
 
         if ($width <= 0 || $height <= 0 || $width * $height > self::MAX_PIXELS) {
-            throw new \InvalidArgumentException("PNG dimensions out of range: {$width}x{$height}.");
+            throw new InvalidArgumentException("PNG dimensions out of range: {$width}x{$height}.");
         }
 
         $idat = implode('', $chunks['IDAT'] ?? []);
         if ($idat === '') {
-            throw new \InvalidArgumentException('PNG has no IDAT data.');
+            throw new InvalidArgumentException('PNG has no IDAT data.');
         }
 
         if (in_array($colorType, [4, 6], true)) {
@@ -167,7 +169,7 @@ final class PngImage
         }
 
         if (!in_array($colorType, [0, 2, 3], true)) {
-            throw new \RuntimeException("Unsupported PNG color type: $colorType.");
+            throw new RuntimeException("Unsupported PNG color type: $colorType.");
         }
 
         if ($interlace === 1) {
@@ -222,7 +224,7 @@ final class PngImage
         bool $interlaced,
     ): Stream {
         if (!in_array($bitDepth, [8, 16], true)) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 "PNGs with an alpha channel are only supported at 8 or 16 bits per channel (got $bitDepth); re-save at one of those depths.",
             );
         }
@@ -367,7 +369,7 @@ final class PngImage
 
             for ($py = 0; $py < $passHeight; ++$py) {
                 if ($offset + 1 + $rowBytes > strlen($raw)) {
-                    throw new \RuntimeException('PNG IDAT data is shorter than its declared dimensions.');
+                    throw new RuntimeException('PNG IDAT data is shorter than its declared dimensions.');
                 }
 
                 $filterType = ord($raw[$offset]);
@@ -378,7 +380,7 @@ final class PngImage
                 // consecutive pixels share a byte, so the neighbour the
                 // filter predicts from is simply the preceding byte.
                 $reconstructed = ScanlineFilter::reconstructRow($filterType, $row, $previous, 1)
-                    ?? throw new \RuntimeException("Unknown PNG filter type: $filterType.");
+                    ?? throw new RuntimeException("Unknown PNG filter type: $filterType.");
 
                 $previous = $reconstructed;
                 $rowStart = ($startY + $py * $stepY) * $width + $startX;
@@ -405,7 +407,7 @@ final class PngImage
     private static function guardDecodedSize(int $width, int $height, int $bpp): void
     {
         if ($width * $height * $bpp > self::MAX_DECODED_BYTES) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'PNG decodes to %d bytes of pixel data, over the %d-byte limit.',
                 $width * $height * $bpp,
                 self::MAX_DECODED_BYTES,
@@ -445,7 +447,7 @@ final class PngImage
 
         $raw = @gzuncompress($idat, $expected);
         if ($raw === false) {
-            throw new \RuntimeException('Failed to inflate PNG IDAT data.');
+            throw new RuntimeException('Failed to inflate PNG IDAT data.');
         }
 
         return $raw;
@@ -454,7 +456,7 @@ final class PngImage
     private static function colorSpaceFor(int $colorType, array $chunks): PdfValue
     {
         if ($colorType === 3) {
-            $palette = $chunks['PLTE'][0] ?? throw new \InvalidArgumentException('Indexed PNG has no PLTE chunk.');
+            $palette = $chunks['PLTE'][0] ?? throw new InvalidArgumentException('Indexed PNG has no PLTE chunk.');
             $hival = intdiv(strlen($palette), 3) - 1;
 
             return new PdfArray(
@@ -544,7 +546,7 @@ final class PngImage
 
         for ($y = 0; $y < $passHeight; $y++) {
             if ($offset + 1 + $rowBytes > strlen($raw)) {
-                throw new \RuntimeException('PNG IDAT data is shorter than its declared dimensions.');
+                throw new RuntimeException('PNG IDAT data is shorter than its declared dimensions.');
             }
 
             $filterType = ord($raw[$offset]);
@@ -552,7 +554,7 @@ final class PngImage
             $offset += 1 + $rowBytes;
 
             $recon = ScanlineFilter::reconstructRow($filterType, $row, $prevRow, $bpp)
-                ?? throw new \RuntimeException("Unknown PNG filter type: $filterType.");
+                ?? throw new RuntimeException("Unknown PNG filter type: $filterType.");
 
             $out .= $recon;
             $prevRow = $recon;
@@ -619,7 +621,7 @@ final class PngImage
         while ($pos + 8 <= $length) {
             $chunkLength = self::readUint32($bytes, $pos);
             if ($chunkLength > $length - $pos - 8) {
-                throw new \InvalidArgumentException('PNG chunk length exceeds the remaining file data.');
+                throw new InvalidArgumentException('PNG chunk length exceeds the remaining file data.');
             }
 
             $type = substr($bytes, $pos + 4, 4);

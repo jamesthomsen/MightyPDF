@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * The geometry of the shapes PDF has no operator for, written into a
  * PathSink.
@@ -45,7 +47,7 @@ final class Shapes
     public static function ellipse(PathSink $path, float $cx, float $cy, float $rx, float $ry): void
     {
         if ($rx <= 0.0 || $ry <= 0.0) {
-            throw new \InvalidArgumentException("An ellipse needs positive radii, got $rx x $ry.");
+            throw new InvalidArgumentException("An ellipse needs positive radii, got $rx x $ry.");
         }
 
         $ox = $rx * self::KAPPA;
@@ -78,11 +80,11 @@ final class Shapes
         float $radius,
     ): void {
         if ($width <= 0.0 || $height <= 0.0) {
-            throw new \InvalidArgumentException("A rectangle needs a positive size, got $width x $height.");
+            throw new InvalidArgumentException("A rectangle needs a positive size, got $width x $height.");
         }
 
         if ($radius < 0.0) {
-            throw new \InvalidArgumentException("A corner radius cannot be negative, got $radius.");
+            throw new InvalidArgumentException("A corner radius cannot be negative, got $radius.");
         }
 
         $radius = min($radius, $width / 2.0, $height / 2.0);
@@ -111,7 +113,7 @@ final class Shapes
     public static function polygon(PathSink $path, array $points, bool $close = true): void
     {
         if (count($points) < 2) {
-            throw new \InvalidArgumentException('A polyline needs at least two points.');
+            throw new InvalidArgumentException('A polyline needs at least two points.');
         }
 
         foreach ($points as $index => [$x, $y]) {
@@ -145,11 +147,11 @@ final class Shapes
         float $rotationDegrees = 0.0,
     ): array {
         if ($sides < 3) {
-            throw new \InvalidArgumentException("A polygon needs at least three sides, got $sides.");
+            throw new InvalidArgumentException("A polygon needs at least three sides, got $sides.");
         }
 
         if ($radius <= 0.0) {
-            throw new \InvalidArgumentException("A polygon needs a positive radius, got $radius.");
+            throw new InvalidArgumentException("A polygon needs a positive radius, got $radius.");
         }
 
         $start = deg2rad($rotationDegrees);

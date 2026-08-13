@@ -6,6 +6,7 @@ namespace MightyPDF\Assembler;
 
 use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
+use MightyPDF\Exception\RuntimeException;
 
 /**
  * A stream object (ISO 32000-2 §7.3.8): a dictionary describing the data,
@@ -106,7 +107,7 @@ final class Stream extends Dictionary
         $bytes = gzcompress($this->rawBytes);
 
         if ($bytes === false) {
-            throw new \RuntimeException('Failed to compress stream data.');
+            throw new RuntimeException('Failed to compress stream data.');
         }
 
         return $bytes;

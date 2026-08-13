@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * A colour in PDF's DeviceCMYK space: cyan, magenta, yellow and black,
  * each 0.0 to 1.0, where the numbers are ink coverage rather than light.
@@ -34,7 +36,7 @@ final class CmykColor implements Paint
     ) {
         foreach (['cyan' => $c, 'magenta' => $m, 'yellow' => $y, 'black' => $k] as $name => $channel) {
             if ($channel < 0.0 || $channel > 1.0) {
-                throw new \InvalidArgumentException(
+                throw new InvalidArgumentException(
                     "The $name channel must be between 0.0 and 1.0, got $channel. "
                     . 'For percentages use CmykColor::fromPercentages().',
                 );
@@ -50,7 +52,7 @@ final class CmykColor implements Paint
     {
         foreach (['cyan' => $c, 'magenta' => $m, 'yellow' => $y, 'black' => $k] as $name => $channel) {
             if ($channel < 0.0 || $channel > 100.0) {
-                throw new \InvalidArgumentException("The $name channel must be between 0 and 100, got $channel.");
+                throw new InvalidArgumentException("The $name channel must be between 0 and 100, got $channel.");
             }
         }
 

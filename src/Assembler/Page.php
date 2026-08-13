@@ -9,6 +9,7 @@ use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfRectangle;
+use MightyPDF\Exception\InvalidArgumentException;
 
 /**
  * A page object (ISO 32000-2 §7.7.3.3).
@@ -141,7 +142,7 @@ final class Page extends Dictionary implements PageContext
     public function setBleed(float $bleed): void
     {
         if ($bleed < 0.0) {
-            throw new \InvalidArgumentException("Bleed is a margin outside the finished page, so it cannot be negative -- got $bleed.");
+            throw new InvalidArgumentException("Bleed is a margin outside the finished page, so it cannot be negative -- got $bleed.");
         }
 
         $trim = $this->mediaBox->expandedBy(-$bleed);
@@ -152,7 +153,7 @@ final class Page extends Dictionary implements PageContext
         // cheerfully reports a positive width.
         if ($this->mediaBox->width() - $bleed * 2 <= 0.0
             || $this->mediaBox->height() - $bleed * 2 <= 0.0) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'A bleed of %s leaves nothing of a %s x %s sheet to trim to. '
                 . 'The media box has to be the finished size *plus* the bleed -- see PageSize::withBleed().',
                 self::describe($bleed),
@@ -208,7 +209,7 @@ final class Page extends Dictionary implements PageContext
         $normalized = $box->normalized();
 
         if (!$this->mediaBox->contains($normalized)) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'The /%s [%s %s %s %s] does not fit inside this page\'s media box [%s %s %s %s]. '
                 . 'A reader is entitled to shrink it to the overlap of the two rather than report this, '
                 . 'so the page would come out silently wrong. Give the page a bigger media box -- '
@@ -258,7 +259,7 @@ final class Page extends Dictionary implements PageContext
     public function setRotation(int $degrees): void
     {
         if ($degrees % 90 !== 0) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 "A page turns in multiples of 90 degrees, got $degrees.",
             );
         }

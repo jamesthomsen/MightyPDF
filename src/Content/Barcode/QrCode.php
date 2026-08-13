@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Barcode;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * A QR code (ISO/IEC 18004): the 2D symbology, and the one a payment
  * link, a ticket or a "scan me" on an invoice is actually printed in.
@@ -117,7 +119,7 @@ final class QrCode
         int $maxVersion = 40,
     ): self {
         if ($minVersion < 1 || $maxVersion > 40 || $minVersion > $maxVersion) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 "Versions run from 1 to 40, and the minimum cannot exceed the maximum -- got $minVersion to $maxVersion.",
             );
         }
@@ -216,7 +218,7 @@ final class QrCode
             }
         }
 
-        throw new \InvalidArgumentException(sprintf(
+        throw new InvalidArgumentException(sprintf(
             '%d bytes is too much for a version-%d QR code at this error-correction level. '
             . 'Use a lower level, raise the maximum version, or put less in it.',
             strlen($data),

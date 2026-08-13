@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Barcode;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * Code 128 (ISO/IEC 15417): the general-purpose 1D symbology, and the one
  * a modern SKU, tracking number or licence plate is actually printed in.
@@ -109,14 +111,14 @@ final class Code128
     public static function symbols(string $value): array
     {
         if ($value === '') {
-            throw new \InvalidArgumentException('Code 128 cannot encode an empty value.');
+            throw new InvalidArgumentException('Code 128 cannot encode an empty value.');
         }
 
         $length = strlen($value);
 
         for ($i = 0; $i < $length; ++$i) {
             if (ord($value[$i]) > 127) {
-                throw new \InvalidArgumentException(sprintf(
+                throw new InvalidArgumentException(sprintf(
                     'Code 128 encodes ASCII only; byte 0x%02X at offset %d is outside it. '
                     . 'Text with accents or non-Latin characters needs a 2D symbology -- see drawQrCode().',
                     ord($value[$i]),

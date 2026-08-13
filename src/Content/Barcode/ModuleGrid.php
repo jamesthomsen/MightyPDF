@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Barcode;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * A two-dimensional symbol as a grid of dark and light modules.
  *
@@ -31,14 +33,14 @@ final class ModuleGrid
     public static function of(array $rows): self
     {
         if ($rows === []) {
-            throw new \InvalidArgumentException('A symbol needs at least one row.');
+            throw new InvalidArgumentException('A symbol needs at least one row.');
         }
 
         $width = count($rows[0]);
 
         foreach ($rows as $index => $row) {
             if (count($row) !== $width) {
-                throw new \InvalidArgumentException(sprintf(
+                throw new InvalidArgumentException(sprintf(
                     'Every row of a symbol is the same width; row 0 has %d modules and row %d has %d.',
                     $width,
                     $index,

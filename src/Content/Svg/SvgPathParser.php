@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MightyPDF\Content\Svg;
 
 use MightyPDF\Content\PathSink;
+use MightyPDF\Exception\InvalidArgumentException;
 
 /**
  * Parses an SVG path "d" attribute (SVG 1.1 §8.3) and replays it as
@@ -49,7 +50,7 @@ final class SvgPathParser
                 $command = $token;
                 ++$index;
             } elseif ($command === null) {
-                throw new \InvalidArgumentException('SVG path data must start with a command letter.');
+                throw new InvalidArgumentException('SVG path data must start with a command letter.');
             }
 
             $letter = strtoupper($command);
@@ -57,7 +58,7 @@ final class SvgPathParser
 
             $readNumber = function () use (&$index, $tokens, $count): float {
                 if ($index >= $count || !is_float($tokens[$index])) {
-                    throw new \InvalidArgumentException('Malformed SVG path data: expected a number.');
+                    throw new InvalidArgumentException('Malformed SVG path data: expected a number.');
                 }
 
                 return $tokens[$index++];
@@ -220,7 +221,7 @@ final class SvgPathParser
                     break;
 
                 default:
-                    throw new \InvalidArgumentException("Unsupported SVG path command: \"$command\"");
+                    throw new InvalidArgumentException("Unsupported SVG path command: \"$command\"");
             }
 
             $previousCommandLetter = $letter;

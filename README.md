@@ -1755,6 +1755,40 @@ doesn't stop anyone copying anything — it stops Acrobat offering the menu
 item. Real confidentiality comes from a real user password and nothing
 else.
 
+## When things go wrong
+
+Everything this library throws implements `MightyPDF\Exception\PdfException`,
+so one catch covers the lot:
+
+```php
+use MightyPDF\Exception\PdfException;
+
+try {
+    $document->saveToFile($path);
+} catch (PdfException $failure) {
+    // Ours: a bad argument, a file that would not open, a font that
+    // cannot draw what it was given.
+}
+```
+
+Underneath, the types are the ones you would expect, because the marker
+is an interface rather than a base class and nothing fights PHP's own
+hierarchy:
+
+| What happened | What you catch |
+| --- | --- |
+| An argument was wrong when it was passed | `Exception\InvalidArgumentException` (extends the SPL one) |
+| Something reasonable failed anyway | `Exception\RuntimeException` |
+| A sequence of calls that cannot be right | `Exception\LogicException` |
+| A PDF would not parse | `Reader\ParseException` |
+| A password did not open a file | `Crypt\DecryptionException` |
+| A font could not be read or embedded | `Content\Font\TrueType\FontException` |
+| A form field could not be filled | `Editor\Form\FormException` |
+
+Each of the first three extends the SPL exception it replaces, so
+`catch (\InvalidArgumentException $e)` written against any earlier
+version keeps working exactly as it did.
+
 ## Editing an existing PDF
 
 `PdfEditor` opens a PDF, hands you its objects, and writes your changes

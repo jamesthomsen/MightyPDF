@@ -45,6 +45,8 @@ use MightyPDF\Content\Text\HorizontalAlign;
 use MightyPDF\Content\Text\TextPlacement;
 use MightyPDF\Content\Text\TextWrapper;
 use MightyPDF\Content\Text\VerticalAlign;
+use MightyPDF\Exception\InvalidArgumentException;
+use MightyPDF\Exception\RuntimeException;
 
 /**
  * The content-layer entry point for drawing on a page: text now, shapes
@@ -1070,7 +1072,7 @@ final class PageBuilder
 
         foreach (['fill' => $fillAlpha, 'stroke' => $strokeAlpha] as $which => $alpha) {
             if ($alpha < 0.0 || $alpha > 1.0) {
-                throw new \InvalidArgumentException("The $which alpha must be between 0.0 and 1.0, got $alpha.");
+                throw new InvalidArgumentException("The $which alpha must be between 0.0 and 1.0, got $alpha.");
             }
         }
 
@@ -1182,7 +1184,7 @@ final class PageBuilder
         $bytes = file_get_contents($path);
 
         if ($bytes === false) {
-            throw new \RuntimeException("Unable to read image file: $path");
+            throw new RuntimeException("Unable to read image file: $path");
         }
 
         return TiffImage::pageCount($bytes);
@@ -1206,7 +1208,7 @@ final class PageBuilder
     {
         $bytes = file_get_contents($path);
         if ($bytes === false) {
-            throw new \RuntimeException("Unable to read image file: $path");
+            throw new RuntimeException("Unable to read image file: $path");
         }
 
         $contentHash = $format . ':' . hash('xxh128', $bytes);
@@ -1282,7 +1284,7 @@ final class PageBuilder
     ): static {
         $bytes = file_get_contents($path);
         if ($bytes === false) {
-            throw new \RuntimeException("Unable to read SVG file: $path");
+            throw new RuntimeException("Unable to read SVG file: $path");
         }
 
         // Keyed on what the caller asked for rather than on the

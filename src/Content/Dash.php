@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * A dash pattern: alternating on and off lengths in points, and how far
  * into that cycle the line begins.
@@ -29,7 +31,7 @@ final class Dash
     ) {
         foreach ($pattern as $length) {
             if ($length < 0.0) {
-                throw new \InvalidArgumentException("A dash length cannot be negative, got $length.");
+                throw new InvalidArgumentException("A dash length cannot be negative, got $length.");
             }
         }
 
@@ -37,7 +39,7 @@ final class Dash
         // readers differ on whether they draw nothing or draw it solid,
         // which is a difference nobody notices until the wrong one ships.
         if ($pattern !== [] && array_sum($pattern) <= 0.0) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 'A dash pattern of all zeros is not a pattern -- pass an empty array for a solid line.',
             );
         }

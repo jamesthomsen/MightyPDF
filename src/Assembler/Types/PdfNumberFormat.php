@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Assembler\Types;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * Shared float-to-PDF-numeric-literal formatting, used by PdfReal and by
  * the content layer's operator formatting. PDF real numbers must never use
@@ -24,7 +26,7 @@ final class PdfNumberFormat
     {
         if (!is_finite($value)) {
             $description = is_nan($value) ? 'NAN' : ($value > 0 ? 'INF' : '-INF');
-            throw new \InvalidArgumentException("Cannot format non-finite number in a PDF: $description");
+            throw new InvalidArgumentException("Cannot format non-finite number in a PDF: $description");
         }
 
         $formatted = number_format($value, 6, '.', '');

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Barcode;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * EAN-13 and UPC-A: the barcode on retail packaging.
  *
@@ -90,7 +92,7 @@ final class Ean13
         $digits = preg_replace('/[\s-]+/', '', $value) ?? '';
 
         if (preg_match('/^\d{11,12}$/', $digits) !== 1) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 "UPC-A takes eleven digits, or twelve including the check digit -- got \"$value\".",
             );
         }
@@ -109,7 +111,7 @@ final class Ean13
         $digits = preg_replace('/[\s-]+/', '', $value) ?? '';
 
         if (preg_match('/^\d{12,13}$/', $digits) !== 1) {
-            throw new \InvalidArgumentException(
+            throw new InvalidArgumentException(
                 "EAN-13 takes twelve digits, or thirteen including the check digit -- got \"$value\".",
             );
         }
@@ -117,7 +119,7 @@ final class Ean13
         $check = self::checkDigit(substr($digits, 0, 12));
 
         if (strlen($digits) === 13 && (int) $digits[12] !== $check) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'The check digit of "%s" is wrong: it should be %d, not %s. '
                 . 'Pass the first twelve digits to have it computed.',
                 $digits,

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Crypt;
 
+use MightyPDF\Exception\PdfException;
+
 /**
  * Thrown when an encrypted PDF cannot be unlocked or its encryption
  * cannot be handled.
@@ -13,6 +15,6 @@ namespace MightyPDF\Crypt;
  * help, whereas this usually means the caller has the wrong password, or
  * none, and supplying one would fix it.
  */
-final class DecryptionException extends \RuntimeException
+final class DecryptionException extends \RuntimeException implements PdfException
 {
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Font\TrueType;
 
+use MightyPDF\Exception\PdfException;
+
 /**
  * A font file that cannot be used: not a font at all, truncated,
  * internally inconsistent, or in a format this library does not embed
@@ -14,6 +16,6 @@ namespace MightyPDF\Content\Font\TrueType;
  * wrong while writing the document -- a caller offering a font picker
  * wants to report the first to the person choosing, and not the second.
  */
-final class FontException extends \RuntimeException
+final class FontException extends \RuntimeException implements PdfException
 {
 }

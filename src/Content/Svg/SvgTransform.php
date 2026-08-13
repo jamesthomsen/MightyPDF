@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Svg;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * Parses an SVG "transform" attribute (translate/scale/rotate/matrix)
  * into a list of 2D affine matrices, one per function in the attribute,
@@ -124,7 +126,7 @@ final class SvgTransform
                 $args[0] ?? 1.0, $args[1] ?? 0.0, $args[2] ?? 0.0,
                 $args[3] ?? 1.0, $args[4] ?? 0.0, $args[5] ?? 0.0,
             ]],
-            default => throw new \InvalidArgumentException("Unsupported SVG transform function: \"$function\""),
+            default => throw new InvalidArgumentException("Unsupported SVG transform function: \"$function\""),
         };
     }
 

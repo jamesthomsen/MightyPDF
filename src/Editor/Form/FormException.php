@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Editor\Form;
 
+use MightyPDF\Exception\PdfException;
+
 /**
  * Thrown when a form cannot be filled as asked.
  *
@@ -14,6 +16,6 @@ namespace MightyPDF\Editor\Form;
  * will look. There is no useful "best effort" for that, so the library
  * refuses rather than writing a file the caller will trust.
  */
-final class FormException extends \RuntimeException
+final class FormException extends \RuntimeException implements PdfException
 {
 }

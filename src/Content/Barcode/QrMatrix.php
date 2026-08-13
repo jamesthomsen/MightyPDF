@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Barcode;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * The grid of a QR symbol under construction: which modules are dark, and
  * which of them are function patterns rather than data.
@@ -35,7 +37,7 @@ final class QrMatrix
     public function __construct(private readonly int $version)
     {
         if ($version < 1 || $version > 40) {
-            throw new \InvalidArgumentException("A QR version runs from 1 to 40, got $version.");
+            throw new InvalidArgumentException("A QR version runs from 1 to 40, got $version.");
         }
 
         $this->size = $version * 4 + 17;
@@ -131,7 +133,7 @@ final class QrMatrix
     public function applyMask(int $mask): void
     {
         if ($mask < 0 || $mask > 7) {
-            throw new \InvalidArgumentException("A QR mask is 0 to 7, got $mask.");
+            throw new InvalidArgumentException("A QR mask is 0 to 7, got $mask.");
         }
 
         for ($y = 0; $y < $this->size; ++$y) {

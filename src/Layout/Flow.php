@@ -23,6 +23,8 @@ use MightyPDF\Content\Stroke;
 use MightyPDF\Content\Text\GlyphFallback;
 use MightyPDF\Content\Text\TextPlacement;
 use MightyPDF\Content\Text\TextWrapper;
+use MightyPDF\Exception\InvalidArgumentException;
+use MightyPDF\Exception\LogicException;
 
 /**
  * A document laid out as flow rather than as arithmetic: a cursor, a
@@ -251,7 +253,7 @@ final class Flow
     public function setBleed(float $bleed): static
     {
         if ($this->bleed !== null) {
-            throw new \LogicException(
+            throw new LogicException(
                 'This Flow already has a bleed. It is one number for the whole job -- '
                 . 'the press trims every sheet the same -- so setting a second one would '
                 . 'silently move the margins of the pages already laid out.',
@@ -259,7 +261,7 @@ final class Flow
         }
 
         if ($bleed < 0.0) {
-            throw new \InvalidArgumentException("Bleed is a margin outside the finished page, so it cannot be negative -- got $bleed.");
+            throw new InvalidArgumentException("Bleed is a margin outside the finished page, so it cannot be negative -- got $bleed.");
         }
 
         $points = $this->unit->toPoints($bleed);
@@ -1270,7 +1272,7 @@ final class Flow
             'png' => $content->drawPng($path, $xPt, $bottomYPt, $widthPt, $heightPt),
             'gif' => $content->drawGif($path, $xPt, $bottomYPt, $widthPt, $heightPt),
             'svg' => $content->drawSvg($path, $xPt, $bottomYPt, $widthPt, $heightPt),
-            default => throw new \InvalidArgumentException(
+            default => throw new InvalidArgumentException(
                 "Cannot tell the format of \"$path\" from its extension -- expected .jpg, .png, .gif or .svg. "
                 . 'Call content()->drawJpeg() and friends directly to say which it is.',
             ),
@@ -1813,7 +1815,7 @@ final class Flow
         // finished, so that catching this and saving anyway throws again
         // rather than quietly handing back the file it was refusing.
         if (count($this->pages) !== $total) {
-            throw new \LogicException(
+            throw new LogicException(
                 'A per-page hook added a page. Hooks draw onto the pages that already exist -- '
                 . 'they run once the page count is final, which is what lets them print it.',
             );

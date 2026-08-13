@@ -6,6 +6,7 @@ namespace MightyPDF\Assembler;
 
 use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
+use MightyPDF\Exception\LogicException;
 
 /**
  * An object stream (ISO 32000-2 §7.5.7): a stream whose data is a run of
@@ -73,7 +74,7 @@ final class ObjectStream
     public static function pack(int $objectId, array $objects): Stream
     {
         if ($objects === []) {
-            throw new \LogicException('An object stream with nothing in it is a stream a reader has no reason to read.');
+            throw new LogicException('An object stream with nothing in it is a stream a reader has no reason to read.');
         }
 
         $header = '';
@@ -81,7 +82,7 @@ final class ObjectStream
 
         foreach ($objects as $id => $object) {
             if (!self::accepts($object)) {
-                throw new \LogicException(
+                throw new LogicException(
                     "Object $id cannot go in an object stream -- see ObjectStream for the three kinds that cannot.",
                 );
             }

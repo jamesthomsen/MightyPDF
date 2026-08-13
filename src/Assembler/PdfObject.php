@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MightyPDF\Assembler;
 
 use MightyPDF\Assembler\Types\PdfValue;
+use MightyPDF\Exception\LogicException;
 
 /**
  * Base class for every PDF object that has (or could have) its own object
@@ -48,7 +49,7 @@ abstract class PdfObject implements PdfValue
     public function objectId(): int
     {
         if ($this->objectId === null) {
-            throw new \LogicException('This object has no object id -- it was constructed for use as an inline value only.');
+            throw new LogicException('This object has no object id -- it was constructed for use as an inline value only.');
         }
 
         return $this->objectId;

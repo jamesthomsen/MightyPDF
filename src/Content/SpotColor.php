@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * A named ink -- a spot colour -- at some tint of itself: PDF's
  * /Separation colour space (ISO 32000-2 §8.6.6.4).
@@ -46,11 +48,11 @@ final class SpotColor implements Paint
         public readonly float $tint,
     ) {
         if ($name === '') {
-            throw new \InvalidArgumentException('A spot colour needs a name -- it is what identifies the plate.');
+            throw new InvalidArgumentException('A spot colour needs a name -- it is what identifies the plate.');
         }
 
         if ($tint < 0.0 || $tint > 1.0) {
-            throw new \InvalidArgumentException("A tint must be between 0.0 and 1.0, got $tint.");
+            throw new InvalidArgumentException("A tint must be between 0.0 and 1.0, got $tint.");
         }
     }
 

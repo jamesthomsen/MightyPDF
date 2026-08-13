@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Barcode;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * Which linear barcode to draw.
  *
@@ -73,7 +75,7 @@ enum Symbology: string
             return $symbology;
         }
 
-        return self::tryFrom(strtolower($symbology)) ?? throw new \InvalidArgumentException(sprintf(
+        return self::tryFrom(strtolower($symbology)) ?? throw new InvalidArgumentException(sprintf(
             'Unsupported barcode symbology "%s" -- expected one of: %s.',
             $symbology,
             implode(', ', array_column(self::cases(), 'value')),

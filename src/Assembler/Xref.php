@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Assembler;
 
+use MightyPDF\Exception\LogicException;
+
 /**
  * The classic plain-text cross-reference table (ISO 32000-2 §7.5.4):
  * "xref\n0 N\n0000000000 65535 f \n0000000010 00000 n \n...".
@@ -98,7 +100,7 @@ final class Xref
 
     public function offsetOf(int $objectId): int
     {
-        return $this->entries[$objectId] ?? throw new \LogicException("No xref entry for object id $objectId.");
+        return $this->entries[$objectId] ?? throw new LogicException("No xref entry for object id $objectId.");
     }
 
     /**
@@ -155,7 +157,7 @@ final class Xref
     public function build(): string
     {
         if ($this->compressed !== []) {
-            throw new \LogicException(
+            throw new LogicException(
                 'This xref has objects inside object streams, which a classic cross-reference table '
                 . 'has no entry type for -- it can only say "at byte offset N". Write a cross-reference '
                 . 'stream instead (see XrefStream).',
@@ -170,7 +172,7 @@ final class Xref
 
         for ($id = 1; $id <= $highest; ++$id) {
             if (!isset($this->entries[$id])) {
-                throw new \LogicException("Xref has a gap at object id $id -- phase 1 requires contiguous object ids starting at 1.");
+                throw new LogicException("Xref has a gap at object id $id -- phase 1 requires contiguous object ids starting at 1.");
             }
 
             $out .= $this->entryLine($id);

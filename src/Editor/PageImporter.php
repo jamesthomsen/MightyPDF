@@ -18,6 +18,7 @@ use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfString;
 use MightyPDF\Assembler\Types\PdfValue;
 use MightyPDF\Editor\Form\FormImporter;
+use MightyPDF\Exception\RuntimeException;
 
 /**
  * Copies pages from one opened document into a fresh Document being
@@ -225,7 +226,7 @@ final class PageImporter
         }
 
         $source = $this->source->resolveDictionary(new PdfReference($sourceId))
-            ?? throw new \RuntimeException("Cannot import form field $sourceId: it is not a dictionary.");
+            ?? throw new RuntimeException("Cannot import form field $sourceId: it is not a dictionary.");
 
         $copy = new Dictionary($this->target->allocate());
         $this->fields[$sourceId] = $copy;
@@ -441,7 +442,7 @@ final class PageImporter
         $resolved = $this->source->get($oldObjectId);
 
         if (!$resolved instanceof Dictionary) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 "Cannot import annotation $oldObjectId: expected a dictionary, found something else.",
             );
         }
@@ -541,7 +542,7 @@ final class PageImporter
         $resolved = $this->source->get($oldObjectId);
 
         if (!$resolved instanceof Dictionary) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 "Cannot import object $oldObjectId: expected a dictionary or stream, found something else.",
             );
         }

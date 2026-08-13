@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Content\Image;
 
+use MightyPDF\Exception\InvalidArgumentException;
+
 /**
  * One image directory (IFD) out of a TIFF file, read into the tags this
  * library acts on.
@@ -61,7 +63,7 @@ final class TiffDirectory
     public static function all(string $bytes): array
     {
         if (strlen($bytes) < 8) {
-            throw new \InvalidArgumentException('This is too short to be a TIFF file.');
+            throw new InvalidArgumentException('This is too short to be a TIFF file.');
         }
 
         $order = substr($bytes, 0, 2);
@@ -69,7 +71,7 @@ final class TiffDirectory
         $littleEndian = match ($order) {
             'II' => true,
             'MM' => false,
-            default => throw new \InvalidArgumentException(
+            default => throw new InvalidArgumentException(
                 'This is not a TIFF file: it begins with neither "II" nor "MM".',
             ),
         };
@@ -77,7 +79,7 @@ final class TiffDirectory
         $magic = self::short($bytes, 2, $littleEndian);
 
         if ($magic !== 42) {
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                 'This is not a TIFF file: the magic number is %d rather than 42.%s',
                 $magic,
                 $magic === 43 ? ' (43 is BigTIFF, which is a different format.)' : '',
@@ -108,7 +110,7 @@ final class TiffDirectory
         }
 
         if ($directories === []) {
-            throw new \InvalidArgumentException('This TIFF file has no image directories in it.');
+            throw new InvalidArgumentException('This TIFF file has no image directories in it.');
         }
 
         return $directories;
