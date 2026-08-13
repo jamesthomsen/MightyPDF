@@ -1482,6 +1482,8 @@ final class PageBuilder
             $onAppearance,
             $offAppearance,
             $exportValue,
+            $mark->captionCharacter(),
+            $this->dingbatResourceName(),
         );
 
         $this->registerField($field);
@@ -1536,6 +1538,8 @@ final class PageBuilder
                 $checkedExportValue !== null && $checkedExportValue === $option['exportValue'],
                 $onAppearance,
                 $offAppearance,
+                $mark->captionCharacter(),
+                $this->dingbatResourceName(),
             );
             $this->document->register($widget);
 
@@ -1743,6 +1747,20 @@ final class PageBuilder
      * a subset points at a font whose missing characters only show up
      * when someone fills the form in.
      */
+    /**
+     * The /DR name of the ZapfDingbats a reader draws button captions
+     * with. Registered under its conventional name, which is not a
+     * cosmetic choice -- see AcroForm::fontResourceName().
+     */
+    private function dingbatResourceName(): string
+    {
+        return $this->document->acroForm()->fontResourceName(
+            StandardFont::ZapfDingbats->cacheKey(),
+            StandardFont::ZapfDingbats->writerFor($this->document)->dictionary(),
+            'ZaDb',
+        );
+    }
+
     private function formFontResourceName(Font $font): string
     {
         if ($font instanceof EmbeddedFont && $font->isSubset()) {

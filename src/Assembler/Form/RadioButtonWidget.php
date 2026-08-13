@@ -36,6 +36,8 @@ final class RadioButtonWidget extends Dictionary
         bool $checked,
         Stream $onAppearance,
         Stream $offAppearance,
+        ?string $caption = null,
+        ?string $captionFontResourceName = null,
     ) {
         parent::__construct($objectId);
 
@@ -44,6 +46,8 @@ final class RadioButtonWidget extends Dictionary
         $this->set('Parent', new PdfReference($parentObjectId));
         $this->set('Rect', $rect);
         $this->set('F', new PdfInteger(self::FLAG_PRINT));
+
+        ButtonCaption::describe($this, $caption, $captionFontResourceName);
 
         $state = $checked ? $exportValue : 'Off';
         $this->set('AS', new PdfName($state));

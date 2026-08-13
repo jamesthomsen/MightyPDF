@@ -97,6 +97,26 @@ final class DocumentEncryptionTest extends TestCase
         self::assertSame(6, $encrypt->get('R')?->value());
     }
 
+    /**
+     * Table 20 scopes /Length to /V 2 and 3, so a V5 dictionary without
+     * one is correct -- but qpdf --check asks for it regardless of /V and
+     * warns when it is missing, which made every encrypted file this
+     * library produced fail the checker. Written in bits, matching the
+     * key length, while the crypt filter's own /Length is in bytes.
+     */
+    public function testTheEncryptDictionaryStatesItsKeyLength(): void
+    {
+        $store = new ObjectStore(self::encrypted());
+        $encrypt = $store->resolveDictionary($store->trailer()->get('Encrypt'));
+
+        self::assertSame(256, $encrypt?->get('Length')?->value());
+
+        $filter = $store->resolveDictionary($encrypt->get('CF'));
+        $standard = $store->resolveDictionary($filter?->get('StdCF'));
+
+        self::assertSame(32, $standard?->get('Length')?->value());
+    }
+
     public function testAnEncryptedDocumentCarriesAnId(): void
     {
         // Required for an encrypted file, and both halves match for one

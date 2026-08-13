@@ -30,12 +30,16 @@ final class CheckboxField extends FormField
         Stream $onAppearance,
         Stream $offAppearance,
         string $exportValue = 'Yes',
+        ?string $caption = null,
+        ?string $captionFontResourceName = null,
     ) {
         parent::__construct($objectId, $name, $rect);
 
         $state = $checked ? $exportValue : 'Off';
         $this->set('V', new PdfName($state));
         $this->set('AS', new PdfName($state));
+
+        ButtonCaption::describe($this, $caption, $captionFontResourceName);
 
         $states = new Dictionary();
         $states->set($exportValue, new PdfReference($onAppearance->objectId()));

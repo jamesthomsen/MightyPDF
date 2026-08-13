@@ -127,8 +127,15 @@ final class AcroForm extends Dictionary
      * must not depend on Content), and $fontDict is expected to be the
      * document-wide shared font object for that key, so repeat calls
      * across pages return the same name pointing at the same object.
+     *
+     * $preferredName asks for a particular name rather than the next
+     * free F-number, and is taken only if nothing else holds it. One
+     * font needs this: the ZapfDingbats a reader draws button captions
+     * with, which readers look for under the conventional name /ZaDb
+     * and not by reading /DA. A form whose dingbats are called /F2 makes
+     * poppler report "Unknown font tag 'ZaDb'" and draw no check at all.
      */
-    public function fontResourceName(string $fontKey, Dictionary $fontDict): string
+    public function fontResourceName(string $fontKey, Dictionary $fontDict, ?string $preferredName = null): string
     {
         if (isset($this->fontResourceNames[$fontKey])) {
             return $this->fontResourceNames[$fontKey];
@@ -150,7 +157,10 @@ final class AcroForm extends Dictionary
             }
         }
 
-        $resourceName = $this->freeFontResourceName($fonts);
+        $resourceName = $preferredName !== null && $fonts->get($preferredName) === null
+            ? $preferredName
+            : $this->freeFontResourceName($fonts);
+
         $this->fontResourceNames[$fontKey] = $resourceName;
         $fonts->set($resourceName, new PdfReference($fontDict->objectId()));
 

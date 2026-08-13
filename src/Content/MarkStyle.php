@@ -18,6 +18,30 @@ enum MarkStyle
     case Square;
 
     /**
+     * The ZapfDingbats character a reader should draw if it regenerates
+     * this button's appearance itself -- §12.5.6.19's /MK /CA caption.
+     *
+     * A form that sets /NeedAppearances has asked readers to rebuild the
+     * appearance of *every* widget in it, buttons included, and a reader
+     * doing that throws away the vector mark draw() produced. What it
+     * draws instead comes from here: without a caption it falls back to
+     * its own default, so a box the caller asked to be square comes back
+     * as whatever tick that reader happens to prefer.
+     *
+     * ZapfDingbats has an exact match for all three (a4 is the check,
+     * a71 the filled circle, a110 the filled square), so a regenerated
+     * appearance and a drawn one agree rather than merely coexisting.
+     */
+    public function captionCharacter(): string
+    {
+        return match ($this) {
+            self::Check => '4',
+            self::Dot => 'l',
+            self::Square => 'n',
+        };
+    }
+
+    /**
      * Draws this mark inside a $size x $size box with its origin at
      * (0, 0) -- the coordinate space of a button widget's appearance
      * stream, where the box is the widget's own /Rect.

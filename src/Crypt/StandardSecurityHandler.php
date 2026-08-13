@@ -99,6 +99,18 @@ final class StandardSecurityHandler
             ->set('Filter', new PdfName('Standard'))
             ->set('V', new PdfInteger(5))
             ->set('R', new PdfInteger(6))
+            // Table 20 scopes /Length to V 2 and 3, so a V5 dictionary
+            // without one is correct and every reader tried here opens
+            // it. It is written anyway because qpdf --check asks for it
+            // regardless of /V and reports a warning when it is absent
+            // ("dictionary key /Length: operation for integer attempted
+            // on object of type null"), and a checker that cries wolf on
+            // every encrypted file this library produces is a checker
+            // nobody reads. Acrobat writes it for AES-256 too. In bits
+            // here, matching the key length; the /StdCF entry below is
+            // in bytes, which is the convention for a crypt filter and
+            // is not a contradiction however much it looks like one.
+            ->set('Length', new PdfInteger(256))
             ->set('CF', (new Dictionary())->set('StdCF', (new Dictionary())
                 ->set('CFM', new PdfName('AESV3'))
                 ->set('Length', new PdfInteger(32))

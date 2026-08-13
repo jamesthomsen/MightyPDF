@@ -2369,6 +2369,32 @@ for a runnable version.
 
 ## Upgrading
 
+### From 2.1
+
+**2.2.0** is additive. `Document::writeTo($handle)` and `Flow::writeTo()`
+stream a document to an open stream instead of building it in memory —
+see [large documents](#large-documents) — and `saveToFile()` now uses
+that path, so it no longer holds the file twice. `save()` is unchanged.
+
+Two fixes change the bytes of documents you may already be producing,
+both toward what readers expect:
+
+1. **Checkboxes and radio buttons now describe their own mark.** Each
+   carries `/MK /CA` naming the ZapfDingbats character equivalent to the
+   `MarkStyle` you chose, and the form's `/DR` carries that font under
+   the conventional name `/ZaDb`. Because these forms set
+   `/NeedAppearances`, readers rebuild every widget's appearance and
+   discard the vector mark this library drew — so before this, the mark
+   a reader showed was its own default rather than the one you asked
+   for, and poppler drew nothing at all and reported `Unknown font tag
+   'ZaDb'`. Nothing in your code changes.
+2. **The AES-256 `/Encrypt` dictionary now states `/Length 256`.** Table
+   20 scopes that key to `/V` 2 and 3, so leaving it out was correct,
+   but `qpdf --check` asks for it regardless and warned on every
+   encrypted file. Readers behave identically either way.
+
+Snapshot tests of PDF bytes covering forms or encryption will diff.
+
 ### From 2.0
 
 **2.1.0** is additive: general shapes, scoped transforms and clipping,
