@@ -44,3 +44,15 @@ jobs:
             echo "--- $example"
             php "$example" > /dev/null
           done
+
+      # The suite checks that the bytes contain what the writer meant to
+      # put there, which is not the same question as whether a reader can
+      # open the result -- it shares every assumption the writer made.
+      # These are tools that did not write the files. qpdf in particular
+      # is not installable on the development machine, so CI is the only
+      # place its structural check ever runs.
+      - name: Install PDF checkers
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qpdf ghostscript poppler-utils
+
+      - name: Check the examples open
+        run: tools/check-pdfs.sh examples/output
