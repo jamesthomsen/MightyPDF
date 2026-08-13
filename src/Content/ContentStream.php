@@ -479,6 +479,50 @@ final class ContentStream implements PathSink
             ->popGraphicsState();
     }
 
+    /**
+     * Opens a marked-content sequence belonging to a structure element
+     * (§14.6.2): everything up to the matching EMC is what the element
+     * points at.
+     *
+     * The /MCID is what ties the two together, and it is numbered per
+     * *page* rather than per document -- the structure tree finds it
+     * through the page's /StructParents, so two pages may each have an
+     * MCID 0 and routinely do.
+     */
+    public function beginMarkedContent(string $tag, int $mcid): static
+    {
+        $this->buffer .= sprintf("/%s << /MCID %d >> BDC\n", $tag, $mcid);
+
+        return $this;
+    }
+
+    /**
+     * Opens a sequence that is *not* part of the document's content
+     * (§14.8.2.2): a running header, a page number, a rule, a watermark.
+     *
+     * An artifact is deliberately outside the structure tree. That is not
+     * a way of avoiding tagging it -- it is the correct description. A
+     * screen reader reading "Page 4 of 30" between two sentences of a
+     * paragraph is worse than one that never sees it, and a checker
+     * requires that everything on a page be either tagged content or an
+     * artifact, with nothing left over.
+     */
+    public function beginArtifact(?string $type = null): static
+    {
+        $this->buffer .= $type === null
+            ? "/Artifact BMC\n"
+            : sprintf("/Artifact << /Type /%s >> BDC\n", $type);
+
+        return $this;
+    }
+
+    public function endMarkedContent(): static
+    {
+        $this->buffer .= "EMC\n";
+
+        return $this;
+    }
+
     public function bytes(): string
     {
         return $this->buffer;

@@ -17,7 +17,9 @@ use MightyPDF\Assembler\Form\RadioButtonWidget;
 use MightyPDF\Assembler\Form\RadioGroupField;
 use MightyPDF\Assembler\Form\SignatureField;
 use MightyPDF\Assembler\Form\TextField;
+use MightyPDF\Assembler\Page;
 use MightyPDF\Assembler\PageContext;
+use MightyPDF\Assembler\Structure\StructureElement;
 use MightyPDF\Assembler\Stream;
 use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Assembler\Types\PdfInteger;
@@ -79,6 +81,19 @@ final class PageBuilder
      * into a form XObject of its own. See ResourceScope and drawSvg().
      */
     private ResourceScope $scope;
+
+    /**
+     * This page's key in the structure tree's parent tree, assigned on
+     * the first tagged draw. Null until then, so a page that carries no
+     * tagged content does not claim an index that nothing points at.
+     */
+    private ?int $structParents = null;
+
+    /**
+     * The next marked-content id for this page. Numbered per page rather
+     * than per document -- see ContentStream::beginMarkedContent().
+     */
+    private int $nextMcid = 0;
 
     public function __construct(
         private readonly DocumentContext $document,
@@ -530,6 +545,114 @@ final class PageBuilder
             },
             $paint ?? Color::black(),
         );
+    }
+
+    // -- Tagging --------------------------------------------------------
+
+    /**
+     * Draws, and attaches what was drawn to a structure element.
+     *
+     * ```php
+     * $body = $document->structure()->document();
+     * $content->tagged($body->child(StructureRole::Heading1), fn ($c) =>
+     *     $c->drawText(StandardFont::HelveticaBold, 18, 60, 700, 'Results'));
+     * ```
+     *
+     * The closure form is not decoration. A marked-content sequence has to
+     * be closed, and closed on the same content stream it was opened on;
+     * a begin/end pair left to the caller is a pair somebody eventually
+     * fails to match, and an unmatched BDC makes every mark after it
+     * belong to the wrong element -- silently, and only for the people who
+     * cannot see the page.
+     *
+     * Does nothing but draw if the document is not tagged, so the same
+     * code path serves both.
+     */
+    public function tagged(StructureElement $element, \Closure $draw): static
+    {
+        $structure = $this->document->activeStructure();
+
+        if ($structure === null || !$this->page instanceof Page) {
+            $draw($this);
+
+            return $this;
+        }
+
+        $mcid = $this->nextMarkedContentId();
+
+        $this->append((new ContentStream())->beginMarkedContent($element->role->value, $mcid)->bytes());
+
+        try {
+            $draw($this);
+        } finally {
+            // In a finally so that a closure that throws still closes its
+            // sequence: the alternative is a content stream that is
+            // malformed from that point to the end of the page.
+            $this->append((new ContentStream())->endMarkedContent()->bytes());
+        }
+
+        $element->addMarkedContent($mcid, $this->page->objectId());
+        $structure->recordMark($this->structParents(), $mcid, $element);
+
+        return $this;
+    }
+
+    /**
+     * Draws something that is not part of the document's content: a
+     * running header, a page number, a rule, a watermark.
+     *
+     * See ContentStream::beginArtifact() for why this is a positive
+     * statement rather than an omission. In a tagged document everything
+     * on a page must be either tagged content or an artifact -- untagged
+     * content is what a checker reports, and marking the page furniture
+     * is how a document stops having any.
+     *
+     * @param string|null $type /Pagination, /Layout, /Page or /Background,
+     *        where the kind is worth stating
+     */
+    public function artifact(\Closure $draw, ?string $type = null): static
+    {
+        if ($this->document->activeStructure() === null) {
+            $draw($this);
+
+            return $this;
+        }
+
+        $this->append((new ContentStream())->beginArtifact($type)->bytes());
+
+        try {
+            $draw($this);
+        } finally {
+            $this->append((new ContentStream())->endMarkedContent()->bytes());
+        }
+
+        return $this;
+    }
+
+    /**
+     * The page's /StructParents index, assigned on first use.
+     *
+     * Assigned lazily and per page, from a counter on the structure tree,
+     * so that a document's pages are numbered 0, 1, 2 in the parent tree
+     * whether or not every page has tagged content on it.
+     */
+    private function structParents(): int
+    {
+        $structure = $this->document->activeStructure();
+
+        if ($this->structParents === null && $structure !== null && $this->page instanceof Page) {
+            $this->structParents = $structure->nextStructParents();
+            $this->page->setStructParents($this->structParents);
+        }
+
+        return $this->structParents ?? 0;
+    }
+
+    private function nextMarkedContentId(): int
+    {
+        // Per page, because that is the scope the structure tree looks
+        // them up in -- see ContentStream::beginMarkedContent().
+        return $this->nextMcid++;
     }
 
     // -- General shapes -------------------------------------------------

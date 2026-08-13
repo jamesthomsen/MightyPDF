@@ -33,4 +33,20 @@ interface DocumentContext extends ObjectHost
      * a second form alongside the file's own.
      */
     public function acroForm(): AcroForm;
+
+    /**
+     * The document's structure tree if it has one, and **never** one
+     * created by asking.
+     *
+     * The distinction is the point. Document::structure() creates the
+     * tree, because a caller writing that means to tag the document; this
+     * is what the drawing code asks, on every call, to find out whether it
+     * should be emitting marked content -- and if that created a tree, an
+     * untagged document would become a half-tagged one the moment anything
+     * was drawn on it.
+     *
+     * Null rather than throwing, because unlike acroForm() there is a
+     * sensible thing to do without one: draw untagged.
+     */
+    public function activeStructure(): ?Structure\StructureTree;
 }

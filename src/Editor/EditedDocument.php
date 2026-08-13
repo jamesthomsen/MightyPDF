@@ -87,6 +87,21 @@ final class EditedDocument implements DocumentContext
         return $this->acroForm ??= $this->openAcroForm();
     }
 
+    /**
+     * None: a document being edited has whatever structure tree it came
+     * with, and this library did not build it.
+     *
+     * Adopting it the way acroForm() adopts a form is a different and much
+     * harder problem -- where in someone else's tree does a stamp belong?
+     * -- and answering it wrongly produces a document that claims to be
+     * tagged and is not, which is worse than one that never claimed to be.
+     * So a stamp draws untagged, and says so here rather than by omission.
+     */
+    public function activeStructure(): ?\MightyPDF\Assembler\Structure\StructureTree
+    {
+        return null;
+    }
+
     private function openAcroForm(): AcroForm
     {
         $catalog = $this->editor->catalog();

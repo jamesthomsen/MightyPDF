@@ -296,6 +296,21 @@ final class Page extends Dictionary implements PageContext
         return $this->contentStreams;
     }
 
+    /**
+     * The key this page's marked content is filed under in the structure
+     * tree's /ParentTree (§14.7.4.4).
+     *
+     * A page carrying marked content must have one, and it must be unique
+     * in the document: it is how a reader gets from a mark on this page
+     * back to the structure element that owns it. A page with marks and no
+     * /StructParents is content the structure cannot account for, which is
+     * what a checker reports and what assistive technology skips.
+     */
+    public function setStructParents(int $index): void
+    {
+        $this->set('StructParents', new PdfInteger($index));
+    }
+
     public function addAnnotation(int $annotationObjectId): void
     {
         $this->annotationObjectIds[] = $annotationObjectId;

@@ -8,6 +8,7 @@ use MightyPDF\Assembler\Attachment\AttachmentRelationship;
 use MightyPDF\Assembler\Attachment\FileSpecification;
 use MightyPDF\Assembler\Form\AcroForm;
 use MightyPDF\Assembler\Types\PdfArray;
+use MightyPDF\Assembler\Types\PdfBoolean;
 use MightyPDF\Assembler\Types\PdfHexString;
 use MightyPDF\Assembler\Types\PdfRectangle;
 use MightyPDF\Assembler\Types\PdfReference;
@@ -42,6 +43,7 @@ final class Document implements DocumentContext
     private ?ViewerPreferences $viewerPreferences = null;
     private ?PageLabels $pageLabels = null;
     private ?XmpMetadata $metadata = null;
+    private ?Structure\StructureTree $structure = null;
 
     /** @var array<string, FileSpecification> attachment name => its file specification */
     private array $attachments = [];
@@ -288,6 +290,54 @@ final class Document implements DocumentContext
         }
 
         return $this->metadata;
+    }
+
+    /**
+     * The document's logical structure -- what makes it a *tagged* PDF,
+     * and with it usable by a screen reader.
+     *
+     * Asking for it turns tagging on: the catalog gains /MarkInfo and a
+     * /StructTreeRoot, and drawing done through PageBuilder::tagged() is
+     * attached to it. See StructureTree.
+     */
+    public function structure(): Structure\StructureTree
+    {
+        if ($this->structure === null) {
+            $this->structure = new Structure\StructureTree($this->registry->allocate(), $this);
+            $this->registry->register($this->structure);
+
+            $this->catalog->set('StructTreeRoot', new PdfReference($this->structure->objectId()));
+            // Without /MarkInfo a reader has no reason to look for a
+            // structure tree, and will not.
+            $this->catalog->set('MarkInfo', (new Dictionary())->set('Marked', new PdfBoolean(true)));
+
+            // The parent tree describes every mark in the document, so it
+            // cannot be built until there are no more of them.
+            $this->onBeforeSave(fn () => $this->structure?->finish());
+        }
+
+        return $this->structure;
+    }
+
+    /**
+     * The structure tree if tagging is on, without turning it on. See
+     * DocumentContext::activeStructure() for why the two are separate.
+     */
+    public function activeStructure(): ?Structure\StructureTree
+    {
+        return $this->structure;
+    }
+
+    /**
+     * The document's language, as a BCP 47 tag ("en-GB", "fr").
+     *
+     * Required of a tagged document, and not a formality: it is what tells
+     * a screen reader which voice to read it in, and a French document
+     * read aloud in English is unintelligible rather than merely wrong.
+     */
+    public function setLanguage(string $language): void
+    {
+        $this->catalog->set('Lang', PdfString::text($language));
     }
 
     /** Which panel the reader shows when the document opens. */
