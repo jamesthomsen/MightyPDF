@@ -207,6 +207,260 @@ final class FlowTest extends TestCase
         self::assertSame(2, $flow->pageCount());
     }
 
+    // -- Page sizes -----------------------------------------------------
+
+    /**
+     * The whole point of a per-page size: the geometry every other call
+     * here is measured against follows the page being drawn on, so a
+     * landscape insert has landscape margins and a landscape body.
+     */
+    public function testAPageOfItsOwnSizeMovesEveryMeasurementWithIt(): void
+    {
+        $flow = $this->flow();
+
+        self::assertEqualsWithDelta(210.0, $flow->pageWidth(), 1e-2);
+
+        $flow->newPage(PageSize::A4->landscape());
+
+        self::assertEqualsWithDelta(297.0, $flow->pageWidth(), 1e-2);
+        self::assertEqualsWithDelta(210.0, $flow->pageHeight(), 1e-2);
+        self::assertEqualsWithDelta(267.0, $flow->contentWidth(), 1e-2);
+        self::assertEqualsWithDelta(195.0, $flow->bottomLimit(), 1e-2);
+    }
+
+    /** The Y flip counts from the top of *this* sheet. */
+    public function testCoordinatesConvertAgainstThePageBeingDrawnOn(): void
+    {
+        $flow = $this->flow();
+
+        self::assertEqualsWithDelta(841.89, $flow->toPointsY(0.0), 1e-2);
+
+        $flow->newPage(PageSize::A4->landscape());
+
+        self::assertEqualsWithDelta(595.28, $flow->toPointsY(0.0), 1e-2);
+    }
+
+    public function testEachPageIsWrittenWithItsOwnMediaBox(): void
+    {
+        $document = new Document();
+        $flow = $this->flow($document);
+
+        $flow->newPage(PageSize::A5);
+
+        $bytes = $flow->save();
+
+        self::assertStringContainsString('/MediaBox [0 0 595.28 841.89]', $bytes);
+        self::assertStringContainsString('/MediaBox [0 0 419.53 595.28]', $bytes);
+    }
+
+    /**
+     * A run of rows that started on a wide sheet was measured against
+     * it, so continuing on a narrower one would overflow columns that
+     * were correct when they were sized.
+     */
+    public function testAnAutomaticBreakContinuesAtTheSizeOfThePageItLeaves(): void
+    {
+        $flow = $this->flow();
+
+        $flow->newPage(PageSize::A4->landscape());
+
+        for ($i = 0; $i < 40; $i++) {
+            $flow->cell(50.0, 8.0, "row $i")->newLine(8.0);
+        }
+
+        self::assertSame(3, $flow->pageCount());
+        self::assertEqualsWithDelta(297.0, $flow->pageWidth(), 1e-2, 'the break should stay landscape');
+    }
+
+    /** Where an explicit one goes back to the document's own default. */
+    public function testAnExplicitNewPageWithNoSizeIsTheFlowsDefault(): void
+    {
+        $flow = $this->flow();
+
+        $flow->newPage(PageSize::A4->landscape())->newPage();
+
+        self::assertEqualsWithDelta(210.0, $flow->pageWidth(), 1e-2);
+    }
+
+    /** Hooks hop across pages, and each page's furniture is its own size. */
+    public function testAPerPageHookSeesTheGeometryOfThePageItIsDrawingOn()
+    : void {
+        $flow = $this->flow();
+        $flow->newPage(PageSize::A4->landscape());
+
+        $widths = [];
+        $flow->onEachPage(function (Flow $flow) use (&$widths): void {
+            $widths[] = round($flow->pageWidth(), 1);
+        });
+
+        $flow->finish();
+
+        self::assertSame([210.0, 297.0], $widths);
+    }
+
+    // -- Taking over the break ------------------------------------------
+
+    /**
+     * A page with two columns on it, which is the thing this hook exists
+     * for: the first break moves across, the second lets the page turn.
+     */
+    public function testAPageBreakHookCanMoveAcrossInsteadOfTurningThePage(): void
+    {
+        $flow = $this->flow();
+        $column = 0;
+
+        $flow->onPageBreak(function (Flow $flow) use (&$column): bool {
+            $column = 1 - $column;
+            $left = $column === 0 ? 15.0 : 110.0;
+
+            $flow->setMargins($flow->margins()->with(left: $left));
+
+            if ($column === 0) {
+                return true;
+            }
+
+            $flow->moveTo($left, $flow->margins()->top);
+
+            return false;
+        });
+
+        for ($i = 0; $i < 40; $i++) {
+            $flow->cell(80.0, 8.0, "row $i")->newLine(8.0);
+        }
+
+        self::assertSame(1, $flow->pageCount(), 'the first overflow should fill the second column');
+        self::assertSame(110.0, $flow->x(), 'newLine() should return to the column, not the page margin');
+    }
+
+    /** Two columns and then the page, rather than two columns forever. */
+    public function testASecondFullColumnLetsThePageTurnAndResetsToTheFirst(): void
+    {
+        $flow = $this->flow();
+        $column = 0;
+
+        $flow->onPageBreak(function (Flow $flow) use (&$column): bool {
+            $column = 1 - $column;
+            $left = $column === 0 ? 15.0 : 110.0;
+
+            $flow->setMargins($flow->margins()->with(left: $left));
+
+            if ($column === 0) {
+                return true;
+            }
+
+            $flow->moveTo($left, $flow->margins()->top);
+
+            return false;
+        });
+
+        // 33 rows to a column, so 80 rows is two full columns and a
+        // little of a third -- which has to be on a second page.
+        for ($i = 0; $i < 80; $i++) {
+            $flow->cell(80.0, 8.0, "row $i")->newLine(8.0);
+        }
+
+        self::assertSame(2, $flow->pageCount());
+        self::assertSame(15.0, $flow->x(), 'a new page starts in the first column again');
+    }
+
+    public function testAHookThatReturnsTrueBreaksExactlyAsBefore(): void
+    {
+        $flow = $this->flow();
+        $seen = [];
+
+        $flow->onPageBreak(function (Flow $flow, float $height) use (&$seen): bool {
+            $seen[] = $height;
+
+            return true;
+        });
+
+        $flow->moveTo(15.0, 275.0);
+        $flow->cell(50.0, 20.0, 'over the limit');
+
+        self::assertSame([20.0], $seen, 'the hook is told what would not fit');
+        self::assertSame(2, $flow->pageCount());
+    }
+
+    /**
+     * A hook positions itself by drawing as often as by moveTo() -- a
+     * column heading, a rule -- and those call back into the same
+     * decision. Without the guard, a hook that draws near the bottom of
+     * the page asks itself whether to break, forever.
+     */
+    public function testAHookThatDrawsWhileDecidingDoesNotRecurse(): void
+    {
+        $flow = $this->flow();
+        $calls = 0;
+
+        $flow->onPageBreak(function (Flow $flow) use (&$calls): bool {
+            $calls++;
+            $flow->cell(50.0, 40.0, 'a column heading, drawn at the bottom of the page');
+
+            return true;
+        });
+
+        $flow->moveTo(15.0, 275.0);
+        $flow->cell(50.0, 20.0, 'over the limit');
+
+        self::assertSame(1, $calls);
+    }
+
+    /** newPage() is an instruction, not a question. */
+    public function testAHookIsNotConsultedAboutAnExplicitNewPage(): void
+    {
+        $flow = $this->flow();
+        $calls = 0;
+
+        $flow->onPageBreak(function () use (&$calls): bool {
+            $calls++;
+
+            return false;
+        });
+
+        $flow->newPage();
+
+        self::assertSame(0, $calls);
+        self::assertSame(2, $flow->pageCount());
+    }
+
+    /**
+     * A footer describes the page. A document that ended halfway down a
+     * second column would otherwise print every one of them against the
+     * column's left edge, on pages that never had a column on them.
+     */
+    public function testPerPageHooksRunAgainstTheMarginsTheFlowWasBuiltWith(): void
+    {
+        $flow = $this->flow();
+        $seen = [];
+
+        $flow->setMargins($flow->margins()->with(left: 110.0));
+        $flow->onEachPage(function (Flow $flow) use (&$seen): void {
+            $seen[] = $flow->margins()->left;
+        });
+
+        $flow->finish();
+
+        self::assertSame([15.0], $seen);
+        self::assertSame(110.0, $flow->margins()->left, 'and the caller keeps what it set');
+    }
+
+    public function testAHookCanBeTakenBackOffAgain(): void
+    {
+        $flow = $this->flow();
+
+        $flow->onPageBreak(fn (): bool => false);
+        $flow->moveTo(15.0, 275.0);
+        $flow->cell(50.0, 20.0, 'refused');
+
+        self::assertSame(1, $flow->pageCount());
+
+        $flow->onPageBreak(null);
+        $flow->moveTo(15.0, 275.0);
+        $flow->cell(50.0, 20.0, 'allowed');
+
+        self::assertSame(2, $flow->pageCount());
+    }
+
     // -- Per-page hooks -------------------------------------------------
 
     public function testAHookRunsOncePerPageInPageOrder(): void

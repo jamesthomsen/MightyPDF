@@ -32,4 +32,24 @@ final class Margins
     {
         return new self($vertical, $horizontal, $vertical, $horizontal);
     }
+
+    /**
+     * A copy with the named edges moved, for the same reason Style has
+     * one: the interesting margins are variations on a document's own.
+     * Naming the edge that moves is also the only readable way to write
+     * one, which is what the rest of this class is about.
+     */
+    public function with(
+        ?float $top = null,
+        ?float $right = null,
+        ?float $bottom = null,
+        ?float $left = null,
+    ): self {
+        return new self(
+            $top ?? $this->top,
+            $right ?? $this->right,
+            $bottom ?? $this->bottom,
+            $left ?? $this->left,
+        );
+    }
 }

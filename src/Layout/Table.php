@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace MightyPDF\Layout;
 
+use MightyPDF\Assembler\Structure\StructureElement;
+use MightyPDF\Assembler\Structure\StructureRole;
 use MightyPDF\Content\Color;
 use MightyPDF\Content\Paint;
 use MightyPDF\Content\Text\HorizontalAlign;
@@ -55,6 +57,12 @@ final class Table
     private ?Paint $stripe = null;
 
     private int $bodyRows = 0;
+
+    /** The /Table element, once a row has been drawn into it. */
+    private ?StructureElement $tableElement = null;
+
+    /** Where the Flow was before the table opened, to put it back. */
+    private ?StructureElement $outerElement = null;
 
     /**
      * @param list<float> $widths column widths in the Flow's unit
@@ -193,9 +201,18 @@ final class Table
         return $this;
     }
 
-    /** Back to the Flow, so a table can be the middle of a chain. */
+    /**
+     * Back to the Flow, so a table can be the middle of a chain -- and,
+     * in a tagged document, where the /Table element closes.
+     *
+     * A table left unended in a tagged document has its remaining content
+     * nested inside it, which is why this is worth calling even when the
+     * chain does not need it.
+     */
     public function end(): Flow
     {
+        $this->closeTag();
+
         return $this->flow;
     }
 
@@ -240,16 +257,71 @@ final class Table
         $x = $this->flow->margins()->left;
         $y = $this->flow->y();
 
+        // A row is a /TR and its cells are /TH or /TD -- which the layout
+        // knows without being told, this being a table. Header cells
+        // matter more than they look: they are what lets a screen reader
+        // say which column a value is in, instead of reading a grid of
+        // unattached numbers.
+        $this->openRowTag();
+
         foreach ($cells as $index => $cell) {
             $width = $spans[$index];
             $cellStyle = $this->styleFor($cell, $index, $style, $shade);
 
-            $this->flow->paragraphAt($x, $y, $width, $height, $cell->text, $cellStyle);
+            $this->flow->tag(
+                $isHeader ? StructureRole::TableHeader : StructureRole::TableData,
+                fn (Flow $flow) => $flow->paragraphAt($x, $y, $width, $height, $cell->text, $cellStyle),
+            );
 
             $x += $width;
         }
 
+        $this->closeRowTag();
+
         $this->flow->newLine($height);
+    }
+
+    /**
+     * Opens the /Table element on the first row drawn, and a /TR for the
+     * row about to be drawn.
+     *
+     * Opened lazily rather than in the constructor, because a Table that
+     * is built and never given a row should not leave an empty element in
+     * the structure -- and because the /TR has to close before the next
+     * one opens, which a constructor cannot arrange.
+     */
+    private function openRowTag(): void
+    {
+        if ($this->flow->currentElement() === null) {
+            return;
+        }
+
+        if ($this->tableElement === null) {
+            $this->tableElement = $this->flow->currentElement()?->child(StructureRole::Table);
+            $this->outerElement = $this->flow->currentElement();
+        }
+
+        if ($this->tableElement !== null) {
+            $this->flow->enterElement($this->tableElement->child(StructureRole::TableRow));
+        }
+    }
+
+    private function closeRowTag(): void
+    {
+        if ($this->tableElement !== null) {
+            $this->flow->enterElement($this->tableElement);
+        }
+    }
+
+    /** Closes the /Table, putting the Flow back where it was. */
+    private function closeTag(): void
+    {
+        if ($this->tableElement !== null && $this->outerElement !== null) {
+            $this->flow->enterElement($this->outerElement);
+        }
+
+        $this->tableElement = null;
+        $this->outerElement = null;
     }
 
     /**

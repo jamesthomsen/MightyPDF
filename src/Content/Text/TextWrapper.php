@@ -104,10 +104,48 @@ final class TextWrapper
      */
     public static function wrapBy(string $text, \Closure $widthOf, float $maxWidthPt): array
     {
+        return self::wrapRagged($text, $widthOf, $maxWidthPt, $maxWidthPt);
+    }
+
+    /**
+     * The same wrap with a short first line -- text that starts partway
+     * along a line already occupied by something else and runs on at full
+     * width below it. Layout\Flow::write() is the caller: an inline run
+     * begins wherever the cursor was left and continues between the
+     * margins.
+     *
+     * Only the very first line is narrowed, not the first line of each
+     * "\n"-separated paragraph: a newline puts the cursor back at the
+     * left margin, so every line after the first has the whole width
+     * whatever put it there.
+     *
+     * A word that does not fit the space left starts the next line --
+     * reported as a leading empty line, since the caller has to move down
+     * past the space it declined to use. That holds even for a word too
+     * wide for a whole line: it overflows either way, and a whole line is
+     * the least it can overflow by.
+     *
+     * @param \Closure(string): float $widthOf
+     * @return list<string> one UTF-8 line per element
+     */
+    public static function wrapRagged(
+        string $text,
+        \Closure $widthOf,
+        float $firstWidthPt,
+        float $restWidthPt,
+    ): array {
         $lines = [];
+        $first = true;
 
         foreach (explode("\n", $text) as $paragraph) {
-            array_push($lines, ...self::wrapParagraph($paragraph, $widthOf, $maxWidthPt));
+            array_push($lines, ...self::wrapParagraph(
+                $paragraph,
+                $widthOf,
+                $first ? $firstWidthPt : $restWidthPt,
+                $restWidthPt,
+            ));
+
+            $first = false;
         }
 
         return $lines;
@@ -137,13 +175,19 @@ final class TextWrapper
      * @param \Closure(string): float $widthOf
      * @return list<string>
      */
-    private static function wrapParagraph(string $paragraph, \Closure $widthOf, float $maxWidthPt): array
-    {
+    private static function wrapParagraph(
+        string $paragraph,
+        \Closure $widthOf,
+        float $firstWidthPt,
+        float $restWidthPt,
+    ): array {
         $lines = [];
         $current = '';
         $currentWidth = 0.0;
+        $maxWidthPt = $firstWidthPt;
+        $onFirstLine = true;
         $spaceWidth = $widthOf(' ');
-        $tolerance = 1e-9 * max(1.0, abs($maxWidthPt));
+        $tolerance = 1e-9 * max(1.0, abs($restWidthPt));
 
         foreach (preg_split('/ +/', $paragraph) as $word) {
             $wordWidth = $widthOf($word);
@@ -153,6 +197,16 @@ final class TextWrapper
             // here, and breaking a word arbitrarily would be worse. That
             // is this branch: nothing to break away from.
             if ($current === '') {
+                // Unless the line is short only because something else
+                // is already on it: then there is a fuller line to go to,
+                // and taking it is the difference between a run that
+                // wraps and one that overflows the margin.
+                if ($onFirstLine && $wordWidth > $maxWidthPt && $maxWidthPt < $restWidthPt) {
+                    $lines[] = '';
+                    $maxWidthPt = $restWidthPt;
+                    $onFirstLine = false;
+                }
+
                 $current = $word;
                 $currentWidth = $wordWidth;
 
@@ -169,6 +223,8 @@ final class TextWrapper
                 $lines[] = $current;
                 $current = $word;
                 $currentWidth = $wordWidth;
+                $maxWidthPt = $restWidthPt;
+                $onFirstLine = false;
             } else {
                 $current = "$current $word";
                 $currentWidth = $candidateWidth;

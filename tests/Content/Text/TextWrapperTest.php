@@ -61,6 +61,82 @@ final class TextWrapperTest extends TestCase
         self::assertSame(['First', '', 'Third'], $lines);
     }
 
+    // -- A short first line ---------------------------------------------
+
+    /** Every character costs 6pt at a 10pt size, space included. */
+    private function widthOf(): \Closure
+    {
+        return fn (string $text): float => mb_strlen($text) * 6.0;
+    }
+
+    /**
+     * What Layout\Flow::write() is: a run starts partway along a line
+     * something else is already on, and runs on at full width below it.
+     */
+    public function testOnlyTheFirstLineIsNarrowed(): void
+    {
+        // 18pt leaves room for "abc"; 60pt afterwards takes ten.
+        $lines = TextWrapper::wrapRagged('abc def ghi jkl', $this->widthOf(), 18.0, 60.0);
+
+        self::assertSame(['abc', 'def ghi', 'jkl'], $lines);
+    }
+
+    /**
+     * A word that does not fit the space left, but would fit a whole
+     * line, takes the whole line. The empty first element is how the
+     * caller is told to move down past the space it declined to use.
+     */
+    public function testAWordTooWideForTheFirstLineStartsTheNextOne(): void
+    {
+        $lines = TextWrapper::wrapRagged('abcdef gh', $this->widthOf(), 18.0, 60.0);
+
+        self::assertSame(['', 'abcdef gh'], $lines);
+    }
+
+    /**
+     * A word too wide for *any* line is still placed rather than split
+     * -- there is no hyphenation here and an arbitrary break would be
+     * worse -- but it is placed on a whole line even so. It overflows
+     * either way, and a whole line is the least it can overflow by.
+     */
+    public function testAWordTooWideForEveryLineTakesAWholeLineAnyway(): void
+    {
+        $lines = TextWrapper::wrapRagged('abcdefghijklmno p', $this->widthOf(), 18.0, 60.0);
+
+        self::assertSame(['', 'abcdefghijklmno', 'p'], $lines);
+    }
+
+    /**
+     * A newline puts the cursor back at the left margin, so the line
+     * after it has the whole width whatever put it there -- the short
+     * first line is the run's, not each paragraph's.
+     */
+    public function testOnlyTheVeryFirstLineIsShortAcrossExplicitNewlines(): void
+    {
+        $lines = TextWrapper::wrapRagged("abc\nabcdef", $this->widthOf(), 18.0, 60.0);
+
+        self::assertSame(['abc', 'abcdef'], $lines);
+    }
+
+    /** Equal widths are the ordinary wrap, which is how wrapBy() is built. */
+    public function testEqualWidthsAreTheSameWrapAsBefore(): void
+    {
+        $text = 'one two three four five six seven eight';
+
+        self::assertSame(
+            TextWrapper::wrapBy($text, $this->widthOf(), 60.0),
+            TextWrapper::wrapRagged($text, $this->widthOf(), 60.0, 60.0),
+        );
+    }
+
+    /** No room at all on this line: down a line, and no text lost. */
+    public function testAFirstLineWithNoRoomLeftAtAllIsSkipped(): void
+    {
+        $lines = TextWrapper::wrapRagged('ab cd', $this->widthOf(), 0.0, 60.0);
+
+        self::assertSame(['', 'ab cd'], $lines);
+    }
+
     /**
      * wrapUtf8() measures through the font rather than through a width
      * table, and gives back text rather than encoded bytes -- what a
