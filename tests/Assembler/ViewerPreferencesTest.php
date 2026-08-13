@@ -9,6 +9,7 @@ use MightyPDF\Assembler\Duplex;
 use MightyPDF\Assembler\PageLayout;
 use MightyPDF\Assembler\PageMode;
 use MightyPDF\Assembler\PrintScaling;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 final class ViewerPreferencesTest extends TestCase
@@ -23,7 +24,7 @@ final class ViewerPreferencesTest extends TestCase
         $document = new Document();
         $document->newPage();
 
-        self::assertStringNotContainsString('/ViewerPreferences', $document->save());
+        self::assertNull(SavedDocument::of($document)->at('ViewerPreferences'));
     }
 
     public function testAskingForOneWiresItIntoTheCatalog(): void
@@ -32,10 +33,10 @@ final class ViewerPreferencesTest extends TestCase
         $document->newPage();
         $document->viewerPreferences()->displayDocumentTitle();
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
 
-        self::assertStringContainsString('/ViewerPreferences', $output);
-        self::assertStringContainsString('/DisplayDocTitle true', $output);
+        self::assertNotNull($saved->at('ViewerPreferences'));
+        self::assertTrue($saved->value('ViewerPreferences', 'DisplayDocTitle'));
     }
 
     public function testTheSameDictionaryComesBackEachTime(): void
@@ -63,22 +64,22 @@ final class ViewerPreferencesTest extends TestCase
             ->nonFullScreenPageMode(PageMode::Thumbnails)
             ->numberOfCopies(3);
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
 
         foreach ([
-            '/DisplayDocTitle true',
-            '/FitWindow true',
-            '/CenterWindow true',
-            '/HideToolbar true',
-            '/HideMenubar true',
-            '/HideWindowUI true',
-            '/PickTrayByPDFSize true',
-            '/PrintScaling /None',
-            '/Duplex /DuplexFlipLongEdge',
-            '/NonFullScreenPageMode /UseThumbs',
-            '/NumCopies 3',
-        ] as $entry) {
-            self::assertStringContainsString($entry, $output);
+            'DisplayDocTitle' => true,
+            'FitWindow' => true,
+            'CenterWindow' => true,
+            'HideToolbar' => true,
+            'HideMenubar' => true,
+            'HideWindowUI' => true,
+            'PickTrayByPDFSize' => true,
+            'PrintScaling' => 'None',
+            'Duplex' => 'DuplexFlipLongEdge',
+            'NonFullScreenPageMode' => 'UseThumbs',
+            'NumCopies' => 3,
+        ] as $entry => $expected) {
+            self::assertSame($expected, $saved->value('ViewerPreferences', $entry), "/$entry");
         }
     }
 
@@ -93,7 +94,7 @@ final class ViewerPreferencesTest extends TestCase
         $document->newPage();
         $document->viewerPreferences()->fitWindow(false);
 
-        self::assertStringContainsString('/FitWindow false', $document->save());
+        self::assertFalse(SavedDocument::of($document)->value('ViewerPreferences', 'FitWindow'));
     }
 
     public function testAskingForFewerThanOneCopyIsRefused(): void
@@ -112,10 +113,10 @@ final class ViewerPreferencesTest extends TestCase
         $document->setPageLayout(PageLayout::TwoPageRight);
         $document->setPageMode(PageMode::Thumbnails);
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
 
-        self::assertStringContainsString('/PageLayout /TwoPageRight', $output);
-        self::assertStringContainsString('/PageMode /UseThumbs', $output);
+        self::assertSame('TwoPageRight', $saved->value('PageLayout'));
+        self::assertSame('UseThumbs', $saved->value('PageMode'));
     }
 
     /**
@@ -129,6 +130,6 @@ final class ViewerPreferencesTest extends TestCase
         $document->newPage();
         $document->outline();
 
-        self::assertStringContainsString('/PageMode /UseOutlines', $document->save());
+        self::assertSame('UseOutlines', SavedDocument::of($document)->value('PageMode'));
     }
 }

@@ -8,6 +8,7 @@ use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\PageSize;
 use MightyPDF\Content\Font\StandardFont;
 use MightyPDF\Content\PageBuilder;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 final class PageRotationTest extends TestCase
@@ -22,7 +23,11 @@ final class PageRotationTest extends TestCase
         $document = new Document();
         $document->newPage();
 
-        self::assertStringNotContainsString('/Rotate', $document->save());
+        // Asked of the page as a reader sees it, inherited entries
+        // included -- /Rotate is inheritable, so "not on the page
+        // dictionary" and "not in effect for the page" are different
+        // claims and only the second one matters.
+        self::assertNull(SavedDocument::of($document)->pageEntry(0, 'Rotate'));
         self::assertSame(0, $document->pages()[0]->rotation());
     }
 
@@ -32,7 +37,7 @@ final class PageRotationTest extends TestCase
         $page = $document->newPage(PageSize::A4, rotation: 90);
 
         self::assertSame(90, $page->rotation());
-        self::assertStringContainsString('/Rotate 90', $document->save());
+        self::assertSame(90, SavedDocument::scalar(SavedDocument::of($document)->pageEntry(0, 'Rotate')));
     }
 
     public function testAPageCanBeTurnedAfterwards(): void
@@ -51,7 +56,7 @@ final class PageRotationTest extends TestCase
         $page->setRotation(90);
         $page->setRotation(0);
 
-        self::assertStringNotContainsString('/Rotate', $document->save());
+        self::assertNull(SavedDocument::of($document)->pageEntry(0, 'Rotate'));
     }
 
     public function testRotationsAreNormalisedIntoZeroToTwoSeventy(): void
@@ -92,8 +97,9 @@ final class PageRotationTest extends TestCase
         (new PageBuilder($document, $page))->drawText(StandardFont::Helvetica, 12.0, 72.0, 700.0, 'x');
         $page->setRotation(90);
 
-        preg_match('/stream\n(.*)\nendstream/s', $page->contentStreams()[0]->render(true), $matches);
-
-        self::assertStringContainsString('1 0 0 1 72 700 Tm', gzuncompress($matches[1]));
+        // The content stream itself, which really is a sequence of
+        // operator bytes -- so this one stays a string match, taken from
+        // the saved file rather than from the object still in hand.
+        self::assertStringContainsString('1 0 0 1 72 700 Tm', SavedDocument::of($document)->contentOf(0));
     }
 }

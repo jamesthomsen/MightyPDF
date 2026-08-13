@@ -7,6 +7,7 @@ namespace MightyPDF\Tests\Assembler;
 use MightyPDF\Assembler\Attachment\AttachmentRelationship;
 use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\PageMode;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 final class AttachmentTest extends TestCase
@@ -17,13 +18,21 @@ final class AttachmentTest extends TestCase
         $document->newPage();
         $document->attach('data.csv', "a,b\n1,2\n", 'The figures behind the chart', 'text/csv');
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
 
-        self::assertStringContainsString('/Type /EmbeddedFile', $output);
-        self::assertStringContainsString('/Type /Filespec', $output);
-        self::assertStringContainsString('(data.csv)', $output);
-        self::assertStringContainsString('/Subtype /text#2Fcsv', $output, 'the slash has to be escaped in a name');
-        self::assertStringContainsString('/EmbeddedFiles', $output);
+        // Reached the way a reader reaches it: catalog, name tree, the
+        // value beside the key. A file specification that exists but is
+        // not listed here is a file nobody can open.
+        self::assertSame('data.csv', $saved->value('Names', 'EmbeddedFiles', 'Names', 0));
+
+        $specification = $saved->dictionary('Names', 'EmbeddedFiles', 'Names', 1);
+        self::assertSame('Filespec', $specification->get('Type')?->value());
+        self::assertSame('The figures behind the chart', SavedDocument::scalar($specification->get('Desc')));
+
+        $embedded = $saved->stream('Names', 'EmbeddedFiles', 'Names', 1, 'EF', 'F');
+        self::assertSame('EmbeddedFile', $embedded->get('Type')?->value());
+        self::assertSame('text/csv', $embedded->get('Subtype')?->value(), 'the escaped name decodes back');
+        self::assertSame("a,b\n1,2\n", $saved->editor()->store()->decodedStream($embedded));
     }
 
     /**
@@ -38,10 +47,11 @@ final class AttachmentTest extends TestCase
         $document->newPage();
         $document->attach('big.txt', $bytes);
 
-        $output = $document->save();
+        $parameters = SavedDocument::of($document)
+            ->dictionary('Names', 'EmbeddedFiles', 'Names', 1, 'EF', 'F', 'Params');
 
-        self::assertStringContainsString('/Size ' . strlen($bytes), $output);
-        self::assertStringContainsString('/CheckSum <' . md5($bytes) . '>', $output);
+        self::assertSame(strlen($bytes), $parameters->get('Size')?->value());
+        self::assertSame(md5($bytes, true), $parameters->get('CheckSum')?->bytes());
     }
 
     public function testTheRelationshipIsWrittenWhenOneIsClaimed(): void
@@ -55,12 +65,18 @@ final class AttachmentTest extends TestCase
             relationship: AttachmentRelationship::Data,
         );
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
 
-        self::assertStringContainsString('/AFRelationship /Data', $output);
+        self::assertSame('Data', $saved->value('Names', 'EmbeddedFiles', 'Names', 1, 'AFRelationship'));
+
         // And listed at the top level, where a consumer looks for it
-        // without walking the name tree.
-        self::assertMatchesRegularExpression('/\/AF \[\d+ 0 R\]/', $output);
+        // without walking the name tree -- the same specification, not a
+        // second copy of it.
+        self::assertCount(1, $saved->array('AF')->items());
+        self::assertSame(
+            'factur-x.xml',
+            SavedDocument::scalar($saved->dictionary('AF', 0)->get('UF')),
+        );
     }
 
     public function testNoRelationshipMeansNoEntryRatherThanOneSayingNothing(): void
@@ -69,7 +85,7 @@ final class AttachmentTest extends TestCase
         $document->newPage();
         $document->attach('notes.txt', 'hello');
 
-        self::assertStringNotContainsString('/AFRelationship', $document->save());
+        self::assertNull(SavedDocument::of($document)->at('Names', 'EmbeddedFiles', 'Names', 1, 'AFRelationship'));
     }
 
     /**
@@ -86,12 +102,19 @@ final class AttachmentTest extends TestCase
             $document->attach($name, 'x');
         }
 
-        $output = $document->save();
+        $names = SavedDocument::of($document)->array('Names', 'EmbeddedFiles', 'Names');
 
-        preg_match('/\/Names \[(.*?)\]/s', $output, $matches);
+        // Every even entry is a key; the odd ones are the specifications
+        // beside them.
+        $keys = [];
 
-        self::assertLessThan(strpos($matches[1], 'mike'), strpos($matches[1], 'alpha'));
-        self::assertLessThan(strpos($matches[1], 'zebra'), strpos($matches[1], 'mike'));
+        foreach ($names->items() as $position => $item) {
+            if ($position % 2 === 0) {
+                $keys[] = SavedDocument::scalar($item);
+            }
+        }
+
+        self::assertSame(['alpha.txt', 'mike.txt', 'zebra.txt'], $keys);
     }
 
     public function testTwoAttachmentsCannotShareAName(): void
@@ -124,12 +147,12 @@ final class AttachmentTest extends TestCase
         $document->newPage();
         $document->attach('../../etc/passwd', 'x');
 
-        $output = $document->save();
+        $specification = SavedDocument::of($document)->dictionary('Names', 'EmbeddedFiles', 'Names', 1);
 
         // Only the /F entry is a path; the name-tree key and /UF keep the
         // name as given, since neither is interpreted as one.
-        self::assertStringContainsString('/F (.._.._etc_passwd)', $output);
-        self::assertStringNotContainsString('/F (../../etc/passwd)', $output);
+        self::assertSame('.._.._etc_passwd', SavedDocument::scalar($specification->get('F')));
+        self::assertSame('../../etc/passwd', SavedDocument::scalar($specification->get('UF')));
     }
 
     public function testANonAsciiNameSurvivesInTheUnicodeEntry(): void
@@ -138,18 +161,17 @@ final class AttachmentTest extends TestCase
         $document->newPage();
         $document->attach('Rapport financier — 2026.csv', 'x');
 
-        $output = $document->save();
+        $specification = SavedDocument::of($document)->dictionary('Names', 'EmbeddedFiles', 'Names', 1);
 
         // /F holds an ASCII-safe rendering -- one underscore for the em
         // dash, not one per byte of it.
-        self::assertStringContainsString('/F (Rapport financier _ 2026.csv)', $output);
+        self::assertSame('Rapport financier _ 2026.csv', SavedDocument::scalar($specification->get('F')));
 
-        // /UF holds the real thing as a UTF-16BE text string, led by the
-        // byte-order mark that marks it as one.
-        self::assertStringContainsString(
-            "\xFE\xFF" . mb_convert_encoding('Rapport financier — 2026.csv', 'UTF-16BE', 'UTF-8'),
-            $output,
-        );
+        // /UF holds the real thing. Asserted as the text it decodes to
+        // rather than as UTF-16BE bytes with a byte-order mark: the
+        // encoding is how a text string is stored, and the claim is
+        // about the name surviving.
+        self::assertSame('Rapport financier — 2026.csv', SavedDocument::scalar($specification->get('UF')));
     }
 
     public function testAttachingAsksForTheAttachmentsPanel(): void
@@ -158,7 +180,7 @@ final class AttachmentTest extends TestCase
         $document->newPage();
         $document->attach('data.csv', 'x');
 
-        self::assertStringContainsString('/PageMode /UseAttachments', $document->save());
+        self::assertSame('UseAttachments', SavedDocument::of($document)->value('PageMode'));
     }
 
     /**
@@ -174,11 +196,7 @@ final class AttachmentTest extends TestCase
         $document->attach('data.csv', 'x');
         $document->outline();
 
-        $output = $document->save();
-
-        self::assertStringContainsString('/PageMode /FullScreen', $output);
-        self::assertStringNotContainsString('/UseAttachments', $output);
-        self::assertStringNotContainsString('/UseOutlines', $output);
+        self::assertSame('FullScreen', SavedDocument::of($document)->value('PageMode'));
     }
 
     public function testAttachmentsAreListedByName(): void
@@ -199,7 +217,13 @@ final class AttachmentTest extends TestCase
 
         $output = $document->save();
 
-        self::assertStringNotContainsString('the contents', $output);
-        self::assertStringContainsString('/Type /EmbeddedFile', $output);
+        self::assertStringNotContainsString('the contents', $output, 'the payload must be enciphered');
+
+        // And comes back out again for someone holding the password.
+        $saved = SavedDocument::fromBytes($output, 'user');
+        $embedded = $saved->stream('Names', 'EmbeddedFiles', 'Names', 1, 'EF', 'F');
+
+        self::assertSame('EmbeddedFile', $embedded->get('Type')?->value());
+        self::assertSame('the contents', $saved->editor()->store()->decodedStream($embedded));
     }
 }

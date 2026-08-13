@@ -6,7 +6,9 @@ namespace MightyPDF\Tests\Content;
 
 use MightyPDF\Assembler\Annotation\AttachmentIcon;
 use MightyPDF\Assembler\Document;
+use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Content\PageBuilder;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 final class FileAttachmentAnnotationTest extends TestCase
@@ -19,16 +21,23 @@ final class FileAttachmentAnnotationTest extends TestCase
         $workings = $document->attach('workings.csv', "a,b\n1,2\n", mediaType: 'text/csv');
         (new PageBuilder($document, $page))->addFileAttachment($workings, 500, 640);
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
+        $annotation = $saved->annotations()[0];
 
-        self::assertStringContainsString('/Subtype /FileAttachment', $output);
-        self::assertStringContainsString('/FS ' . $workings->objectId() . ' 0 R', $output);
-        self::assertStringContainsString('/Name /PushPin', $output);
-        self::assertStringContainsString('/Rect [500 640 520 660]', $output);
+        self::assertSame('FileAttachment', $annotation->get('Subtype')?->value());
+        self::assertSame('PushPin', $annotation->get('Name')?->value());
+        self::assertSame('[500 640 520 660]', $annotation->get('Rect')?->format());
+
+        // The point of the feature: the icon references the file
+        // specification the document already carries rather than
+        // embedding a second copy of it.
+        $reference = $annotation->get('FS');
+        self::assertInstanceOf(PdfReference::class, $reference);
+        self::assertSame($workings->objectId(), $reference->objectId());
 
         // One embedded file, not two: the panel entry and the icon are
         // the same attachment.
-        self::assertSame(1, substr_count($output, '/Type /EmbeddedFile'));
+        self::assertSame(1, substr_count($saved->bytes(), '/Type /EmbeddedFile'));
     }
 
     public function testTheIconIsListedInThePagesAnnotations(): void
@@ -39,7 +48,7 @@ final class FileAttachmentAnnotationTest extends TestCase
         $file = $document->attach('notes.txt', 'x');
         (new PageBuilder($document, $page))->addFileAttachment($file, 100, 100);
 
-        self::assertStringContainsString('/Annots [', $page->render(true));
+        self::assertCount(1, SavedDocument::of($document)->annotations());
     }
 
     public function testTheTooltipFallsBackToTheFilename(): void
@@ -50,7 +59,9 @@ final class FileAttachmentAnnotationTest extends TestCase
         $file = $document->attach('notes.txt', 'x');
         (new PageBuilder($document, $page))->addFileAttachment($file, 100, 100);
 
-        self::assertStringContainsString('/Contents (notes.txt)', $document->save());
+        $annotation = SavedDocument::of($document)->annotations()[0];
+
+        self::assertSame('notes.txt', SavedDocument::scalar($annotation->get('Contents')));
     }
 
     public function testANoteReplacesIt(): void
@@ -67,10 +78,13 @@ final class FileAttachmentAnnotationTest extends TestCase
             note: 'The reconciliation behind this figure',
         );
 
-        $output = $document->save();
+        $annotation = SavedDocument::of($document)->annotations()[0];
 
-        self::assertStringContainsString('/Name /Paperclip', $output);
-        self::assertStringContainsString('/Contents (The reconciliation behind this figure)', $output);
+        self::assertSame('Paperclip', $annotation->get('Name')?->value());
+        self::assertSame(
+            'The reconciliation behind this figure',
+            SavedDocument::scalar($annotation->get('Contents')),
+        );
     }
 
     /** Without the print flag the icon is absent from a printed copy. */
@@ -82,6 +96,9 @@ final class FileAttachmentAnnotationTest extends TestCase
         $file = $document->attach('notes.txt', 'x');
         (new PageBuilder($document, $page))->addFileAttachment($file, 100, 100);
 
-        self::assertStringContainsString('/F 4', $document->save());
+        // Bit 3, "Print" -- asserted on the annotation rather than on the
+        // file, where "/F 4" also matches a font resource or a form field
+        // flag in any document that has one.
+        self::assertSame(4, SavedDocument::of($document)->annotations()[0]->get('F')?->value());
     }
 }
