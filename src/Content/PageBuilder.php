@@ -21,11 +21,7 @@ use MightyPDF\Assembler\Page;
 use MightyPDF\Assembler\PageContext;
 use MightyPDF\Assembler\Structure\StructureElement;
 use MightyPDF\Assembler\Stream;
-use MightyPDF\Assembler\Types\PdfArray;
-use MightyPDF\Assembler\Types\PdfInteger;
 use MightyPDF\Assembler\Types\PdfName;
-use MightyPDF\Assembler\Types\PdfReal;
-use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfRectangle;
 use MightyPDF\Content\Barcode\DataMatrix;
 use MightyPDF\Content\Barcode\DataMatrixShape;
@@ -43,14 +39,8 @@ use MightyPDF\Content\Image\JpegImage;
 use MightyPDF\Content\Image\PngImage;
 use MightyPDF\Content\Image\TiffImage;
 use MightyPDF\Content\Svg\SvgDocument;
-use MightyPDF\Content\Svg\SvgGradient;
-use MightyPDF\Content\Svg\SvgPattern;
-use MightyPDF\Content\Svg\SvgRasterImage;
-use MightyPDF\Content\Svg\SvgShadingPattern;
-use MightyPDF\Content\Svg\SvgSoftMask;
 use MightyPDF\Content\Svg\SvgStyle;
 use MightyPDF\Content\Svg\SvgTextFont;
-use MightyPDF\Content\Svg\SvgTilingPattern;
 use MightyPDF\Content\Text\HorizontalAlign;
 use MightyPDF\Content\Text\TextPlacement;
 use MightyPDF\Content\Text\TextWrapper;
@@ -64,27 +54,28 @@ use MightyPDF\Content\Text\VerticalAlign;
  * per call) -- plus the bookkeeping needed to reference supporting
  * resources (fonts, later images) from the page's /Resources dictionary.
  *
- * The side effects of "start using this font here" are split in two:
- * Font::writerFor() owns allocating/registering/caching the one shared
- * font object per document, and fontResourceName() below owns naming it
- * in this page's /Resources /Font. They are separate because the object
- * is document-scoped while the name is page-scoped -- conflating the two
- * is what let form fields on different pages collide in the shared
- * AcroForm /DR (fixed by moving that naming onto AcroForm itself). Same
- * discipline as IndirectObjectRegistry centralizing xref bookkeeping --
- * scattering these steps across call sites is exactly what produced the
- * 2012 bugs this project is rebuilding away from.
+ * What this class does *not* own is the resources it draws through. A
+ * font, an image, a gradient and a spot colour each need allocating,
+ * registering with the document and naming in a /Resources dictionary,
+ * and all of that lives on ResourceRegistry -- one object per scope,
+ * swapped rather than duplicated when an SVG is rendered into a form
+ * XObject of its own. Keeping those three steps together is the same
+ * discipline as IndirectObjectRegistry centralizing xref bookkeeping:
+ * scattering them across call sites is exactly what produced the 2012
+ * bugs this project is rebuilding away from, and what let form fields on
+ * different pages collide in the shared AcroForm /DR.
  */
 final class PageBuilder
 {
     private ?Stream $stream = null;
 
     /**
-     * Where resource names are handed out and what they resolve in --
-     * the page's own /Resources, except while an SVG is being rendered
-     * into a form XObject of its own. See ResourceScope and drawSvg().
+     * Where resources are allocated, registered and named, and what
+     * those names resolve in -- the page's own /Resources, except while
+     * an SVG is being rendered into a form XObject of its own. See
+     * ResourceRegistry and drawSvg().
      */
-    private ResourceScope $scope;
+    private ResourceRegistry $resources;
 
     /**
      * This page's key in the structure tree's parent tree, assigned on
@@ -103,7 +94,7 @@ final class PageBuilder
         private readonly DocumentContext $document,
         private readonly PageContext $page,
     ) {
-        $this->scope = new ResourceScope($page->resources());
+        $this->resources = new ResourceRegistry($document, $page->resources());
     }
 
     /**
@@ -136,10 +127,10 @@ final class PageBuilder
         // that text the font cannot draw leaves no half-finished trace
         // on a page a caller may still go on to use.
         $encoded = $writer->encode($text);
-        $resourceName = $this->fontResourceName($font, $writer);
+        $resourceName = $this->resources->fontResourceName($font, $writer);
 
         $operators = new ContentStream();
-        ($paint ?? new Color($r, $g, $b))->applyFill($operators, $this->separationColorSpaceName(...));
+        ($paint ?? new Color($r, $g, $b))->applyFill($operators, $this->resources->separationColorSpaceName(...));
 
         $operators->beginText()
             ->setFont($resourceName, $sizePt)
@@ -263,7 +254,7 @@ final class PageBuilder
         $lines = TextWrapper::wrapUtf8($text, $font, $sizePt, $width);
         $lastIndex = count($lines) - 1;
 
-        $resourceName = $this->fontResourceName($font, $writer);
+        $resourceName = $this->resources->fontResourceName($font, $writer);
         $operators = new ContentStream();
         $lineY = TextPlacement::firstBaselineY(
             $font,
@@ -288,7 +279,7 @@ final class PageBuilder
                 $wordSpacing = ($width - $lineWidth) / $spaceCount;
             }
 
-            $paint->applyFill($operators, $this->separationColorSpaceName(...));
+            $paint->applyFill($operators, $this->resources->separationColorSpaceName(...));
 
             $operators->beginText()
                 ->setFont($resourceName, $sizePt);
@@ -926,8 +917,8 @@ final class PageBuilder
         $operators = new ContentStream();
         $operators->pushGraphicsState();
 
-        $fill?->applyFill($operators, $this->separationColorSpaceName(...));
-        $stroke?->apply($operators, $this->separationColorSpaceName(...));
+        $fill?->applyFill($operators, $this->resources->separationColorSpaceName(...));
+        $stroke?->apply($operators, $this->resources->separationColorSpaceName(...));
 
         $path($operators);
 
@@ -1083,7 +1074,7 @@ final class PageBuilder
             }
         }
 
-        $resourceName = $this->extGStateResourceName($fillAlpha, $strokeAlpha);
+        $resourceName = $this->resources->extGStateResourceName($fillAlpha, $strokeAlpha);
 
         $this->append(
             (new ContentStream())->pushGraphicsState()->setExtGState($resourceName)->bytes(),
@@ -1242,7 +1233,7 @@ final class PageBuilder
      */
     private function placeImage(Stream $image, float $x, float $y, float $width, float $height): static
     {
-        $resourceName = $this->nameXObject($image->objectId());
+        $resourceName = $this->resources->nameXObject($image->objectId());
 
         $operators = (new ContentStream())->drawImage($resourceName, $x, $y, $width, $height);
         $this->append($operators->bytes());
@@ -1327,7 +1318,7 @@ final class PageBuilder
             }
         }
 
-        $operators = (new ContentStream())->paintXObject($this->nameXObject($form->objectId()));
+        $operators = (new ContentStream())->paintXObject($this->resources->nameXObject($form->objectId()));
         $this->append($operators->bytes());
 
         return $this;
@@ -1340,7 +1331,7 @@ final class PageBuilder
      *
      * Those resources are named in a scope of the XObject's own rather
      * than the page's, which is the whole reason it can be placed on a
-     * page that has never seen them -- see ResourceScope. The swap is
+     * page that has never seen them -- see ResourceRegistry. The swap is
      * undone in a finally, so a drawing that throws part-way through
      * leaves the page naming things in its own resources again rather
      * than into an XObject nobody will place.
@@ -1363,8 +1354,8 @@ final class PageBuilder
         ?\Closure $fontResolver,
     ): Stream {
         $resources = new Dictionary();
-        $outer = $this->scope;
-        $this->scope = new ResourceScope($resources);
+        $outer = $this->resources;
+        $this->resources = new ResourceRegistry($this->document, $resources);
 
         $operators = new ContentStream();
         $operators->pushGraphicsState()->concatMatrix(...$placement);
@@ -1376,16 +1367,12 @@ final class PageBuilder
             // "cm" just set. See SvgShadingPattern.
             $svg->render(
                 $operators,
-                $this->extGStateResourceName(...),
-                $this->shadingPatternResourceName(...),
+                $this->resources,
                 $placement,
-                $this->svgImageResource(...),
                 fn (SvgStyle $style): ?SvgTextFont => $this->svgTextFont($style, $fontResolver),
-                $this->tilingPatternResourceName(...),
-                $this->softMaskResourceName(...),
             );
         } finally {
-            $this->scope = $outer;
+            $this->resources = $outer;
         }
 
         $operators->popGraphicsState();
@@ -1429,288 +1416,7 @@ final class PageBuilder
 
         $writer = $font->writerFor($this->document);
 
-        return new SvgTextFont($this->fontResourceName($font, $writer), $font, $writer);
-    }
-
-    /**
-     * Embeds a raster image carried inside an SVG and names it in this
-     * page's resources.
-     *
-     * The format is read from the bytes rather than from the data URI's
-     * media type: the type is written by whatever produced the SVG and
-     * is wrong often enough that trusting it would mean handing PNG
-     * bytes to the JPEG decoder on someone else's typo. Bytes that are
-     * not an image this library decodes -- or that are a broken one --
-     * return null, and the element is skipped rather than failing the
-     * whole document, matching how SVG handles everything it cannot
-     * draw.
-     */
-    private function svgImageResource(string $bytes): ?SvgRasterImage
-    {
-        $format = match (true) {
-            str_starts_with($bytes, "\x89PNG\r\n\x1a\n") => 'png',
-            str_starts_with($bytes, "\xFF\xD8\xFF") => 'jpeg',
-            str_starts_with($bytes, 'GIF87a'), str_starts_with($bytes, 'GIF89a') => 'gif',
-            default => null,
-        };
-
-        if ($format === null) {
-            return null;
-        }
-
-        $contentHash = "svg-$format:" . hash('xxh128', $bytes);
-        $image = $this->document->cachedImage($contentHash);
-
-        if ($image === null) {
-            try {
-                $image = match ($format) {
-                    'png' => PngImage::fromBytes($this->document, $bytes),
-                    'jpeg' => JpegImage::fromBytes($this->document, $bytes),
-                    'gif' => GifImage::fromBytes($this->document, $bytes),
-                };
-            } catch (\RuntimeException | \InvalidArgumentException) {
-                return null;
-            }
-
-            $this->document->register($image);
-            $this->document->cacheImage($contentHash, $image);
-        }
-
-        return new SvgRasterImage(
-            $this->nameXObject($image->objectId()),
-            (int) ($image->get('Width')?->format() ?? 0),
-            (int) ($image->get('Height')?->format() ?? 0),
-        );
-    }
-
-    /**
-     * Owns every side effect of "paint something with this gradient":
-     * build the pattern, register it, and name it in this page's
-     * /Resources /Pattern. Same discipline as fontResourceName() and
-     * placeImage().
-     *
-     * Not cached the way fonts and images are. A shading pattern carries
-     * the matrix of the shape it paints, so two shapes with the same
-     * gradient need two patterns -- which is also why the resource name
-     * is simply the next free one rather than something derived from
-     * the gradient's id.
-     *
-     * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix
-     * @param array{0: float, 1: float, 2: float, 3: float} $boundingBox
-     */
-    private function shadingPatternResourceName(SvgGradient $gradient, array $matrix, array $boundingBox): string
-    {
-        $pattern = SvgShadingPattern::build($this->document->allocate(), $gradient, $matrix, $boundingBox);
-        $this->document->register($pattern);
-
-        return $this->namePattern($pattern->objectId());
-    }
-
-    /**
-     * The same for a <pattern>, whose content the SVG layer has already
-     * drawn -- this owns only the PDF object it becomes.
-     *
-     * The pattern's /Resources is a copy of the page's own, taken now.
-     * The tile's content was drawn through the same callbacks as the
-     * page's, so every font, image and gradient it names is already
-     * registered there under the name it used, and copying is what makes
-     * those names resolve inside a stream that is not the page's. It
-     * lists more than the tile uses, which costs a few entries and no
-     * objects; the alternative is a second set of resource bookkeeping
-     * for every nested scope. The copy is taken *before* this pattern is
-     * named on the page, so a pattern can never list itself.
-     *
-     * Named once per distinct pattern rather than once per shape. What a
-     * tiling pattern object says is its tile rectangle, its placement
-     * matrix and its content -- so where two shapes agree on all three,
-     * the second wants the object the first already has, and building it
-     * again costs an object and a resource snapshot per shape. A drawing
-     * of a thousand pattern-filled shapes was a seven-megabyte document
-     * from fifty-seven kilobytes of SVG.
-     *
-     * Reusing the first object also reuses the snapshot taken with it,
-     * which is safe for the same reason the sharing is: identical
-     * content names identical resources, and those were registered
-     * before the first snapshot was taken because the first tile named
-     * them.
-     *
-     * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $matrix
-     * @param array{0: float, 1: float, 2: float, 3: float} $boundingBox
-     */
-    private function tilingPatternResourceName(SvgPattern $pattern, string $content, array $matrix, array $boundingBox): string
-    {
-        $key = implode('|', [...$pattern->tile($boundingBox), ...$matrix, $content]);
-
-        if (isset($this->scope->tilingPatternResourceNames[$key])) {
-            return $this->scope->tilingPatternResourceNames[$key];
-        }
-
-        $resources = $this->snapshotResources();
-
-        $tiling = SvgTilingPattern::build(
-            $this->document->allocate(),
-            $pattern,
-            $content,
-            $resources,
-            $matrix,
-            $boundingBox,
-        );
-        $this->document->register($tiling);
-
-        return $this->scope->tilingPatternResourceNames[$key] = $this->namePattern($tiling->objectId());
-    }
-
-    /**
-     * The resources of whatever is being drawn into as they stand, two
-     * levels deep.
-     *
-     * Deep enough matters: /Resources holds a dictionary per category,
-     * and copying only the outer one would leave the copy sharing the
-     * page's /Pattern dictionary -- which this pattern is about to be
-     * added to. The pattern would then contain itself, and a reader
-     * following it reports a circular reference (Ghostscript does;
-     * poppler renders it and says nothing).
-     */
-    private function snapshotResources(): Dictionary
-    {
-        $snapshot = new Dictionary();
-
-        foreach ($this->scope->resources->entries() as $key => $value) {
-            if ($value instanceof Dictionary) {
-                $category = new Dictionary();
-
-                foreach ($value->entries() as $name => $resource) {
-                    $category->set((string) $name, $resource);
-                }
-
-                $value = $category;
-            }
-
-            $snapshot->set((string) $key, $value);
-        }
-
-        return $snapshot;
-    }
-
-    private function namePattern(int $objectId): string
-    {
-        $resourceName = 'P' . $this->scope->nextPatternResourceNumber++;
-        $this->scope->category('Pattern')->set($resourceName, new PdfReference($objectId));
-
-        return $resourceName;
-    }
-
-    /** The same for a form or image XObject: /Im1, /Im2, ... in scope. */
-    private function nameXObject(int $objectId): string
-    {
-        $resourceName = 'Im' . $this->scope->nextImageResourceNumber++;
-        $this->scope->category('XObject')->set($resourceName, new PdfReference($objectId));
-
-        return $resourceName;
-    }
-
-    /**
-     * The ExtGState carrying a fading gradient's soft mask, named in
-     * this page's /Resources /ExtGState.
-     *
-     * Not cached the way a plain alpha state is: a mask is drawn in the
-     * coordinates of the shape it masks, so two shapes with the same
-     * gradient need two of them -- the same reason a shading pattern is
-     * built per shape.
-     *
-     * @param array{0: float, 1: float, 2: float, 3: float} $boundingBox
-     */
-    private function softMaskResourceName(SvgGradient $gradient, array $boundingBox, float $strokeWidth): string
-    {
-        [$group, $state] = SvgSoftMask::build(
-            $this->document->allocate(),
-            $this->document->allocate(),
-            $gradient,
-            $boundingBox,
-            $strokeWidth,
-        );
-
-        $this->document->register($group);
-        $this->document->register($state);
-
-        return $this->nameExtGState(new PdfReference($state->objectId()));
-    }
-
-    /**
-     * The /Separation colour space a spot colour is painted through,
-     * declared in the /ColorSpace of whatever scope is being drawn into
-     * and named there.
-     *
-     * Written inline rather than as an indirect object: the whole thing
-     * is an array of four short values, and the tint transform is a Type
-     * 2 (exponential interpolation) function, which is an ordinary
-     * dictionary and not a stream. Nothing here needs a number of its
-     * own, and a page that uses one ink would otherwise cost two extra
-     * objects to say so.
-     *
-     * The function is the linear ramp SpotColor documents: at tint 0 the
-     * alternate is all zeros, i.e. bare paper, and at tint 1 it is the
-     * colour in full. /N 1 makes the interpolation between them linear.
-     *
-     * Keyed on Paint::paintKey(), which deliberately excludes the tint --
-     * every tint of one ink is the same plate and shares this one space.
-     */
-    private function separationColorSpaceName(SpotColor $spot): string
-    {
-        $key = $spot->paintKey();
-
-        if (isset($this->scope->colorSpaceResourceNames[$key])) {
-            return $this->scope->colorSpaceResourceNames[$key];
-        }
-
-        $tintTransform = new Dictionary();
-        $tintTransform->set('FunctionType', new PdfInteger(2));
-        $tintTransform->set('Domain', new PdfArray(new PdfReal(0.0), new PdfReal(1.0)));
-        $tintTransform->set('C0', new PdfArray(...array_map(
-            static fn (float $channel): PdfReal => new PdfReal(0.0),
-            $spot->alternate->components(),
-        )));
-        $tintTransform->set('C1', new PdfArray(...array_map(
-            static fn (float $channel): PdfReal => new PdfReal($channel),
-            $spot->alternate->components(),
-        )));
-        $tintTransform->set('N', new PdfInteger(1));
-
-        $colorSpace = new PdfArray(
-            new PdfName('Separation'),
-            new PdfName($spot->name),
-            new PdfName('DeviceCMYK'),
-            $tintTransform,
-        );
-
-        $resourceName = 'CS' . $this->scope->nextColorSpaceResourceNumber++;
-        $this->scope->category('ColorSpace')->set($resourceName, $colorSpace);
-
-        return $this->scope->colorSpaceResourceNames[$key] = $resourceName;
-    }
-
-    private function extGStateResourceName(float $fillAlpha, float $strokeAlpha): string
-    {
-        $key = "$fillAlpha:$strokeAlpha";
-        if (isset($this->scope->extGStateResourceNames[$key])) {
-            return $this->scope->extGStateResourceNames[$key];
-        }
-
-        $gsDict = new Dictionary($this->document->allocate());
-        $gsDict->set('Type', new PdfName('ExtGState'));
-        $gsDict->set('ca', new PdfReal($fillAlpha));
-        $gsDict->set('CA', new PdfReal($strokeAlpha));
-        $this->document->register($gsDict);
-
-        return $this->scope->extGStateResourceNames[$key] = $this->nameExtGState(new PdfReference($gsDict->objectId()));
-    }
-
-    private function nameExtGState(PdfReference $state): string
-    {
-        $resourceName = 'GS' . $this->scope->nextExtGStateResourceNumber++;
-        $this->scope->category('ExtGState')->set($resourceName, $state);
-
-        return $resourceName;
+        return new SvgTextFont($this->resources->fontResourceName($font, $writer), $font, $writer);
     }
 
     /**
@@ -2022,27 +1728,6 @@ final class PageBuilder
         $this->document->register($field);
         $this->page->addAnnotation($field->objectId());
         $this->document->acroForm()->addField($field->objectId());
-    }
-
-    /**
-     * Resource name for $font in this page's own /Resources /Font. The
-     * name is page-local (each page has its own /Resources, so /F1 on
-     * two pages is unambiguous), but the font *object* it points at is
-     * shared document-wide -- the font itself owns that, via
-     * Font::writerFor().
-     */
-    private function fontResourceName(Font $font, FontWriter $writer): string
-    {
-        $key = $font->cacheKey();
-        if (isset($this->scope->fontResourceNames[$key])) {
-            return $this->scope->fontResourceNames[$key];
-        }
-
-        $resourceName = 'F' . $this->scope->nextFontResourceNumber++;
-        $this->scope->fontResourceNames[$key] = $resourceName;
-        $this->scope->category('Font')->set($resourceName, new PdfReference($writer->dictionary()->objectId()));
-
-        return $resourceName;
     }
 
     /**

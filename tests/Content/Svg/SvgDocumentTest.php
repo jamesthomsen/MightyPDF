@@ -8,17 +8,25 @@ use MightyPDF\Content\ContentStream;
 use MightyPDF\Content\Svg\SvgDocument;
 use MightyPDF\Content\Svg\SvgPattern;
 use MightyPDF\Content\Svg\SvgRasterImage;
-use MightyPDF\Content\Svg\SvgTransform;
+use MightyPDF\Tests\Support\FakeSvgResources;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class SvgDocumentTest extends TestCase
 {
-    private function noExtGState(): \Closure
-    {
-        return function (): never {
-            throw new \LogicException('No opacity < 1 expected in this test.');
-        };
+    /**
+     * The caller side of a drawing: nothing resourced unless the test
+     * asks for it, and an ExtGState refused outright so that a shape
+     * drawn at full opacity cannot quietly start asking for one. See
+     * FakeSvgResources.
+     */
+    private static function resources(
+        ?\Closure $shadingPattern = null,
+        ?\Closure $tilingPattern = null,
+        ?\Closure $image = null,
+        ?\Closure $extGState = null,
+    ): FakeSvgResources {
+        return new FakeSvgResources($extGState, $shadingPattern, $tilingPattern, image: $image);
     }
 
     public function testReadsViewBox(): void
@@ -85,7 +93,7 @@ final class SvgDocumentTest extends TestCase
         $svg = SvgDocument::fromString('<svg viewBox="0 0 10 10"><rect x="1" y="2" width="3" height="4" fill="#FF0000"/></svg>');
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         $bytes = $stream->bytes();
         self::assertStringContainsString('1 0 0 rg', $bytes);
@@ -98,7 +106,7 @@ final class SvgDocumentTest extends TestCase
         $svg = SvgDocument::fromString('<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="5" fill="blue"/></svg>');
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         $bytes = $stream->bytes();
         self::assertStringContainsString('10 5 m', $bytes); // rightmost point: cx+r, cy
@@ -112,7 +120,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         $bytes = $stream->bytes();
         self::assertStringContainsString('2 w', $bytes);
@@ -127,7 +135,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         self::assertSame(2, substr_count($stream->bytes(), '0 1 0 rg'));
     }
@@ -139,7 +147,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         self::assertStringContainsString('0 0 1 rg', $stream->bytes());
         self::assertStringNotContainsString('0 1 0 rg', $stream->bytes());
@@ -152,7 +160,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         $bytes = $stream->bytes();
         self::assertStringContainsString("q\n", $bytes);
@@ -168,11 +176,11 @@ final class SvgDocumentTest extends TestCase
 
         $requested = [];
         $stream = new ContentStream();
-        $svg->render($stream, function (float $fillAlpha, float $strokeAlpha) use (&$requested): string {
+        $svg->render($stream, self::resources(extGState: function (float $fillAlpha, float $strokeAlpha) use (&$requested): string {
             $requested[] = [$fillAlpha, $strokeAlpha];
 
             return 'GS1';
-        });
+        }));
 
         self::assertCount(1, $requested);
         self::assertEqualsWithDelta(0.5, $requested[0][0], 1e-9);
@@ -196,7 +204,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, static fn (): string => 'GS1');
+        $svg->render($stream, self::resources(extGState: static fn (): string => 'GS1'));
 
         $bytes = $stream->bytes();
 
@@ -213,7 +221,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, static fn (): string => 'GS1');
+        $svg->render($stream, self::resources(extGState: static fn (): string => 'GS1'));
 
         self::assertStringContainsString("q\n/GS1 gs", $stream->bytes());
         self::assertStringContainsString("S\nQ\n", $stream->bytes());
@@ -226,7 +234,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         self::assertStringNotContainsString('gs', $stream->bytes());
     }
@@ -241,7 +249,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         self::assertSame('', $stream->bytes());
     }
@@ -253,7 +261,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         $bytes = $stream->bytes();
         self::assertStringContainsString('1 0 0 rg', $bytes);
@@ -266,14 +274,14 @@ final class SvgDocumentTest extends TestCase
             '<svg viewBox="0 0 10 10"><polygon points="0,0 5,0 5,5" fill="red"/></svg>',
         );
         $polygonStream = new ContentStream();
-        $polygon->render($polygonStream, $this->noExtGState());
+        $polygon->render($polygonStream, self::resources());
         self::assertStringContainsString("h\n", $polygonStream->bytes());
 
         $polyline = SvgDocument::fromString(
             '<svg viewBox="0 0 10 10"><polyline points="0,0 5,0 5,5" stroke="red"/></svg>',
         );
         $polylineStream = new ContentStream();
-        $polyline->render($polylineStream, $this->noExtGState());
+        $polyline->render($polylineStream, self::resources());
         self::assertStringNotContainsString("h\n", $polylineStream->bytes());
     }
 
@@ -340,7 +348,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState(), static fn (): string => 'P1');
+        $svg->render($stream, self::resources(shadingPattern: static fn (): string => 'P1'));
 
         self::assertStringContainsString('1 0 0 rg', $stream->bytes());
         self::assertStringNotContainsString('scn', $stream->bytes());
@@ -361,7 +369,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         self::assertStringNotContainsString('scn', $stream->bytes());
         self::assertStringContainsString("n\n", $stream->bytes());
@@ -384,12 +392,11 @@ final class SvgDocumentTest extends TestCase
         $seen = null;
         $svg->render(
             new ContentStream(),
-            $this->noExtGState(),
-            static function (mixed $gradient, array $matrix) use (&$seen): string {
+            self::resources(shadingPattern: static function (mixed $gradient, array $matrix) use (&$seen): string {
                 $seen = $matrix;
 
                 return 'P1';
-            },
+            }),
             [2.0, 0.0, 0.0, 2.0, 0.0, 0.0],
         );
 
@@ -411,7 +418,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         self::assertStringContainsString('1 0 0 rg', $stream->bytes());
         self::assertStringNotContainsString('0 1 0 rg', $stream->bytes());
@@ -435,7 +442,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
         $bytes = $stream->bytes();
 
         // The circle just after the rect is red; the ellipse two along
@@ -462,7 +469,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $before = memory_get_usage();
-        $svg->render(new ContentStream(), $this->noExtGState());
+        $svg->render(new ContentStream(), self::resources());
         $used = memory_get_usage() - $before;
 
         self::assertLessThan(4 * 1024 * 1024, $used, 'the walk keeps no per-element list of its predecessors');
@@ -476,7 +483,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         self::assertStringContainsString('0 0 1 rg', $stream->bytes());
     }
@@ -490,7 +497,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         self::assertStringContainsString('1 0 0 rg', $stream->bytes());
     }
@@ -503,7 +510,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         self::assertStringContainsString('1 0 0 rg', $stream->bytes());
     }
@@ -520,14 +527,11 @@ final class SvgDocumentTest extends TestCase
 
         $svg->render(
             $stream,
-            $this->noExtGState(),
-            null,
-            [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-            static function (string $bytes) use (&$seen): SvgRasterImage {
+            self::resources(image: static function (string $bytes) use (&$seen): SvgRasterImage {
                 $seen = $bytes;
 
                 return new SvgRasterImage('Im1', 40, 40);
-            },
+            }),
         );
 
         self::assertSame('pretend png', $seen);
@@ -544,10 +548,7 @@ final class SvgDocumentTest extends TestCase
         $stream = new ContentStream();
         $svg->render(
             $stream,
-            $this->noExtGState(),
-            null,
-            [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-            static fn (): never => throw new \LogicException('nothing should have been read'),
+            self::resources(image: static fn (): never => throw new \LogicException('nothing should have been read')),
         );
 
         self::assertSame('', $stream->bytes());
@@ -562,7 +563,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState(), null, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], static fn (): null => null);
+        $svg->render($stream, self::resources(image: static fn (): null => null));
 
         self::assertStringNotContainsString('Do', $stream->bytes());
     }
@@ -575,7 +576,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         self::assertSame('', $stream->bytes());
     }
@@ -650,14 +651,12 @@ final class SvgDocumentTest extends TestCase
         $tiles = 0;
         $svg->render(
             new ContentStream(),
-            $this->noExtGState(),
-            static fn (): string => 'S1',
-            SvgTransform::IDENTITY,
-            null,
-            null,
-            static function () use (&$tiles): string {
-                return 'P' . ++$tiles;
-            },
+            self::resources(
+                shadingPattern: static fn (): string => 'S1',
+                tilingPattern: static function () use (&$tiles): string {
+                    return 'P' . ++$tiles;
+                },
+            ),
         );
 
         // Unbounded, sixteen links of two would be 65 535 tiles.
@@ -678,7 +677,7 @@ final class SvgDocumentTest extends TestCase
         );
 
         $stream = new ContentStream();
-        $svg->render($stream, $this->noExtGState());
+        $svg->render($stream, self::resources());
 
         self::assertStringNotContainsString('scn', $stream->bytes());
         self::assertStringContainsString("n\n", $stream->bytes());
@@ -694,16 +693,14 @@ final class SvgDocumentTest extends TestCase
 
         $svg->render(
             $stream,
-            static fn (): never => throw new \LogicException('No opacity < 1 expected in this test.'),
-            static fn (): string => 'S1',
-            SvgTransform::IDENTITY,
-            null,
-            null,
-            static function (SvgPattern $pattern, string $content) use (&$tile): string {
-                $tile ??= $content;
+            self::resources(
+                shadingPattern: static fn (): string => 'S1',
+                tilingPattern: static function (SvgPattern $pattern, string $content) use (&$tile): string {
+                    $tile ??= $content;
 
-                return 'P1';
-            },
+                    return 'P1';
+                },
+            ),
         );
 
         return $stream->bytes();
@@ -724,10 +721,9 @@ final class SvgDocumentTest extends TestCase
 
         $svg->render(
             $stream,
-            static fn (): never => throw new \LogicException('No opacity < 1 expected in this test.'),
-            static function () use (&$patterns): string {
+            self::resources(shadingPattern: static function () use (&$patterns): string {
                 return 'P' . ++$patterns;
-            },
+            }),
         );
 
         return $stream->bytes();

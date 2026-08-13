@@ -115,43 +115,45 @@ final class SvgDocument
     /**
      * Emits this SVG's content as ContentStream operators.
      *
-     * The two callbacks turn a resource this drawing needs into the name
+     * $resources turns each resource this drawing needs into the name
      * the content stream refers to it by, so that this class needs no
-     * knowledge of Document/registry/resources: $extGStateResourceName
-     * is called (fillAlpha, strokeAlpha) => name for partial opacity,
-     * and $shadingPatternResourceName (gradient, matrix, boundingBox) =>
-     * name for a gradient fill.
+     * knowledge of Document/registry/resources -- see SvgResources, whose
+     * nulls are how a caller that cannot supply a given resource degrades
+     * that element rather than failing the drawing.
      *
-     * The last two are optional, and a caller that omits them gets the
-     * behaviour from before those features existed: gradient fills and
-     * <image> elements are skipped rather than failing.
      * $baseMatrix is what the caller has already transformed this
      * drawing by, which a gradient has to know about; see
      * SvgShadingPattern for why a pattern cannot simply inherit it.
      *
+     * $textFontResourceName is separate from $resources because it is
+     * caller *policy* rather than bookkeeping: it decides which font a
+     * piece of text is set in, which a caller may override per drawing.
+     * Null skips text entirely, as does a null result for one run.
+     *
+     * Public only because PHP has no way to say "public to the content
+     * layer". The supported way to put an SVG on a page is
+     * PageBuilder::drawSvg(), which is what supplies every one of these
+     * arguments; this signature answers to that caller and changes with
+     * it.
+     *
+     * @internal
+     *
      * @param array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float} $baseMatrix
+     * @param (\Closure(SvgStyle): ?SvgTextFont)|null $textFontResourceName
      */
     public function render(
         ContentStream $stream,
-        \Closure $extGStateResourceName,
-        ?\Closure $shadingPatternResourceName = null,
+        SvgResources $resources,
         array $baseMatrix = SvgTransform::IDENTITY,
-        ?\Closure $imageResourceName = null,
         ?\Closure $textFontResourceName = null,
-        ?\Closure $tilingPatternResourceName = null,
-        ?\Closure $softMaskResourceName = null,
     ): void {
         $renderer = new SvgRenderer(
             $stream,
             $this->gradients,
             $this->stylesheet,
-            $extGStateResourceName,
-            $shadingPatternResourceName,
-            $imageResourceName,
+            $resources,
             $textFontResourceName,
             $this->patterns,
-            $tilingPatternResourceName,
-            $softMaskResourceName,
             paths: $this->paths,
         );
 

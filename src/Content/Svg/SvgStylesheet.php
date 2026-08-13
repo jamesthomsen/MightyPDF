@@ -133,6 +133,27 @@ final class SvgStylesheet
     }
 
     /**
+     * An element's own attributes with any matching rules laid over
+     * them.
+     *
+     * That order is the cascade's, not a convenience: a presentation
+     * attribute is the weakest kind of styling there is, and a rule in
+     * a <style> block beats it. The inline style attribute beats both,
+     * which SvgStyle::mergeAttributes() applies last of all.
+     *
+     * @param array<string, string> $attributes
+     * @return array<string, string>
+     */
+    public function cascade(SvgElementPath $element, array $attributes): array
+    {
+        if ($this->isEmpty()) {
+            return $attributes;
+        }
+
+        return array_merge($attributes, $this->declarationsFor($element));
+    }
+
+    /**
      * The declarations that apply to an element, already resolved
      * against each other: a more specific rule wins, and between two of
      * equal specificity the one written later does.
@@ -141,7 +162,7 @@ final class SvgStylesheet
      */
     public function declarationsFor(SvgElementPath $element): array
     {
-        if ($this->rules === []) {
+        if ($this->isEmpty()) {
             return [];
         }
 

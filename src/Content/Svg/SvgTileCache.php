@@ -36,7 +36,7 @@ namespace MightyPDF\Content\Svg;
  *
  * A drawing that runs out paints nothing for the fills it could not
  * reach, which is how this renderer treats every paint server it cannot
- * resolve -- see SvgRenderer::applyGradient().
+ * resolve -- see SvgPaintServers::applyGradient().
  */
 final class SvgTileCache
 {

@@ -11,6 +11,7 @@ use MightyPDF\Content\PageBuilder;
 use MightyPDF\Content\Svg\SvgDocument;
 use MightyPDF\Content\Svg\SvgStyle;
 use MightyPDF\Content\Svg\SvgTextFont;
+use MightyPDF\Tests\Support\FakeSvgResources;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -185,7 +186,7 @@ final class SvgTextTest extends TestCase
         $svg = SvgDocument::fromString('<svg viewBox="0 0 10 10"><text x="0" y="0">Hi</text></svg>');
 
         $stream = new ContentStream();
-        $svg->render($stream, static fn (): never => throw new \LogicException('no opacity here'));
+        $svg->render($stream, new FakeSvgResources());
 
         self::assertSame('', $stream->bytes());
     }
@@ -314,10 +315,8 @@ final class SvgTextTest extends TestCase
         $stream = new ContentStream();
         $svg->render(
             $stream,
-            static fn (): string => 'GS1',
-            null,
+            new FakeSvgResources(extGState: static fn (): string => 'GS1'),
             [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
-            null,
             $fontResolver ?? static fn (): SvgTextFont => self::helvetica(),
         );
 
