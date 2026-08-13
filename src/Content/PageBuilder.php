@@ -27,6 +27,9 @@ use MightyPDF\Assembler\Types\PdfName;
 use MightyPDF\Assembler\Types\PdfReal;
 use MightyPDF\Assembler\Types\PdfReference;
 use MightyPDF\Assembler\Types\PdfRectangle;
+use MightyPDF\Content\Barcode\DataMatrix;
+use MightyPDF\Content\Barcode\DataMatrixShape;
+use MightyPDF\Content\Barcode\ModuleGrid;
 use MightyPDF\Content\Barcode\QrCode;
 use MightyPDF\Content\Barcode\QrEccLevel;
 use MightyPDF\Content\Barcode\Symbology;
@@ -538,6 +541,85 @@ final class PageBuilder
                             // Row 0 is the top of the symbol and PDF's y
                             // runs up, so the rows are laid bottom-first.
                             $y + $size - ($margin + $row + 1) * $moduleSize,
+                            $moduleSize,
+                            $moduleSize,
+                        );
+                    }
+                }
+            },
+            $paint ?? Color::black(),
+        );
+    }
+
+    /**
+     * A Data Matrix (ECC200), the 2D symbology for marking small things.
+     *
+     * Square by default; pass DataMatrixShape::Rectangular for one of the
+     * six long-and-thin sizes, which exist for marking objects that are
+     * themselves long and thin.
+     *
+     * $size is the whole symbol including its quiet zone, so that two
+     * symbols asked for at the same size occupy the same space whatever
+     * they encode -- the module count varies with the payload and the
+     * footprint should not.
+     */
+    public function drawDataMatrix(
+        string $value,
+        float $x,
+        float $y,
+        float $size,
+        DataMatrixShape $shape = DataMatrixShape::Square,
+        bool $quietZone = true,
+        ?Paint $paint = null,
+    ): static {
+        return $this->drawModuleGrid(
+            DataMatrix::encode($value, $shape),
+            $x,
+            $y,
+            $size,
+            $quietZone ? DataMatrix::QUIET_ZONE_MODULES : 0,
+            $paint,
+        );
+    }
+
+    /**
+     * Paints a 2D symbol's dark modules as one path.
+     *
+     * The grid is fitted into the box preserving its own aspect ratio and
+     * centred in whatever is left over: a rectangular Data Matrix asked
+     * for in a square box is a rectangle in the middle of that square,
+     * rather than a square symbol nothing can read. One module is one
+     * exact rectangle on an exact grid -- rounding to device pixels is the
+     * reader's business and it does it better than arithmetic here could.
+     */
+    private function drawModuleGrid(
+        ModuleGrid $grid,
+        float $x,
+        float $y,
+        float $size,
+        int $margin,
+        ?Paint $paint,
+    ): static {
+        $columns = $grid->width() + 2 * $margin;
+        $rows = $grid->height() + 2 * $margin;
+
+        $moduleSize = min($size / $columns, $size / $rows);
+        $offsetX = ($size - $columns * $moduleSize) / 2;
+        $offsetY = ($size - $rows * $moduleSize) / 2;
+
+        return $this->paintPath(
+            static function (ContentStream $path) use ($grid, $moduleSize, $margin, $x, $y, $size, $offsetX, $offsetY): void {
+                for ($row = 0; $row < $grid->height(); ++$row) {
+                    for ($column = 0; $column < $grid->width(); ++$column) {
+                        if (!$grid->isDark($column, $row)) {
+                            continue;
+                        }
+
+                        $path->rect(
+                            $x + $offsetX + ($margin + $column) * $moduleSize,
+                            // Row 0 is the top of the symbol and PDF's y
+                            // runs up, so the rows are laid bottom-first.
+                            $y + $size - $offsetY - ($margin + $row + 1) * $moduleSize,
                             $moduleSize,
                             $moduleSize,
                         );
