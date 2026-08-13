@@ -84,7 +84,32 @@ final class SvgDocument
 
         [$vx, $vy, $vw, $vh] = self::readViewBox($root);
 
+        // A coordinate system with no extent is not one, and every caller
+        // divides the space it was given by these two to place the
+        // drawing. Left alone, a zero here is a DivisionByZeroError out of
+        // drawSvg() -- an \Error rather than an \Exception, so it goes
+        // straight past a caller catching what the rest of this library
+        // throws. A negative is the spec's own error case (§7.7: "a
+        // negative value for <width> or <height> is an error"), and its
+        // symptom is a drawing silently mirrored rather than a refusal.
+        if ($vw <= 0.0 || $vh <= 0.0) {
+            throw new \InvalidArgumentException(sprintf(
+                'This SVG\'s coordinate system is %s x %s, so there is nothing to scale onto the page. '
+                . 'A viewBox (or a width and height) has to have a positive extent in both directions.',
+                self::describe($vw),
+                self::describe($vh),
+            ));
+        }
+
         return new self($vx, $vy, $vw, $vh, $root);
+    }
+
+    /** A float in a message, without a tail of zeroes. */
+    private static function describe(float $value): string
+    {
+        return is_finite($value)
+            ? rtrim(rtrim(number_format($value, 4, '.', ''), '0'), '.')
+            : (string) $value;
     }
 
     /**

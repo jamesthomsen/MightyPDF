@@ -9,6 +9,7 @@ use MightyPDF\Content\Svg\SvgDocument;
 use MightyPDF\Content\Svg\SvgPattern;
 use MightyPDF\Content\Svg\SvgRasterImage;
 use MightyPDF\Content\Svg\SvgTransform;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class SvgDocumentTest extends TestCase
@@ -50,6 +51,33 @@ final class SvgDocumentTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
         SvgDocument::fromString('<svg></svg>');
+    }
+
+    /**
+     * Every caller divides the space it was given by these two, so a zero
+     * reaches the placement as a DivisionByZeroError -- an \Error rather
+     * than an \Exception, which goes straight past a caller catching what
+     * the rest of this library throws.
+     */
+    #[DataProvider('degenerateViewBoxes')]
+    public function testRefusesAViewBoxWithNoExtent(string $svg): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('coordinate system');
+
+        SvgDocument::fromString($svg);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function degenerateViewBoxes(): iterable
+    {
+        yield 'both zero' => ['<svg viewBox="0 0 0 0"></svg>'];
+        yield 'zero width' => ['<svg viewBox="0 0 0 100"></svg>'];
+        yield 'zero height' => ['<svg viewBox="0 0 100 0"></svg>'];
+        yield 'zero width and height attributes' => ['<svg width="0" height="0"></svg>'];
+        // §7.7: a negative width or height is an error. Its symptom is a
+        // drawing silently mirrored, which is worse than a refusal.
+        yield 'negative' => ['<svg viewBox="0 0 -100 -100"></svg>'];
     }
 
     public function testRendersARectWithFill(): void
