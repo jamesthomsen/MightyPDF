@@ -63,6 +63,48 @@ final class PdfRectangle implements PdfValue
         );
     }
 
+    /**
+     * The same rectangle grown by $amount on all four sides -- or shrunk,
+     * given a negative one.
+     *
+     * Normalizes first, so growing is always outwards: applied to corners
+     * the other way round, adding to x2 and subtracting from x1 would
+     * shrink the rectangle instead, which is the sort of thing that only
+     * shows up on the one page somebody built from a hand-written box.
+     */
+    public function expandedBy(float $amount): self
+    {
+        $box = $this->normalized();
+
+        return new self(
+            $box->x1 - $amount,
+            $box->y1 - $amount,
+            $box->x2 + $amount,
+            $box->y2 + $amount,
+        );
+    }
+
+    /**
+     * Whether $other lies entirely within this rectangle.
+     *
+     * Both are normalized first, for the same reason expandedBy() does it.
+     * The tolerance is there because the rectangles being compared are
+     * usually derived rather than typed -- a trim box is a media box less
+     * a bleed that was converted from millimetres -- and a containment
+     * test that fails on the last bit of a float is a test that rejects
+     * correct input.
+     */
+    public function contains(self $other, float $tolerance = 1e-6): bool
+    {
+        $outer = $this->normalized();
+        $inner = $other->normalized();
+
+        return $inner->x1 >= $outer->x1 - $tolerance
+            && $inner->y1 >= $outer->y1 - $tolerance
+            && $inner->x2 <= $outer->x2 + $tolerance
+            && $inner->y2 <= $outer->y2 + $tolerance;
+    }
+
     public function format(): string
     {
         return $this->array->format();

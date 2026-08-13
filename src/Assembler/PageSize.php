@@ -70,4 +70,46 @@ enum PageSize
     {
         return new PdfRectangle(0, 0, $this->heightPt(), $this->widthPt());
     }
+
+    /**
+     * A sheet big enough to hold this size *plus* $bleed points of bleed
+     * on every side -- the media box a commercial printer wants, where
+     * this size is what the job trims down to.
+     *
+     * Bleed exists because guillotines are not precise: artwork meant to
+     * reach the edge of the finished piece is printed past it, so a cut
+     * a millimetre off still lands in ink rather than in paper. Three
+     * millimetres is the usual ask in Europe, an eighth of an inch in the
+     * US -- both of which are points here, this being the assembler:
+     * PageSize::A4->withBleed(Unit::Millimetres->toPoints(3.0)).
+     *
+     * Pair it with Page::setBleed(), which declares the same number the
+     * other way round -- what part of the sheet is bleed rather than
+     * finished page:
+     *
+     * ```php
+     * $bleed = Unit::Millimetres->toPoints(3.0);
+     * $page = $document->newPage(PageSize::A4->withBleed($bleed));
+     * $page->setBleed($bleed);
+     * ```
+     */
+    public function withBleed(float $bleed): PdfRectangle
+    {
+        if ($bleed < 0.0) {
+            throw new \InvalidArgumentException("Bleed is a margin outside the finished page, so it cannot be negative -- got $bleed.");
+        }
+
+        // At the origin, not this size's box expanded in place, which
+        // would put the sheet's lower-left corner at (-bleed, -bleed).
+        // That is legal and every reader handles it, but a media box
+        // starting anywhere but (0, 0) is unusual enough to trip up
+        // imposition and preflight tools that quietly assume otherwise,
+        // and there is nothing to gain by being the file that finds out.
+        return new PdfRectangle(
+            0,
+            0,
+            $this->widthPt() + $bleed * 2,
+            $this->heightPt() + $bleed * 2,
+        );
+    }
 }

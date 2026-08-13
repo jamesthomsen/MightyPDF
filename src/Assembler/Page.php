@@ -24,6 +24,25 @@ final class Page extends Dictionary implements PageContext
 {
     private readonly Dictionary $resources;
 
+    /**
+     * Normalized, unlike the /MediaBox actually written, which is exactly
+     * what the caller gave. Every box question below -- what the crop box
+     * defaults to, whether a trim box fits on the sheet -- reads corners
+     * rather than extents, and §7.9.5 permits a rectangle whose corners
+     * are the other way round.
+     */
+    private readonly PdfRectangle $mediaBox;
+
+    /**
+     * The optional boxes, by /Key, in the order §14.11.2 defines them.
+     * Held here as well as in the dictionary so that the resolved
+     * getters can tell "not set, so inherit" from "set to something that
+     * happens to equal the default".
+     *
+     * @var array<string, PdfRectangle>
+     */
+    private array $boxes = [];
+
     /** @var list<Stream> */
     private array $contentStreams = [];
 
@@ -35,10 +54,185 @@ final class Page extends Dictionary implements PageContext
         parent::__construct($objectId);
 
         $this->resources = new Dictionary();
+        $this->mediaBox = $mediaBox->normalized();
 
         $this->set('Type', new PdfName('Page'));
         $this->set('MediaBox', $mediaBox);
         $this->set('Resources', $this->resources);
+    }
+
+    /**
+     * The sheet this page is printed on (§14.11.2, /MediaBox) --
+     * normalized, so x1/y1 is the lower-left corner whichever way round
+     * it was given.
+     */
+    public function mediaBox(): PdfRectangle
+    {
+        return $this->mediaBox;
+    }
+
+    /**
+     * What a reader clips this page to before displaying or printing it
+     * (§14.11.2, /CropBox).
+     *
+     * The visible page, in other words, and the only one of these four
+     * that changes what an ordinary reader shows. The rest are messages
+     * to a print workflow and are ignored on screen.
+     */
+    public function setCropBox(PdfRectangle $box): void
+    {
+        $this->setBox('CropBox', $box);
+    }
+
+    /**
+     * How far the press prints past the finished edge (§14.11.2,
+     * /BleedBox) -- see PageSize::withBleed() for what bleed is for.
+     */
+    public function setBleedBox(PdfRectangle $box): void
+    {
+        $this->setBox('BleedBox', $box);
+    }
+
+    /**
+     * The finished page: where the guillotine is meant to cut (§14.11.2,
+     * /TrimBox).
+     *
+     * The box a printer's preflight check actually looks for. A file with
+     * no /TrimBox is one where nothing in the document says how big the
+     * finished piece is, and the shop has to ask.
+     */
+    public function setTrimBox(PdfRectangle $box): void
+    {
+        $this->setBox('TrimBox', $box);
+    }
+
+    /**
+     * The extent of the meaningful content (§14.11.2, /ArtBox) -- what a
+     * placing application crops to when this page is imported as artwork.
+     */
+    public function setArtBox(PdfRectangle $box): void
+    {
+        $this->setBox('ArtBox', $box);
+    }
+
+    /**
+     * Declares that $bleed points around the edge of this sheet are bleed
+     * rather than finished page: the trim box becomes the media box less
+     * that much on every side, and the bleed box becomes the whole sheet.
+     *
+     * The one-call version of the commercial-print setup, and the other
+     * half of PageSize::withBleed() -- that makes a sheet big enough,
+     * this says how much of it gets cut off:
+     *
+     * ```php
+     * $bleed = Unit::Millimetres->toPoints(3.0);
+     * $page = $document->newPage(PageSize::A4->withBleed($bleed));
+     * $page->setBleed($bleed);
+     * ```
+     *
+     * Note what this does *not* do: the page origin stays at the corner
+     * of the sheet, which is now outside the finished page. Content laid
+     * out from (0, 0) starts in the bleed. That is the honest arrangement
+     * -- PDF has one coordinate system per page and it is the media box's
+     * -- so a caller placing content against the trim edge adds $bleed to
+     * its coordinates, and Layout\Flow::setBleed() does exactly that to
+     * its margins.
+     */
+    public function setBleed(float $bleed): void
+    {
+        if ($bleed < 0.0) {
+            throw new \InvalidArgumentException("Bleed is a margin outside the finished page, so it cannot be negative -- got $bleed.");
+        }
+
+        $trim = $this->mediaBox->expandedBy(-$bleed);
+
+        // Measured against the sheet rather than by asking $trim how wide
+        // it is: width() is absolute, so a bleed that has eaten past the
+        // middle of the page produces an inside-out rectangle that
+        // cheerfully reports a positive width.
+        if ($this->mediaBox->width() - $bleed * 2 <= 0.0
+            || $this->mediaBox->height() - $bleed * 2 <= 0.0) {
+            throw new \InvalidArgumentException(sprintf(
+                'A bleed of %s leaves nothing of a %s x %s sheet to trim to. '
+                . 'The media box has to be the finished size *plus* the bleed -- see PageSize::withBleed().',
+                self::describe($bleed),
+                self::describe($this->mediaBox->width()),
+                self::describe($this->mediaBox->height()),
+            ));
+        }
+
+        $this->setTrimBox($trim);
+        $this->setBleedBox($this->mediaBox);
+    }
+
+    /**
+     * The visible page: the crop box if one was set, otherwise the media
+     * box, which is what §14.11.2 says a reader assumes.
+     */
+    public function cropBox(): PdfRectangle
+    {
+        return $this->boxes['CropBox'] ?? $this->mediaBox;
+    }
+
+    /** The bleed box if one was set, otherwise the crop box (§14.11.2). */
+    public function bleedBox(): PdfRectangle
+    {
+        return $this->boxes['BleedBox'] ?? $this->cropBox();
+    }
+
+    /** The trim box if one was set, otherwise the crop box (§14.11.2). */
+    public function trimBox(): PdfRectangle
+    {
+        return $this->boxes['TrimBox'] ?? $this->cropBox();
+    }
+
+    /** The art box if one was set, otherwise the crop box (§14.11.2). */
+    public function artBox(): PdfRectangle
+    {
+        return $this->boxes['ArtBox'] ?? $this->cropBox();
+    }
+
+    /**
+     * Records a box, having checked it fits on the sheet.
+     *
+     * §14.11.2 lets a reader quietly reduce a box that hangs off the
+     * media box to the intersection of the two, which is exactly the
+     * behaviour worth refusing: a trim box a hair too big does not
+     * announce itself, it silently becomes a different trim box, and the
+     * first anyone hears of it is a print run cut to the wrong size. The
+     * numbers go in the message because the caller almost never typed
+     * them -- they came out of a unit conversion.
+     */
+    private function setBox(string $key, PdfRectangle $box): void
+    {
+        $normalized = $box->normalized();
+
+        if (!$this->mediaBox->contains($normalized)) {
+            throw new \InvalidArgumentException(sprintf(
+                'The /%s [%s %s %s %s] does not fit inside this page\'s media box [%s %s %s %s]. '
+                . 'A reader is entitled to shrink it to the overlap of the two rather than report this, '
+                . 'so the page would come out silently wrong. Give the page a bigger media box -- '
+                . 'PageSize::withBleed() sizes one for a given bleed.',
+                $key,
+                self::describe($normalized->x1),
+                self::describe($normalized->y1),
+                self::describe($normalized->x2),
+                self::describe($normalized->y2),
+                self::describe($this->mediaBox->x1),
+                self::describe($this->mediaBox->y1),
+                self::describe($this->mediaBox->x2),
+                self::describe($this->mediaBox->y2),
+            ));
+        }
+
+        $this->boxes[$key] = $normalized;
+        $this->set($key, $normalized);
+    }
+
+    /** A float in a message, without a tail of zeroes. */
+    private static function describe(float $value): string
+    {
+        return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.');
     }
 
     public function setParent(int $pageTreeObjectId): void
