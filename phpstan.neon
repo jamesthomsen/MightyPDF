@@ -1,0 +1,31 @@
+includes:
+    - phpstan-baseline.neon
+
+parameters:
+    level: max
+    paths:
+        - src
+        - tests
+        - tools
+
+    # The library takes stream resources from callers (Document::writeTo(),
+    # StreamSink) and PHP has no `resource` type to declare, so the
+    # docblocks say `resource` and the signatures cannot. That is not a
+    # weakness worth a baseline entry per call site.
+    treatPhpDocTypesAsCertain: false
+
+    # A starting line, not an endorsement. Every entry in here is a real
+    # thing PHPStan can see and this code cannot currently prove; what
+    # the baseline buys is that nothing *new* joins them. Working the
+    # list down is its own job, and the entries deserve reading one at a
+    # time -- several are cases where the analyser is right about the
+    # type and wrong about what to do (the reader's `$token?->offset ??`
+    # is redundant only because ?? already suppresses it, not because
+    # the token cannot be null).
+    #
+    # About 170 of them are one thing wearing many hats: PdfValue does
+    # not declare value(), so every caller of it -- here and in src --
+    # is calling a method the interface never promised. Adding it, or a
+    # scalar-valued sub-interface, would close most of this baseline in
+    # a single change. See tests/Support/SavedDocument::scalar(), which
+    # is that gap worked around at the call site.

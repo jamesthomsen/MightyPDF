@@ -35,6 +35,11 @@ jobs:
       - name: Tests
         run: vendor/bin/phpunit
 
+      # Held to the baseline rather than to zero: what this catches is
+      # anything *new*. See phpstan.neon for what is in there and why.
+      - name: Static analysis
+        run: vendor/bin/phpstan analyse --no-progress
+
       # The examples are the documentation, and nothing in the suite
       # would notice one of them going stale. Each writes to
       # examples/output/ and is expected to exit 0.

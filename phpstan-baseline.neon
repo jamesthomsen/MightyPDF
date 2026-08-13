@@ -1,0 +1,2227 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Method MightyPDF\\Assembler\\Document\:\:metadata\(\) should return MightyPDF\\Assembler\\XmpMetadata but returns MightyPDF\\Assembler\\XmpMetadata\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Assembler/Document.php
+
+		-
+			message: '#^Method MightyPDF\\Assembler\\Document\:\:pageLabels\(\) should return MightyPDF\\Assembler\\PageLabels but returns MightyPDF\\Assembler\\PageLabels\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Assembler/Document.php
+
+		-
+			message: '#^Method MightyPDF\\Assembler\\Document\:\:structure\(\) should return MightyPDF\\Assembler\\Structure\\StructureTree but returns MightyPDF\\Assembler\\Structure\\StructureTree\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Assembler/Document.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type MightyPDF\\Assembler\\PageLabels\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: src/Assembler/Document.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type MightyPDF\\Assembler\\Structure\\StructureTree\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: src/Assembler/Document.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type MightyPDF\\Assembler\\XmpMetadata\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: src/Assembler/Document.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arg1 of function max expects non\-empty\-array, list\<int\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Assembler/IndirectObjectRegistry.php
+
+		-
+			message: '#^Argument of an invalid type mixed supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: src/Assembler/PageLabelStyle.php
+
+		-
+			message: '#^Binary operation "\-\=" between \(float\|int\) and mixed results in an error\.$#'
+			identifier: assignOp.invalid
+			count: 1
+			path: src/Assembler/PageLabelStyle.php
+
+		-
+			message: '#^Binary operation "\.\=" between string and mixed results in an error\.$#'
+			identifier: assignOp.invalid
+			count: 1
+			path: src/Assembler/PageLabelStyle.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int\<0, 280\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Assembler/PageLabelStyle.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arg1 of function max expects non\-empty\-array, list\<int\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Assembler/Structure/StructureTree.php
+
+		-
+			message: '#^Binary operation "\.\=" between string and mixed results in an error\.$#'
+			identifier: assignOp.invalid
+			count: 1
+			path: src/Assembler/Types/WinAnsiEncoding.php
+
+		-
+			message: '#^Cannot access offset int\<0, 255\> on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: src/Assembler/Types/WinAnsiEncoding.php
+
+		-
+			message: '#^Method MightyPDF\\Assembler\\Types\\WinAnsiEncoding\:\:repertoire\(\) should return array\<string, int\> but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Assembler/Types/WinAnsiEncoding.php
+
+		-
+			message: '#^Constant MightyPDF\\Content\\Barcode\\Code39\:\:PATTERNS \(array\<string, string\>\) does not accept value array\<int\|string, string\>\.$#'
+			identifier: classConstant.value
+			count: 1
+			path: src/Content/Barcode/Code39.php
+
+		-
+			message: '#^Comparison operation "\>\=" between 0\|int\<2, max\> and 0 is always true\.$#'
+			identifier: greaterOrEqual.alwaysTrue
+			count: 1
+			path: src/Content/Barcode/DataMatrixPlacement.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Barcode\\DataMatrixPlacement\:\:place\(\) should return list\<list\<bool\>\> but returns list\<array\<int, bool\>\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Barcode/DataMatrixPlacement.php
+
+		-
+			message: '#^Parameter &\$matrix by\-ref type of method MightyPDF\\Content\\Barcode\\DataMatrixPlacement\:\:at\(\) expects list\<list\<bool\|null\>\>, non\-empty\-list\<array\<int, bool\|null\>\> given\.$#'
+			identifier: parameterByRef.type
+			count: 1
+			path: src/Content/Barcode/DataMatrixPlacement.php
+
+		-
+			message: '#^Parameter &\$matrix by\-ref type of method MightyPDF\\Content\\Barcode\\DataMatrixPlacement\:\:module\(\) expects list\<list\<bool\|null\>\>, non\-empty\-list\<array\<int, bool\|null\>\> given\.$#'
+			identifier: parameterByRef.type
+			count: 1
+			path: src/Content/Barcode/DataMatrixPlacement.php
+
+		-
+			message: '#^Result of && is always false\.$#'
+			identifier: booleanAnd.alwaysFalse
+			count: 2
+			path: src/Content/Barcode/DataMatrixPlacement.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between 0\|int\<4, max\> and 2 will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: src/Content/Barcode/DataMatrixPlacement.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Barcode\\DataMatrixSize\:\:all\(\) should return list\<MightyPDF\\Content\\Barcode\\DataMatrixSize\> but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Barcode/DataMatrixSize.php
+
+		-
+			message: '#^Property MightyPDF\\Content\\Barcode\\QrMatrix\:\:\$isFunction \(list\<list\<bool\>\>\) does not accept non\-empty\-list\<array\<int, bool\>\>\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: src/Content/Barcode/QrMatrix.php
+
+		-
+			message: '#^Property MightyPDF\\Content\\Barcode\\QrMatrix\:\:\$modules \(list\<list\<bool\>\>\) does not accept non\-empty\-list\<array\<int, bool\>\>\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: src/Content/Barcode/QrMatrix.php
+
+		-
+			message: '#^Property MightyPDF\\Content\\Barcode\\QrMatrix\:\:\$modules \(list\<list\<bool\>\>\) does not accept non\-empty\-list\<array\<int\<0, max\>, bool\>\>\.$#'
+			identifier: assign.propertyType
+			count: 2
+			path: src/Content/Barcode/QrMatrix.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Barcode\\ReedSolomon\:\:generator\(\) should return list\<int\> but returns non\-empty\-array\<int, int\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Barcode/ReedSolomon.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Barcode\\ReedSolomon\:\:remainder\(\) should return list\<int\> but returns non\-empty\-array\<int\<0, max\>, int\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Barcode/ReedSolomon.php
+
+		-
+			message: '#^Cannot access offset ''Courier''\|''CourierBold''\|''CourierBoldOblique''\|''CourierOblique''\|''Helvetica''\|''HelveticaBold''\|''HelveticaBoldOblique''\|''HelveticaOblique''\|''Symbol''\|''TimesBold''\|''TimesBoldItalic''\|''TimesItalic''\|''TimesRoman''\|''ZapfDingbats'' on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: src/Content/Font/StandardFont.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Font\\StandardFont\:\:metrics\(\) should return MightyPDF\\Content\\Font\\FontMetrics but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Font/StandardFont.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Font\\StandardFont\:\:verticalMetrics\(\) should return MightyPDF\\Content\\Font\\VerticalMetrics but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Font/StandardFont.php
+
+		-
+			message: '#^Parameter \#1 \$widths of static method MightyPDF\\Content\\Font\\FontMetrics\:\:forWinAnsi\(\) expects array\<int, int\>, mixed given\.$#'
+			identifier: argument.type
+			count: 6
+			path: src/Content/Font/StandardFont.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Font\\TrueType\\CmapTable\:\:__construct\(\) has parameter \$map with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Content/Font/TrueType/CmapTable.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Font\\TrueType\\CmapTable\:\:glyphFor\(\) should return int\|null but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Font/TrueType/CmapTable.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Font\\TrueType\\CmapTable\:\:mappings\(\) should return array\<int, int\> but returns array\<mixed\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Font/TrueType/CmapTable.php
+
+		-
+			message: '#^Property MightyPDF\\Content\\Font\\TrueType\\CmapTable\:\:\$map \(array\<int, int\>\) does not accept array\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: src/Content/Font/TrueType/CmapTable.php
+
+		-
+			message: '#^Cannot access offset 1 on array\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: src/Content/Font/TrueType/SfntReader.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Font\\TrueType\\SfntReader\:\:uint16\(\) should return int but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Font/TrueType/SfntReader.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Font\\TrueType\\SfntReader\:\:uint32\(\) should return int but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Font/TrueType/SfntReader.php
+
+		-
+			message: '#^Argument of an invalid type array\|false supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: src/Content/Font/TrueType/TrueTypeSubset.php
+
+		-
+			message: '#^Binary operation "\+" between int\<0, 4294967295\> and mixed results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: src/Content/Font/TrueType/TrueTypeSubset.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int\<0, 280\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Font/Type0Font.php
+
+		-
+			message: '#^Offset 0 might not exist on array\{0\?\: int\<min, 65535\>, 1\: int\<min, 65534\>\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: src/Content/Font/UnicodeCMap.php
+
+		-
+			message: '#^Parameter \#1 \$codePoint of static method MightyPDF\\Content\\Font\\UnicodeCMap\:\:codeHex\(\) expects int, mixed given\.$#'
+			identifier: argument.type
+			count: 3
+			path: src/Content/Font/UnicodeCMap.php
+
+		-
+			message: '#^Parameter \#1 \$entries of static method MightyPDF\\Content\\Font\\UnicodeCMap\:\:blocks\(\) expects list\<mixed\>, array\<int\<0, max\>, array\{0\?\: int\<min, 65535\>, 1\: int\<min, 65535\>\}\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Font/UnicodeCMap.php
+
+		-
+			message: '#^Parameter \#2 \.\.\.\$values of function sprintf expects bool\|float\|int\|string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Font/UnicodeCMap.php
+
+		-
+			message: '#^Parameter \#3 \$format of static method MightyPDF\\Content\\Font\\UnicodeCMap\:\:blocks\(\) expects callable\(mixed\)\: string, Closure\(array\)\: non\-falsy\-string given\.$#'
+			identifier: argument.type
+			count: 3
+			path: src/Content/Font/UnicodeCMap.php
+
+		-
+			message: '#^Parameter \#3 \.\.\.\$values of function sprintf expects bool\|float\|int\|string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Content/Font/UnicodeCMap.php
+
+		-
+			message: '#^Parameter \#4 \.\.\.\$values of function sprintf expects bool\|float\|int\|string\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Content/Font/UnicodeCMap.php
+
+		-
+			message: '#^Parameter \#2 \$length of function str_split expects int\<1, max\>, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Image/GifImage.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int\<0, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Image/GifLzwDecoder.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: src/Content/Image/PngImage.php
+
+		-
+			message: '#^Match expression does not handle remaining values\: 1\|int\<min, \-1\>\|int\<4, max\>$#'
+			identifier: match.unhandled
+			count: 1
+			path: src/Content/Image/PngImage.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Image\\PngImage\:\:buildDeinterlacedImage\(\) has parameter \$chunks with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Content/Image/PngImage.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Image\\PngImage\:\:colorSpaceFor\(\) has parameter \$chunks with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Content/Image/PngImage.php
+
+		-
+			message: '#^Parameter \#1 \$bytes of class MightyPDF\\Assembler\\Types\\PdfHexString constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Image/PngImage.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Image/PngImage.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strlen expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Image/PngImage.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Image\\TiffDirectory\:\:long\(\) should return int but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Image/TiffDirectory.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Image\\TiffDirectory\:\:short\(\) should return int but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Image/TiffDirectory.php
+
+		-
+			message: '#^Property MightyPDF\\Content\\Image\\TiffDirectory\:\:\$littleEndian is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Content/Image/TiffDirectory.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Content/Image/TiffImage.php
+
+		-
+			message: '#^Parameter \#2 \$replace_pairs of function strtr expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Image/TiffImage.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\PageBuilder\:\:loadImage\(\) should return MightyPDF\\Assembler\\Stream but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/PageBuilder.php
+
+		-
+			message: '#^Parameter \#1 \$object of method MightyPDF\\Assembler\\ObjectHost\:\:register\(\) expects MightyPDF\\Assembler\\PdfObject, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/PageBuilder.php
+
+		-
+			message: '#^Parameter \#1 \$path of method MightyPDF\\Content\\PageBuilder\:\:clippedToPath\(\) expects Closure\(MightyPDF\\Content\\PathSink\)\: mixed, Closure\(MightyPDF\\Content\\ContentStream\)\: MightyPDF\\Content\\ContentStream given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/PageBuilder.php
+
+		-
+			message: '#^Parameter \#2 \$image of method MightyPDF\\Assembler\\DocumentContext\:\:cacheImage\(\) expects MightyPDF\\Assembler\\Stream, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/PageBuilder.php
+
+		-
+			message: '#^Parameter \#1 \$resourceName of method MightyPDF\\Content\\ContentStream\:\:setStrokeColorSpace\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/SpotColor.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Svg\\SvgGradientParser\:\:resolve\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: src/Content/Svg/SvgGradientParser.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Svg\\SvgGradientStop\:\:luminosity\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Content/Svg/SvgGradientStop.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Svg\\SvgPaintServers\:\:measuredOnce\(\) should return Closure\(\)\: array\{float, float, float, float\} but returns Closure\(\)\: array\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Svg/SvgPaintServers.php
+
+		-
+			message: '#^Anonymous function should return float but returns float\|string\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Svg/SvgPathParser.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Svg\\SvgPathParser\:\:reflectedControlPoint\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Content/Svg/SvgPathParser.php
+
+		-
+			message: '#^Parameter \#1 \$x1 of method MightyPDF\\Content\\PathSink\:\:curveTo\(\) expects float, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Svg/SvgPathParser.php
+
+		-
+			message: '#^Parameter \#2 \$y1 of method MightyPDF\\Content\\PathSink\:\:curveTo\(\) expects float, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Svg/SvgPathParser.php
+
+		-
+			message: '#^Parameter \#3 \$previousControlX of static method MightyPDF\\Content\\Svg\\SvgPathParser\:\:reflectedControlPoint\(\) expects float\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Content/Svg/SvgPathParser.php
+
+		-
+			message: '#^Parameter \#4 \$previousControlY of static method MightyPDF\\Content\\Svg\\SvgPathParser\:\:reflectedControlPoint\(\) expects float\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Content/Svg/SvgPathParser.php
+
+		-
+			message: '#^Parameter \#4 \$qx of static method MightyPDF\\Content\\Svg\\SvgPathParser\:\:emitQuadratic\(\) expects float, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Svg/SvgPathParser.php
+
+		-
+			message: '#^Parameter \#5 \$qy of static method MightyPDF\\Content\\Svg\\SvgPathParser\:\:emitQuadratic\(\) expects float, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Svg/SvgPathParser.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arg1 of function max expects non\-empty\-array, list\<float\> given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Content/Svg/SvgRenderer.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arg1 of function min expects non\-empty\-array, list\<float\> given\.$#'
+			identifier: argument.type
+			count: 4
+			path: src/Content/Svg/SvgRenderer.php
+
+		-
+			message: '#^Offset 4 might not exist on array\{0\: float, 1\: float, 2\: float, 3\: float, 4\?\: float\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: src/Content/Svg/SvgShadingPattern.php
+
+		-
+			message: '#^Parameter \#1 \$from of static method MightyPDF\\Content\\Svg\\SvgShadingPattern\:\:interpolation\(\) expects list\<float\>, array given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Content/Svg/SvgShadingPattern.php
+
+		-
+			message: '#^Parameter \#2 \$to of static method MightyPDF\\Content\\Svg\\SvgShadingPattern\:\:interpolation\(\) expects list\<float\>, array given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Content/Svg/SvgShadingPattern.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Svg\\SvgStylesheet\:\:parseRules\(\) should return list\<array\{specificity\: int, order\: int, tag\: string\|null, id\: string\|null, classes\: list\<string\>, declarations\: array\<string, string\>\}\> but returns list\<array\{declarations\: non\-empty\-array\<string, string\>, order\: 0, specificity\: int, compounds\: list\<array\{tag\: string\|null, id\: string\|null, classes\: list\<string\>\}\>, combinators\: list\<string\>\}\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Svg/SvgStylesheet.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{0\: string, 1\?\: ''''\|''\#''\|''\.'', 2\?\: non\-empty\-string, 3\?\: ''\*''\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: src/Content/Svg/SvgStylesheet.php
+
+		-
+			message: '#^Offset 2 might not exist on array\{0\: string, 1\: ''\#'', 2\?\: non\-empty\-string, 3\?\: ''\*''\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: src/Content/Svg/SvgStylesheet.php
+
+		-
+			message: '#^Offset 2 might not exist on array\{0\: string, 1\: '''', 2\?\: non\-empty\-string, 3\?\: ''\*''\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: src/Content/Svg/SvgStylesheet.php
+
+		-
+			message: '#^Offset 2 might not exist on array\{0\: string, 1\: ''\.'', 2\?\: non\-empty\-string, 3\?\: ''\*''\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: src/Content/Svg/SvgStylesheet.php
+
+		-
+			message: '#^Parameter \#1 \$rules of class MightyPDF\\Content\\Svg\\SvgStylesheet constructor expects list\<array\{specificity\: int, order\: int, compounds\: list\<array\{tag\: string\|null, id\: string\|null, classes\: list\<string\>\}\>, combinators\: list\<string\>, declarations\: array\<string, string\>\}\>, list\<array\{specificity\: int, order\: int\<0, max\>, tag\: string\|null, id\: string\|null, classes\: list\<string\>, declarations\: array\<string, string\>\}\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Svg/SvgStylesheet.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Svg\\SvgTextRenderer\:\:trimEnds\(\) should return list\<array\{text\: string, style\: MightyPDF\\Content\\Svg\\SvgStyle, x\: float\|null, y\: float\|null, dx\: float, dy\: float\}\> but returns list\<array\{text\: non\-empty\-string, style\: MightyPDF\\Content\\Svg\\SvgStyle, x\: float\|null, y\: float\|null, dx\: float, dy\: float\}\|array\{text\: non\-empty\-string\}\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Svg/SvgTextRenderer.php
+
+		-
+			message: '#^Parameter \#1 \$element of method MightyPDF\\Content\\Svg\\SvgTextRenderer\:\:collectTextRuns\(\) expects DOMElement, DOMAttr\|DOMElement given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Svg/SvgTextRenderer.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Svg\\SvgTransform\:\:matricesForFunction\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Content/Svg/SvgTransform.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Svg\\SvgTransform\:\:parse\(\) should return list\<array\{float, float, float, float, float, float\}\> but returns list\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Svg/SvgTransform.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Svg\\SvgTransform\:\:rotate\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Content/Svg/SvgTransform.php
+
+		-
+			message: '#^Argument of an invalid type list\<string\>\|false supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: src/Content/Text/TextWrapper.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Text\\TextWrapper\:\:wrapUtf8\(\) should return list\<string\> but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Text/TextWrapper.php
+
+		-
+			message: '#^Method MightyPDF\\Content\\Text\\Utf8\:\:codePoints\(\) should return list\<int\> but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Content/Text/Utf8.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_values expects array, array\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Content/Text/Utf8.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Crypt/Rc4.php
+
+		-
+			message: '#^Anonymous function has an unused use \$version\.$#'
+			identifier: closure.unusedUse
+			count: 1
+			path: src/Crypt/StandardSecurityHandler.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Crypt/StandardSecurityHandler.php
+
+		-
+			message: '#^Generator expects value type list\<string\>, array\<string\> given\.$#'
+			identifier: generator.valueType
+			count: 1
+			path: src/Editor/Form/CMapRanges.php
+
+		-
+			message: '#^Method MightyPDF\\Editor\\Form\\FormFiller\:\:index\(\) should return array\<string, MightyPDF\\Editor\\Form\\Field\> but returns array\<string, MightyPDF\\Editor\\Form\\Field\>\|null\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Editor/Form/FormFiller.php
+
+		-
+			message: '#^Method MightyPDF\\Editor\\Form\\FormFiller\:\:names\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Editor/Form/FormFiller.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strtolower expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Editor/Form/FormFiller.php
+
+		-
+			message: '#^Parameter \#2 \$array of function implode expects array\<string\>, array given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Editor/Form/FormFiller.php
+
+		-
+			message: '#^Part \$closest \(mixed\) of encapsed string cannot be cast to string\.$#'
+			identifier: encapsedStringPart.nonString
+			count: 1
+			path: src/Editor/Form/FormFiller.php
+
+		-
+			message: '#^Binary operation "\-" between mixed and float results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 2
+			path: src/Editor/Form/FormFlattener.php
+
+		-
+			message: '#^Binary operation "\-" between mixed and mixed results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 2
+			path: src/Editor/Form/FormFlattener.php
+
+		-
+			message: '#^Method MightyPDF\\Editor\\Form\\FormFlattener\:\:placementMatrix\(\) has parameter \$rect with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Editor/Form/FormFlattener.php
+
+		-
+			message: '#^Parameter \#2 \$fontResourceName of method MightyPDF\\Editor\\Form\\TextAppearanceBuilder\:\:wrap\(\) expects string, string\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Editor/Form/TextAppearanceBuilder.php
+
+		-
+			message: '#^Parameter \#2 \$array of function implode expects array\<string\>, array given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Editor/Signature/DeferredSignature.php
+
+		-
+			message: '#^Parameter \#1 \$finalize of method MightyPDF\\Assembler\\Document\:\:onBeforeSave\(\) expects Closure\(\)\: void, Closure\(\)\: MightyPDF\\Assembler\\Document given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Layout/Flow.php
+
+		-
+			message: '#^Trying to invoke \(Closure\(MightyPDF\\Layout\\Flow, float\)\: bool\)\|null but it might not be a callable\.$#'
+			identifier: callable.nonCallable
+			count: 1
+			path: src/Layout/Flow.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between MightyPDF\\Assembler\\Structure\\StructureElement and null will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: src/Layout/Table.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type MightyPDF\\Assembler\\Structure\\StructureElement\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: src/Layout/Table.php
+
+		-
+			message: '#^Method MightyPDF\\Png\\ScanlineFilter\:\:undoAverage\(\) should return list\<int\> but returns array\<int, int\<0, 255\>\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Png/ScanlineFilter.php
+
+		-
+			message: '#^Method MightyPDF\\Png\\ScanlineFilter\:\:undoPaeth\(\) should return list\<int\> but returns array\<int, int\<0, 255\>\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Png/ScanlineFilter.php
+
+		-
+			message: '#^Method MightyPDF\\Png\\ScanlineFilter\:\:undoSub\(\) should return list\<int\> but returns array\<int, int\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Png/ScanlineFilter.php
+
+		-
+			message: '#^Method MightyPDF\\Png\\ScanlineFilter\:\:undoUp\(\) should return list\<int\> but returns array\<int\<0, max\>, int\<0, 255\>\>\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Png/ScanlineFilter.php
+
+		-
+			message: '#^Comparison operation "\<" between 9 and 12 is always true\.$#'
+			identifier: smaller.alwaysTrue
+			count: 1
+			path: src/Reader/Filter/LzwDecode.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between null and null will always evaluate to false\.$#'
+			identifier: notIdentical.alwaysFalse
+			count: 2
+			path: src/Reader/Filter/LzwDecode.php
+
+		-
+			message: '#^Parameter \#2 \$length of function str_split expects int\<1, max\>, int\<min, \-1\>\|int\<1, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Reader/Filter/Predictor.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Reader/Lexer.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>offset" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: src/Reader/ObjectParser.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Reader/Text/FontDecoder.php
+
+		-
+			message: '#^Method MightyPDF\\Reader\\Text\\GlyphNames\:\:table\(\) should return array\<string, string\> but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Reader/Text/GlyphNames.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>offset" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: src/Reader/XrefTable.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:bytes\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Assembler/AttachmentTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 5
+			path: tests/Assembler/AttachmentTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertIsResource\(\) with resource will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: tests/Assembler/DocumentStreamingTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Assembler/DocumentTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, numeric\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 2
+			path: tests/Assembler/DocumentTest.php
+
+		-
+			message: '#^Argument of an invalid type mixed supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: tests/Assembler/LinkAnnotationTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:items\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Assembler/LinkAnnotationTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Assembler/LinkAnnotationTest.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Assembler/LinkAnnotationTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Assembler\\LinkAnnotationTest\:\:linksOf\(\) should return list\<MightyPDF\\Assembler\\Dictionary\> but returns list\<MightyPDF\\Assembler\\Dictionary\|null\>\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Assembler/LinkAnnotationTest.php
+
+		-
+			message: '#^Parameter \#1 \$value of method MightyPDF\\Editor\\PdfEditor\:\:resolveDictionary\(\) expects MightyPDF\\Assembler\\Types\\PdfValue\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Assembler/LinkAnnotationTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Assembler/ObjectStreamTest.php
+
+		-
+			message: '#^Cannot call method value\(\) on MightyPDF\\Assembler\\Types\\PdfValue\|null\.$#'
+			identifier: method.nonObject
+			count: 3
+			path: tests/Assembler/ObjectStreamTest.php
+
+		-
+			message: '#^Cannot cast mixed to int\.$#'
+			identifier: cast.int
+			count: 2
+			path: tests/Assembler/ObjectStreamTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:toUtf8\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Assembler/OutlineTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 4
+			path: tests/Assembler/OutlineTest.php
+
+		-
+			message: '#^Cannot call method objectId\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: tests/Assembler/OutlineTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Assembler\\OutlineTest\:\:referencedId\(\) should return int\|null but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Assembler/OutlineTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Assembler\\OutlineTest\:\:title\(\) should return string\|null but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Assembler/OutlineTest.php
+
+		-
+			message: '#^Parameter \#1 \$handle of class MightyPDF\\Assembler\\StreamSink constructor expects resource, resource\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Assembler/StreamSinkTest.php
+
+		-
+			message: '#^Parameter \#1 \$stream of function fclose expects resource, resource\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Assembler/StreamSinkTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, numeric\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: tests/Assembler/StreamTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Assembler/Structure/StructureTreeTest.php
+
+		-
+			message: '#^Parameter \#2 \$page of class MightyPDF\\Editor\\PageOverlay constructor expects MightyPDF\\Assembler\\Dictionary, MightyPDF\\Assembler\\Dictionary\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Assembler/Structure/StructureTreeTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Assembler/XmpMetadataTest.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arg1 of function max expects non\-empty\-array, list\<float\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/Barcode/BarcodeDrawingTest.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arg1 of function min expects non\-empty\-array, list\<float\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/Barcode/BarcodeDrawingTest.php
+
+		-
+			message: '#^Cannot access offset int on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Content/Barcode/QrCodeRoundTripTest.php
+
+		-
+			message: '#^Cannot access offset int\<0, max\> on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Content/Barcode/QrCodeRoundTripTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Content\\Barcode\\QrCodeRoundTripTest\:\:constant\(\) should return array\<int, list\<int\>\> but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Content/Barcode/QrCodeRoundTripTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Content\\Barcode\\QrCodeRoundTripTest\:\:values\(\) return type has no value type specified in iterable type iterable\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Content/Barcode/QrCodeRoundTripTest.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/Barcode/QrCodeRoundTripTest.php
+
+		-
+			message: '#^Parameter \#1 \$codewords of method MightyPDF\\Content\\Barcode\\QrMatrix\:\:drawCodewords\(\) expects list\<int\>, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/Barcode/QrCodeRoundTripTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Content\\Barcode\\QrCodeTest\:\:dataCodewords\(\) should return list\<int\> but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Content/Barcode/QrCodeTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 4
+			path: tests/Content/FileAttachmentAnnotationTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 7
+			path: tests/Content/Font/EmbeddedFontTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, non\-falsy\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 2
+			path: tests/Content/Font/EmbeddedFontTest.php
+
+		-
+			message: '#^Static method MightyPDF\\Tests\\Content\\Font\\EmbeddedFontTest\:\:inflateStreams\(\) is unused\.$#'
+			identifier: method.unused
+			count: 1
+			path: tests/Content/Font/EmbeddedFontTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, numeric\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: tests/Content/Font/EmbeddedRealFontTest.php
+
+		-
+			message: '#^Parameter \#2 \$originalGlyphIds of static method MightyPDF\\Content\\Font\\TrueType\\TrueTypeSubset\:\:build\(\) expects list\<int\>, list\<int\|null\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/Font/EmbeddedRealFontTest.php
+
+		-
+			message: '#^Parameter \#1 \$array of function array_keys expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Content/Font/StandardFontTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertIsBool\(\) with bool will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: tests/Content/Font/TrueType/CffHeaderTest.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int\<1, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/Font/TrueType/CffHeaderTest.php
+
+		-
+			message: '#^Binary operation "\+" between mixed and 34 results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: tests/Content/Font/TrueType/TrueTypeFileTest.php
+
+		-
+			message: '#^Cannot access offset 1 on array\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Content/Font/TrueType/TrueTypeFileTest.php
+
+		-
+			message: '#^Binary operation "&" between mixed and 1 results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: tests/Content/Font/TrueType/TrueTypeSubsetTest.php
+
+		-
+			message: '#^Binary operation "&" between mixed and 128 results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: tests/Content/Font/TrueType/TrueTypeSubsetTest.php
+
+		-
+			message: '#^Binary operation "&" between mixed and 32 results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: tests/Content/Font/TrueType/TrueTypeSubsetTest.php
+
+		-
+			message: '#^Binary operation "&" between mixed and 64 results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: tests/Content/Font/TrueType/TrueTypeSubsetTest.php
+
+		-
+			message: '#^Binary operation "&" between mixed and 8 results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: tests/Content/Font/TrueType/TrueTypeSubsetTest.php
+
+		-
+			message: '#^Cannot access offset 1 on array\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Content/Font/TrueType/TrueTypeSubsetTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Content\\Font\\TrueType\\TrueTypeSubsetTest\:\:componentsOf\(\) should return list\<int\> but returns non\-empty\-list\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Content/Font/TrueType/TrueTypeSubsetTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertIsFloat\(\) with float will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 2
+			path: tests/Content/Font/VerticalMetricsTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: tests/Content/Image/GifImageTest.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int\<1, max\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/Image/GifImageTest.php
+
+		-
+			message: '#^Parameter \#1 \$string of function str_split expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/Image/GifImageTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: tests/Content/Image/JpegImageTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Cannot access offset int\<0, 15\> on string\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Cannot access offset int\<0, 45\> on string\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Cannot access offset int\<0, 72\> on string\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Cannot access offset int\<1, 46\> on string\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Cannot access offset int\<1, 73\> on string\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Cannot access offset int\<2, 47\> on string\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Cannot access offset int\<2, 74\> on string\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 8
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Parameter \#1 \$callback of function array_map expects \(callable\(int\)\: mixed\)\|null, Closure\(int\<0, 255\>\)\: non\-empty\-string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int given\.$#'
+			identifier: argument.type
+			count: 5
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int\<0, max\> given\.$#'
+			identifier: argument.type
+			count: 3
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Parameter \#1 \$context of function deflate_add expects DeflateContext, DeflateContext\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strlen expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Parameter \#2 \$data of static method MightyPDF\\Tests\\Content\\Image\\PngImageTest\:\:chunk\(\) expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/Image/PngImageTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Content\\Image\\TiffImageTest\:\:tiff\(\) has parameter \$extraLong with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Content/Image/TiffImageTest.php
+
+		-
+			message: '#^Parameter \#1 \$v of closure expects int, mixed given\.$#'
+			identifier: argument.type
+			count: 3
+			path: tests/Content/Image/TiffImageTest.php
+
+		-
+			message: '#^Parameter \$strip of static method MightyPDF\\Tests\\Content\\Image\\TiffImageTest\:\:tiff\(\) expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/Image/TiffImageTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:get\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Content/PageBuilderGraphicsTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Content/PageBuilderGraphicsTest.php
+
+		-
+			message: '#^Cannot call method value\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 2
+			path: tests/Content/PageBuilderGraphicsTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Content\\PageBuilderGraphicsTest\:\:operators\(\) should return string but returns string\|false\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Content/PageBuilderGraphicsTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: tests/Content/PageBuilderGraphicsTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:get\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:items\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 30
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Cannot call method value\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 2
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Cannot cast mixed to string\.$#'
+			identifier: cast.string
+			count: 3
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Content\\PageBuilderTest\:\:decompressedContentStreamBytes\(\) should return string but returns string\|false\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Content\\PageBuilderTest\:\:svgFormBytes\(\) should return string but returns string\|false\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, non\-empty\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 4
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, numeric\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 9
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Parameter \#1 \$callback of function array_map expects \(callable\(mixed\)\: mixed\)\|null, Closure\(MightyPDF\\Assembler\\Types\\PdfValue\|null, string\=\)\: mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arg1 of function max expects non\-empty\-array, list\<float\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Parameter \#2 \$array of function array_map expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Unable to resolve the template type T in call to function array_values$#'
+			identifier: argument.templateType
+			count: 2
+			path: tests/Content/PageBuilderTest.php
+
+		-
+			message: '#^Parameter \#1 \$p0 of static method MightyPDF\\Tests\\Content\\ShapesTest\:\:cubicAt\(\) expects array\{float, float\}, list\<float\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/ShapesTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Content\\Svg\\SvgPaintServersTest\:\:measuredOnce\(\) should return Closure\(\)\: array\{float, float, float, float\} but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Content/Svg/SvgPaintServersTest.php
+
+		-
+			message: '#^Cannot use array destructuring on list\<float\>\|null\.$#'
+			identifier: offsetAccess.nonArray
+			count: 4
+			path: tests/Content/Svg/SvgPathWalkTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Content\\Svg\\SvgShadingPatternTest\:\:linear\(\) has parameter \$coordinates with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Content/Svg/SvgShadingPatternTest.php
+
+		-
+			message: '#^Parameter \#2 \$coordinates of class MightyPDF\\Content\\Svg\\SvgGradient constructor expects array\{0\: float, 1\: float, 2\: float, 3\: float, 4\?\: float\}, array given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Content/Svg/SvgShadingPatternTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:get\(\)\.$#'
+			identifier: method.notFound
+			count: 5
+			path: tests/Content/Svg/SvgSoftMaskTest.php
+
+		-
+			message: '#^Cannot call method format\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 7
+			path: tests/Content/Svg/SvgSoftMaskTest.php
+
+		-
+			message: '#^Cannot call method get\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 6
+			path: tests/Content/Svg/SvgSoftMaskTest.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type MightyPDF\\Assembler\\Types\\PdfValue\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: tests/Content/Svg/SvgSoftMaskTest.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type mixed\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: tests/Content/Svg/SvgSoftMaskTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Content/Svg/SvgTextTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, non\-empty\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 2
+			path: tests/Content/Svg/SvgTextTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Content\\Text\\TextPlacementTest\:\:fonts\(\) should return list\<array\{MightyPDF\\Content\\Font\\Font\}\> but returns array\{Helvetica\: array\{MightyPDF\\Content\\Font\\StandardFont\:\:Helvetica\}, Times\: array\{MightyPDF\\Content\\Font\\StandardFont\:\:TimesRoman\}, Courier\: array\{MightyPDF\\Content\\Font\\StandardFont\:\:Courier\}, ''Times bold italic''\: array\{MightyPDF\\Content\\Font\\StandardFont\:\:TimesBoldItalic\}\}\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Content/Text/TextPlacementTest.php
+
+		-
+			message: '#^Argument of an invalid type list\<string\>\|false supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: tests/Content/Text/TextWrapperTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Content\\Text\\TextWrapperTest\:\:naiveWrap\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Content/Text/TextWrapperTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 6
+			path: tests/Crypt/DocumentEncryptionTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:toUtf8\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Crypt/StandardSecurityHandlerTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 9
+			path: tests/Crypt/StandardSecurityHandlerTest.php
+
+		-
+			message: '#^Parameter \#1 \$bytes of class MightyPDF\\Reader\\ObjectStore constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 4
+			path: tests/Crypt/StandardSecurityHandlerTest.php
+
+		-
+			message: '#^Parameter \#1 \$bytes of static method MightyPDF\\Editor\\PdfEditor\:\:fromBytes\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Crypt/StandardSecurityHandlerTest.php
+
+		-
+			message: '#^Parameter \#1 \$prefix of static method PHPUnit\\Framework\\Assert\:\:assertStringStartsWith\(\) expects non\-empty\-string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Crypt/StandardSecurityHandlerTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:objectId\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Editor/AdoptedAcroFormTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:toUtf8\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Editor/AdoptedAcroFormTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Editor/AdoptedAcroFormTest.php
+
+		-
+			message: '#^Parameter \#1 \$prefix of static method PHPUnit\\Framework\\Assert\:\:assertStringStartsWith\(\) expects non\-empty\-string, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/AdoptedAcroFormTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertTrue\(\) with true will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: tests/Editor/Form/FormDataTest.php
+
+		-
+			message: '#^Anonymous function should return string\|null but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Editor/Form/FormFillerTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 8
+			path: tests/Editor/Form/FormFillerTest.php
+
+		-
+			message: '#^Cannot access property \$widgets on MightyPDF\\Editor\\Form\\Field\|null\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: tests/Editor/Form/FormFillerTest.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arg1 of function max expects non\-empty\-array, list\<int\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/Form/FormFillerTest.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arg1 of function max expects non\-empty\-array, list\<int\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/Form/FormFlattenerTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 4
+			path: tests/Editor/Form/TextAppearanceBuilderTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, non\-empty\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 4
+			path: tests/Editor/Form/TextAppearanceBuilderTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:toUtf8\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: tests/Editor/MergedFormTest.php
+
+		-
+			message: '#^Cannot access property \$onStates on MightyPDF\\Editor\\Form\\Field\|null\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: tests/Editor/MergedFormTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Editor\\MergedFormTest\:\:defaultAppearanceOf\(\) should return string but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Editor/MergedFormTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Editor\\MergedFormTest\:\:widgetNamesOn\(\) should return list\<string\> but returns list\<mixed\>\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Editor/MergedFormTest.php
+
+		-
+			message: '#^Anonymous function should return int but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Editor/MergedLinkTest.php
+
+		-
+			message: '#^Argument of an invalid type mixed supplied for foreach, only iterables are supported\.$#'
+			identifier: foreach.nonIterable
+			count: 1
+			path: tests/Editor/MergedLinkTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:items\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: tests/Editor/MergedLinkTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:objectId\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Editor/MergedLinkTest.php
+
+		-
+			message: '#^Cannot access offset int on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Editor/MergedLinkTest.php
+
+		-
+			message: '#^Cannot call method objectId\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: tests/Editor/MergedLinkTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Editor\\MergedLinkTest\:\:linksOn\(\) should return list\<MightyPDF\\Assembler\\Dictionary\> but returns list\<MightyPDF\\Assembler\\Dictionary\|null\>\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Editor/MergedLinkTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Editor\\MergedLinkTest\:\:pageIds\(\) should return list\<int\> but returns array\<int\>\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Editor/MergedLinkTest.php
+
+		-
+			message: '#^Parameter \#1 \$value of method MightyPDF\\Editor\\PdfEditor\:\:resolveDictionary\(\) expects MightyPDF\\Assembler\\Types\\PdfValue\|null, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Editor/MergedLinkTest.php
+
+		-
+			message: '#^Parameter \#2 \$array of function array_map expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/MergedLinkTest.php
+
+		-
+			message: '#^Anonymous function should return int but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Editor/MergedOutlineTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:items\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Editor/MergedOutlineTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:objectId\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Editor/MergedOutlineTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:toUtf8\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Editor/MergedOutlineTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Editor/MergedOutlineTest.php
+
+		-
+			message: '#^Cannot call method objectId\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: tests/Editor/MergedOutlineTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Editor\\MergedOutlineTest\:\:outlineOf\(\) should return list\<array\{title\: string, page\: int\|null, fit\: string\|null, count\: int\|null, colour\: string\|null, flags\: int\|null, uri\: string\|null, children\: list\<array\<string, mixed\>\>\}\> but returns list\<array\<string, mixed\>\>\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Editor/MergedOutlineTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Editor\\MergedOutlineTest\:\:pageIds\(\) should return list\<int\> but returns array\<int\>\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Editor/MergedOutlineTest.php
+
+		-
+			message: '#^Parameter \#1 \$object of method MightyPDF\\Editor\\PdfEditor\:\:register\(\) expects MightyPDF\\Assembler\\PdfObject, MightyPDF\\Assembler\\Dictionary\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/MergedOutlineTest.php
+
+		-
+			message: '#^Parameter \#2 \$array of function array_map expects array, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/MergedOutlineTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:objectId\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Cannot call method addAnnotation\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Cannot call method apply\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 12
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Cannot call method catalog\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Cannot call method content\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 9
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Cannot call method drawText\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 9
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Cannot call method format\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 3
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Cannot call method get\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 11
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Cannot call method mediaBox\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Cannot call method resolve\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Cannot call method resolveDictionary\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 8
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Cannot call method rotation\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 2
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Cannot call method save\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 3
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Editor\\PageOverlayTest\:\:overlayOn\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, numeric\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Parameter \#1 \$bytes of class MightyPDF\\Reader\\ObjectStore constructor expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Parameter \#1 \$editor of static method MightyPDF\\Tests\\Editor\\PageOverlayTest\:\:firstPage\(\) expects MightyPDF\\Editor\\PdfEditor, mixed given\.$#'
+			identifier: argument.type
+			count: 6
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Parameter \#1 \$editor of static method MightyPDF\\Tests\\Editor\\PageOverlayTest\:\:overlayXObject\(\) expects MightyPDF\\Editor\\PdfEditor, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Parameter \#1 \$editor of static method MightyPDF\\Tests\\Editor\\PageOverlayTest\:\:streamAt\(\) expects MightyPDF\\Editor\\PdfEditor, mixed given\.$#'
+			identifier: argument.type
+			count: 3
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Parameter \#1 \$prefix of static method PHPUnit\\Framework\\Assert\:\:assertStringStartsWith\(\) expects non\-empty\-string, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Parameter \#2 \$haystack of static method PHPUnit\\Framework\\Assert\:\:assertStringContainsString\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Parameter \#2 \$string of static method PHPUnit\\Framework\\Assert\:\:assertStringStartsWith\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Parameter \#2 \$subject of function preg_match expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/PageOverlayTest.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arg1 of function max expects non\-empty\-array, list\<int\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/PageTreeTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:objectId\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Editor/PdfEditorTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 11
+			path: tests/Editor/PdfEditorTest.php
+
+		-
+			message: '#^Parameter \#1 \$prefix of static method PHPUnit\\Framework\\Assert\:\:assertStringStartsWith\(\) expects non\-empty\-string, string given\.$#'
+			identifier: argument.type
+			count: 4
+			path: tests/Editor/PdfEditorTest.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strlen expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/PdfEditorTest.php
+
+		-
+			message: '#^Offset 1 might not exist on array\{\}\|array\{non\-falsy\-string, numeric\-string, numeric\-string, numeric\-string, numeric\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: tests/Editor/Signature/DeferredSignatureTest.php
+
+		-
+			message: '#^Offset 2 might not exist on array\{\}\|array\{non\-falsy\-string, numeric\-string, numeric\-string, numeric\-string, numeric\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: tests/Editor/Signature/DeferredSignatureTest.php
+
+		-
+			message: '#^Offset 3 might not exist on array\{\}\|array\{non\-falsy\-string, numeric\-string, numeric\-string, numeric\-string, numeric\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: tests/Editor/Signature/DeferredSignatureTest.php
+
+		-
+			message: '#^Offset 4 might not exist on array\{\}\|array\{non\-falsy\-string, numeric\-string, numeric\-string, numeric\-string, numeric\-string\}\.$#'
+			identifier: offsetAccess.notFound
+			count: 1
+			path: tests/Editor/Signature/DeferredSignatureTest.php
+
+		-
+			message: '#^Parameter \#1 \$csr of function openssl_csr_sign expects OpenSSLCertificateSigningRequest\|string, OpenSSLCertificateSigningRequest\|true given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/Signature/DeferredSignatureTest.php
+
+		-
+			message: '#^Parameter \#1 \$prefix of static method PHPUnit\\Framework\\Assert\:\:assertStringStartsWith\(\) expects non\-empty\-string, string given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Editor/Signature/DeferredSignatureTest.php
+
+		-
+			message: '#^Parameter \#2 \$string of static method PHPUnit\\Framework\\Assert\:\:assertStringStartsWith\(\) expects string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/Signature/DeferredSignatureTest.php
+
+		-
+			message: '#^Parameter \#3 \$private_key of function openssl_csr_sign expects array\|OpenSSLAsymmetricKey\|OpenSSLCertificate\|string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/Signature/DeferredSignatureTest.php
+
+		-
+			message: '#^Parameter \#4 \$private_key of function openssl_cms_sign expects array\|OpenSSLAsymmetricKey\|OpenSSLCertificate\|string, mixed given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Editor/Signature/DeferredSignatureTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Content\\Paint\:\:equals\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: tests/Layout/BorderAndMarginsTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:get\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Layout/FlowGraphicsTest.php
+
+		-
+			message: '#^Cannot call method value\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: tests/Layout/FlowGraphicsTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Layout/FlowTaggingTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Layout\\FlowTaggingTest\:\:structureOf\(\) should return array\<string, list\<mixed\>\> but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Layout/FlowTaggingTest.php
+
+		-
+			message: '#^Parameter \#1 \$decorate of method MightyPDF\\Layout\\Flow\:\:onEachPage\(\) expects Closure\(MightyPDF\\Layout\\Flow, int, int\)\: void, Closure\(MightyPDF\\Layout\\Flow, int\)\: MightyPDF\\Layout\\Flow given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Layout/FlowTaggingTest.php
+
+		-
+			message: '#^Parameter \#1 \$decorate of method MightyPDF\\Layout\\Flow\:\:onEachPage\(\) expects Closure\(MightyPDF\\Layout\\Flow, int, int\)\: void, Closure\(MightyPDF\\Layout\\Flow\)\: MightyPDF\\Layout\\Flow given\.$#'
+			identifier: argument.type
+			count: 3
+			path: tests/Layout/FlowTest.php
+
+		-
+			message: '#^Parameter \#1 \$decorate of method MightyPDF\\Layout\\Flow\:\:onEachPage\(\) expects Closure\(MightyPDF\\Layout\\Flow, int, int\)\: void, Closure\(MightyPDF\\Layout\\Flow, int\)\: \(MightyPDF\\Layout\\Flow\|null\) given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Layout/FlowTest.php
+
+		-
+			message: '#^Parameter \#1 \$decorate of method MightyPDF\\Layout\\Flow\:\:onEachPage\(\) expects Closure\(MightyPDF\\Layout\\Flow, int, int\)\: void, Closure\(MightyPDF\\Layout\\Flow, int, int\)\: MightyPDF\\Layout\\Flow given\.$#'
+			identifier: argument.type
+			count: 3
+			path: tests/Layout/FlowTest.php
+
+		-
+			message: '#^Binary operation "\-" between mixed and float results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: tests/Layout/FlowWriteTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Layout/FlowWriteTest.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 4
+			path: tests/Layout/FlowWriteTest.php
+
+		-
+			message: '#^Cannot access offset 1 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 5
+			path: tests/Layout/FlowWriteTest.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Layout\\FlowWriteTest\:\:textOrigins\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Layout/FlowWriteTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Content\\Paint\:\:equals\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Layout/StyleTest.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Reader/Filter/CodecTest.php
+
+		-
+			message: '#^Parameter \#1 \$data of method MightyPDF\\Reader\\Filter\\FlateDecode\:\:decode\(\) expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 3
+			path: tests/Reader/Filter/CodecTest.php
+
+		-
+			message: '#^Parameter \#1 \$data of static method MightyPDF\\Tests\\Reader\\Filter\\CodecTest\:\:flate\(\) expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Reader/Filter/CodecTest.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strlen expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Reader/Filter/CodecTest.php
+
+		-
+			message: '#^Parameter \#1 \$string of function substr expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Reader/Filter/CodecTest.php
+
+		-
+			message: '#^Parameter \#1 \$bytes of static method MightyPDF\\Tests\\Reader\\Filter\\StreamDecoderTest\:\:stream\(\) expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 3
+			path: tests/Reader/Filter/StreamDecoderTest.php
+
+		-
+			message: '#^Parameter \#1 \$string of function bin2hex expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Reader/Filter/StreamDecoderTest.php
+
+		-
+			message: '#^Anonymous function should return int but returns mixed\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Reader/ObjectParserTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:get\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: tests/Reader/ObjectParserTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:items\(\)\.$#'
+			identifier: method.notFound
+			count: 6
+			path: tests/Reader/ObjectParserTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 5
+			path: tests/Reader/ObjectParserTest.php
+
+		-
+			message: '#^Cannot access offset 0 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Reader/ObjectParserTest.php
+
+		-
+			message: '#^Cannot access offset 1 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 2
+			path: tests/Reader/ObjectParserTest.php
+
+		-
+			message: '#^Cannot access offset 2 on mixed\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Reader/ObjectParserTest.php
+
+		-
+			message: '#^Cannot call method value\(\) on MightyPDF\\Assembler\\Types\\PdfValue\|null\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: tests/Reader/ObjectParserTest.php
+
+		-
+			message: '#^Cannot call method value\(\) on mixed\.$#'
+			identifier: method.nonObject
+			count: 2
+			path: tests/Reader/ObjectParserTest.php
+
+		-
+			message: '#^Parameter \#1 \$needle of static method PHPUnit\\Framework\\Assert\:\:assertStringContainsString\(\) expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Reader/ObjectParserTest.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strlen expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Reader/ObjectParserTest.php
+
+		-
+			message: '#^Parameter \#2 \$haystack of static method PHPUnit\\Framework\\Assert\:\:assertCount\(\) expects Countable\|iterable, mixed given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Reader/ObjectParserTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 9
+			path: tests/Reader/ObjectStoreTest.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strlen expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Reader/ObjectStoreTest.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strlen expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Reader/Text/TextExtractorTest.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arg1 of function max expects non\-empty\-array, list\<int\> given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Reader/Text/TextExtractorTest.php
+
+		-
+			message: '#^Parameter \#2 \$page of class MightyPDF\\Editor\\PageOverlay constructor expects MightyPDF\\Assembler\\Dictionary, MightyPDF\\Assembler\\Dictionary\|null given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Reader/Text/TextExtractorTest.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:value\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Reader/XrefTableTest.php
+
+		-
+			message: '#^Parameter \#1 \$string of function strlen expects string, string\|false given\.$#'
+			identifier: argument.type
+			count: 2
+			path: tests/Reader/XrefTableTest.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type MightyPDF\\Reader\\XrefEntry\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: tests/Reader/XrefTableTest.php
+
+		-
+			message: '#^Using nullsafe property access on non\-nullable type MightyPDF\\Reader\\XrefEntry\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: tests/Reader/XrefTableTest.php
+
+		-
+			message: '#^Binary operation "\.\=" between non\-falsy\-string and mixed results in an error\.$#'
+			identifier: assignOp.invalid
+			count: 1
+			path: tests/Support/EncryptedPdfFixture.php
+
+		-
+			message: '#^Call to an undefined method MightyPDF\\Assembler\\Types\\PdfValue\:\:render\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: tests/Support/EncryptedPdfFixture.php
+
+		-
+			message: '#^Cannot access offset int\<\-1, max\> on string\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Support/EncryptedPdfFixture.php
+
+		-
+			message: '#^Cannot access offset int\<0, 15\> on string\|false\.$#'
+			identifier: offsetAccess.nonOffsetAccessible
+			count: 1
+			path: tests/Support/EncryptedPdfFixture.php
+
+		-
+			message: '#^Parameter \#1 \$codepoint of function chr expects int\<0, 255\>, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Support/EncryptedPdfFixture.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Support\\FakeSvgResources\:\:__construct\(\) has parameter \$shadingPattern with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 2
+			path: tests/Support/FakeSvgResources.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Support\\FakeSvgResources\:\:__construct\(\) has parameter \$softMask with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Support/FakeSvgResources.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Support\\FakeSvgResources\:\:__construct\(\) has parameter \$tilingPattern with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 2
+			path: tests/Support/FakeSvgResources.php
+
+		-
+			message: '#^Binary operation "\." between ''"'' and mixed results in an error\.$#'
+			identifier: binaryOp.invalid
+			count: 1
+			path: tests/Support/SavedDocument.php
+
+		-
+			message: '#^Method MightyPDF\\Tests\\Support\\SavedDocument\:\:font\(\) should return MightyPDF\\Assembler\\Dictionary but returns MightyPDF\\Assembler\\Dictionary\|false\.$#'
+			identifier: return.type
+			count: 1
+			path: tests/Support/SavedDocument.php

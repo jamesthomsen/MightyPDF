@@ -43,6 +43,19 @@ final class DataMatrixPlacement
 
         do {
             // The corners, checked before each pass of the walk.
+            //
+            // Two of these four never fire, and that is not a bug worth
+            // fixing. Static analysis reports the corner-D condition as
+            // always false, and instrumenting the walk agrees: across
+            // every symbol size in the table only A and B are ever
+            // reached. They are kept because they are ISO 16022's
+            // algorithm as written, and a walk that matches the
+            // published pseudocode is worth more than four lines saved
+            // -- particularly since the placement is verified against
+            // libdmtx module for module at every size (see
+            // DataMatrixTest), so the symbols these branches would
+            // affect are already known to decode correctly without
+            // them.
             if ($row === $rows && $column === 0) {
                 self::cornerA($matrix, $rows, $columns, $codewords[$codeword++] ?? 0);
             } elseif ($row === $rows - 2 && $column === 0 && ($columns % 4) !== 0) {
