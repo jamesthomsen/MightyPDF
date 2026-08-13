@@ -8,6 +8,7 @@ use MightyPDF\Assembler\Destination;
 use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\Document;
 use MightyPDF\Editor\PdfEditor;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -23,8 +24,10 @@ final class OutlineTest extends TestCase
         $document = new Document();
         $document->newPage();
 
-        self::assertStringNotContainsString('/Outlines', $document->save());
-        self::assertStringNotContainsString('/PageMode', $document->save());
+        $saved = SavedDocument::of($document);
+
+        self::assertNull($saved->at('Outlines'));
+        self::assertNull($saved->at('PageMode'));
     }
 
     /**
@@ -37,8 +40,10 @@ final class OutlineTest extends TestCase
         $document = new Document();
         $document->outline()->add('Start', Destination::of($document->newPage()));
 
-        self::assertStringContainsString('/PageMode /UseOutlines', $document->save());
-        self::assertStringContainsString('/Type /Outlines', $document->save());
+        $saved = SavedDocument::of($document);
+
+        self::assertSame('UseOutlines', $saved->value('PageMode'));
+        self::assertSame('Outlines', $saved->value('Outlines', 'Type'));
     }
 
     public function testItemsAreLinkedToTheirSiblingsAndParent(): void

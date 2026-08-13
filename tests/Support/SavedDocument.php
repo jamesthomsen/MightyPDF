@@ -181,6 +181,61 @@ final class SavedDocument
         ));
     }
 
+    /**
+     * A page's font resources, keyed by the name the content stream
+     * refers to them by.
+     *
+     * Read through the page's inherited /Resources, because that is
+     * where a reader looks: a font that is in the file but not named
+     * here cannot be selected by any Tf operator, and "/BaseFont
+     * /Helvetica appears somewhere" never noticed the difference.
+     *
+     * @return array<string, Dictionary>
+     */
+    public function fonts(int $pageIndex = 0): array
+    {
+        $resources = $this->editor->resolveDictionary($this->pageEntry($pageIndex, 'Resources'));
+
+        Assert::assertInstanceOf(Dictionary::class, $resources, "page $pageIndex has no /Resources");
+
+        $fonts = $this->editor->resolveDictionary($resources->get('Font'));
+
+        if ($fonts === null) {
+            return [];
+        }
+
+        $resolved = [];
+
+        foreach ($fonts->entries() as $name => $value) {
+            $font = $this->editor->resolveDictionary($value);
+
+            Assert::assertInstanceOf(Dictionary::class, $font, "/Font /$name does not resolve");
+
+            $resolved[(string) $name] = $font;
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * The font a page names, when there is only one worth naming --
+     * which is the shape of most tests here.
+     */
+    public function font(int $pageIndex = 0, ?string $name = null): Dictionary
+    {
+        $fonts = $this->fonts($pageIndex);
+
+        if ($name !== null) {
+            Assert::assertArrayHasKey($name, $fonts, "page $pageIndex names no font /$name");
+
+            return $fonts[$name];
+        }
+
+        Assert::assertCount(1, $fonts, 'more than one font on the page -- say which');
+
+        return reset($fonts);
+    }
+
     /** The decoded content of a page, for assertions about operators. */
     public function contentOf(int $pageIndex = 0): string
     {
@@ -208,7 +263,19 @@ final class SavedDocument
      */
     public function at(string|int ...$path): ?PdfValue
     {
-        $current = $this->editor->catalog();
+        return $this->from($this->editor->catalog(), ...$path);
+    }
+
+    /**
+     * The same walk from somewhere other than the catalog -- a font
+     * already in hand, an annotation, a field -- for the paths that are
+     * long enough that starting at the top says less than starting at
+     * the thing. A CID font's programme is five hops from the page and
+     * one from its font.
+     */
+    public function from(PdfValue $start, string|int ...$path): ?PdfValue
+    {
+        $current = $start;
         $walked = [];
 
         foreach ($path as $segment) {

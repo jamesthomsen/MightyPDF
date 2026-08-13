@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace MightyPDF\Tests\Content\Font;
 
 use MightyPDF\Assembler\Document;
+use MightyPDF\Assembler\Dictionary;
+use MightyPDF\Assembler\Stream;
 use MightyPDF\Content\Font\EmbeddedFont;
 use MightyPDF\Content\Font\TrueType\FontException;
 use MightyPDF\Content\PageBuilder;
+use MightyPDF\Tests\Support\SavedDocument;
 use MightyPDF\Tests\Support\SyntheticTrueTypeFont;
 use PHPUnit\Framework\TestCase;
 
@@ -98,15 +101,22 @@ final class EmbeddedFontTest extends TestCase
         $content = new PageBuilder($document, $document->newPage());
         $content->drawText(self::font(), 12.0, 72, 700, 'A');
 
-        $pdf = $document->save();
+        $saved = SavedDocument::of($document);
+        $font = $saved->font();
 
-        self::assertStringContainsString('/Subtype /Type0', $pdf);
-        self::assertStringContainsString('/Encoding /Identity-H', $pdf);
-        self::assertStringContainsString('/Subtype /CIDFontType2', $pdf);
-        self::assertStringContainsString('/CIDToGIDMap /Identity', $pdf);
-        self::assertStringContainsString('/Ordering (Identity)', $pdf);
-        self::assertStringContainsString('/FontFile2', $pdf);
-        self::assertStringContainsString('/ToUnicode', $pdf);
+        // Followed as a reader follows it: the page names a Type0 font,
+        // which names a descendant CID font, which names the programme.
+        // Each hop is a claim, and "/FontFile2 appears somewhere" made
+        // none of them.
+        self::assertSame('Type0', $font->get('Subtype')?->value());
+        self::assertSame('Identity-H', $font->get('Encoding')?->value());
+
+        self::assertSame('CIDFontType2', SavedDocument::scalar($saved->from($font, 'DescendantFonts', 0, 'Subtype')));
+        self::assertSame('Identity', SavedDocument::scalar($saved->from($font, 'DescendantFonts', 0, 'CIDToGIDMap')));
+        self::assertSame('Identity', SavedDocument::scalar($saved->from($font, 'DescendantFonts', 0, 'CIDSystemInfo', 'Ordering')));
+
+        self::assertNotNull($saved->from($font, 'DescendantFonts', 0, 'FontDescriptor', 'FontFile2'));
+        self::assertNotNull($saved->from($font, 'ToUnicode'));
     }
 
     /**
@@ -130,7 +140,7 @@ final class EmbeddedFontTest extends TestCase
     {
         $pdf = self::documentDrawing('A', subset: false);
 
-        self::assertStringContainsString('/BaseFont /SyntheticTest', $pdf);
+        self::assertSame('SyntheticTest', SavedDocument::fromBytes($pdf)->font()->get('BaseFont')?->value());
         self::assertSame(0, preg_match('/\/BaseFont \/[A-Z]{6}\+/', $pdf));
     }
 
@@ -182,9 +192,12 @@ final class EmbeddedFontTest extends TestCase
         // Named after the font: two different CMaps sharing a name is
         // how a reader that caches them by name draws one font's text
         // through another's mapping.
-        self::assertStringContainsString('/CMapName /SyntheticTest-UTF16-H', $pdf);
-        self::assertStringContainsString('/Type /CMap', $pdf);
-        self::assertStringNotContainsString('/Encoding /Identity-H', $pdf);
+        $saved = SavedDocument::fromBytes($pdf);
+        $encodingStream = $saved->from($saved->font(), 'Encoding');
+
+        self::assertInstanceOf(Stream::class, $encodingStream, 'a whole-embedded font encodes through a CMap stream');
+        self::assertSame('CMap', $encodingStream->get('Type')?->value());
+        self::assertSame('SyntheticTest-UTF16-H', $encodingStream->get('CMapName')?->value());
 
         $encoding = self::encodingCMap($pdf);
         self::assertStringContainsString("<0041> <0042> 1\n", $encoding, '"A" and "B" are consecutive both ways');
@@ -226,7 +239,7 @@ final class EmbeddedFontTest extends TestCase
         $pdf = self::documentDrawing('AB');
 
         // Ids 1 and 2, in one run, with the advances of "A" and "B".
-        self::assertStringContainsString('/W [1 [600 700]]', $pdf);
+        self::assertSame('[1 [600 700]]', self::widthsOf($pdf));
     }
 
     /**
@@ -241,7 +254,7 @@ final class EmbeddedFontTest extends TestCase
         // Only "A" is drawn, but the font maps six characters.
         $pdf = self::documentDrawing('A', subset: false);
 
-        self::assertStringContainsString('/W [1 [600 700 300 600 800 250]]', $pdf);
+        self::assertSame('[1 [600 700 300 600 800 250]]', self::widthsOf($pdf));
 
         $cmap = self::toUnicodeCMap($pdf);
         self::assertStringContainsString('<0041> <0042> <0041>', $cmap, '"B" was never drawn but the font can draw it');
@@ -285,7 +298,7 @@ final class EmbeddedFontTest extends TestCase
         $content = new PageBuilder($document, $document->newPage());
         $content->drawText(EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build($characters), subset: false), 12.0, 72, 700, 'A');
 
-        self::assertStringContainsString('/W [1 [600] 4 [600]]', $document->save());
+        self::assertSame('[1 [600] 4 [600]]', self::widthsOf($document->save()));
     }
 
     public function testWritesAToUnicodeMapSoTheTextCanBeCopiedBackOut(): void
@@ -324,12 +337,26 @@ final class EmbeddedFontTest extends TestCase
 
         $pdf = $document->save();
 
-        self::assertStringContainsString('/Subtype /CIDFontType0', $pdf);
-        self::assertStringContainsString('/FontFile3', $pdf);
-        self::assertStringContainsString('/Subtype /OpenType', $pdf);
-        self::assertStringNotContainsString('/CIDToGIDMap', $pdf);
-        self::assertStringNotContainsString('/FontFile2', $pdf);
-        self::assertStringNotContainsString('/Length1', $pdf, 'only a /FontFile2 states its length');
+        $saved = SavedDocument::fromBytes($pdf);
+        $font = $saved->font();
+
+        $descendant = $saved->from($font, 'DescendantFonts', 0);
+        self::assertInstanceOf(Dictionary::class, $descendant);
+        self::assertSame('CIDFontType0', $descendant->get('Subtype')?->value());
+
+        // /CIDToGIDMap belongs to CIDFontType2 -- asked of the descendant
+        // rather than of the file, which would also have been answering
+        // for any other font the document happened to carry.
+        self::assertNull($descendant->get('CIDToGIDMap'));
+
+        $descriptor = $saved->from($descendant, 'FontDescriptor');
+        self::assertInstanceOf(Dictionary::class, $descriptor);
+        self::assertNull($descriptor->get('FontFile2'));
+
+        $programme = $saved->from($descriptor, 'FontFile3');
+        self::assertInstanceOf(Stream::class, $programme);
+        self::assertSame('OpenType', $programme->get('Subtype')?->value());
+        self::assertNull($programme->get('Length1'), 'only a /FontFile2 states its length');
     }
 
     /**
@@ -366,6 +393,17 @@ final class EmbeddedFontTest extends TestCase
     private static function font(bool $subset = true): EmbeddedFont
     {
         return EmbeddedFont::fromBytes(SyntheticTrueTypeFont::build(), $subset);
+    }
+
+    /** The descendant CID font's /W array, as written. */
+    private static function widthsOf(string $pdf): string
+    {
+        $saved = SavedDocument::fromBytes($pdf);
+        $widths = $saved->from($saved->font(), 'DescendantFonts', 0, 'W');
+
+        self::assertNotNull($widths, 'the descendant font should carry a /W array');
+
+        return $widths->format();
     }
 
     private static function documentDrawing(string $text, bool $subset = true): string

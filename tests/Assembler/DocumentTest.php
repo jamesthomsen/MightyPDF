@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MightyPDF\Tests\Assembler;
 
 use MightyPDF\Assembler\Document;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -100,13 +101,11 @@ final class DocumentTest extends TestCase
         $document = new Document();
         $document->newPage();
 
-        $output = $document->save();
-
-        preg_match('/\/Root (\d+) 0 R/', $output, $matches);
-        self::assertNotEmpty($matches);
-
-        $catalogId = (int) $matches[1];
-        self::assertStringContainsString("$catalogId 0 obj\n<< /Type /Catalog", $output);
+        // Followed rather than matched: /Root names an object id, and
+        // what matters is that resolving it through the xref lands on the
+        // catalog. Matching "N 0 obj << /Type /Catalog" proves the text
+        // is adjacent in the file, which is not the same thing.
+        self::assertSame('Catalog', SavedDocument::of($document)->catalog()->get('Type')?->value());
     }
 
     public function testEachPageReferencesTheSamePageTreeAsParent(): void
@@ -129,10 +128,11 @@ final class DocumentTest extends TestCase
         $document->newPage();
         $document->newPage();
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
 
-        self::assertStringContainsString('/Type /Pages', $output);
-        self::assertStringContainsString('/Count 3', $output);
+        self::assertSame('Pages', $saved->value('Pages', 'Type'));
+        self::assertSame(3, $saved->value('Pages', 'Count'));
+        self::assertSame(3, $saved->pageCount(), 'and the tree really holds that many');
     }
 
     public function testXrefSubsectionFieldWidthsMatchRealWriterConventions(): void
@@ -157,7 +157,9 @@ final class DocumentTest extends TestCase
 
         self::assertStringStartsWith("%PDF-1.7\n", $output);
         self::assertStringEndsWith('%%EOF', $output);
-        self::assertStringContainsString('/Type /Catalog', $output);
+
+        // "Structurally valid" is a claim about opening it, so open it.
+        self::assertSame('Catalog', SavedDocument::fromBytes($output)->catalog()->get('Type')?->value());
     }
 
     public function testInfoIsWiredIntoTheTrailerAndReferencesARealInfoObject(): void
@@ -166,13 +168,11 @@ final class DocumentTest extends TestCase
         $document->newPage();
         $document->info()->setTitle('Quarterly Report');
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
+        $info = $saved->editor()->resolveDictionary($saved->editor()->store()->trailer()->get('Info'));
 
-        preg_match('/\/Info (\d+) 0 R/', $output, $matches);
-        self::assertNotEmpty($matches);
-
-        $infoId = (int) $matches[1];
-        self::assertStringContainsString("$infoId 0 obj\n<< /Title (Quarterly Report)", $output);
+        self::assertNotNull($info, '/Info should resolve through the trailer');
+        self::assertSame('Quarterly Report', SavedDocument::scalar($info->get('Title')));
     }
 
     public function testSavingWithoutTouchingInfoEmitsNoInfoKeyAtAll(): void
@@ -180,9 +180,9 @@ final class DocumentTest extends TestCase
         $document = new Document();
         $document->newPage();
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
 
-        self::assertStringNotContainsString('/Info ', $output);
+        self::assertNull($saved->editor()->store()->trailer()->get('Info'));
     }
 
     public function testSaveToFileWritesTheSameBytesAsSave(): void

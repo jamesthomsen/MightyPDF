@@ -8,6 +8,7 @@ use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\Stream;
 use MightyPDF\Crypt\Permissions;
 use MightyPDF\Editor\PdfEditor;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 final class XmpMetadataTest extends TestCase
@@ -17,7 +18,7 @@ final class XmpMetadataTest extends TestCase
         $document = new Document();
         $document->newPage();
 
-        self::assertStringNotContainsString('/Metadata', $document->save());
+        self::assertNull(SavedDocument::of($document)->at('Metadata'));
     }
 
     public function testRestatesWhatTheInfoDictionarySays(): void
@@ -107,7 +108,10 @@ final class XmpMetadataTest extends TestCase
             new \DateTimeImmutable('2026-08-09 09:00:00', new \DateTimeZone('+02:00')),
         );
 
-        self::assertStringContainsString("(D:20260809090000+02'00')", $document->save());
+        $saved = SavedDocument::of($document);
+        $info = $saved->editor()->resolveDictionary($saved->editor()->store()->trailer()->get('Info'));
+
+        self::assertSame("D:20260809090000+02'00'", SavedDocument::scalar($info?->get('ModDate')));
     }
 
     public function testCarriesRightsWhichTheInfoDictionaryCannot(): void
@@ -248,7 +252,10 @@ final class XmpMetadataTest extends TestCase
         $document->metadata();
         $document->encrypt('owner', encryptMetadata: false);
 
-        self::assertStringContainsString('/EncryptMetadata false', $document->save());
+        $saved = SavedDocument::of($document);
+        $encrypt = $saved->editor()->resolveDictionary($saved->editor()->store()->trailer()->get('Encrypt'));
+
+        self::assertFalse($encrypt?->get('EncryptMetadata')?->value());
     }
 
     public function testTheDefaultIsNotWrittenOut(): void
@@ -258,7 +265,10 @@ final class XmpMetadataTest extends TestCase
         $document->encrypt('owner');
 
         // A reader being told its own default is a reader given noise.
-        self::assertStringNotContainsString('/EncryptMetadata', $document->save());
+        $saved = SavedDocument::of($document);
+        $encrypt = $saved->editor()->resolveDictionary($saved->editor()->store()->trailer()->get('Encrypt'));
+
+        self::assertNull($encrypt?->get('EncryptMetadata'), 'true is the default and says nothing new');
     }
 
     public function testAReadableMetadataDocumentStillOpens(): void
