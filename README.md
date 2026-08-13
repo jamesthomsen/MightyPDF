@@ -1189,6 +1189,14 @@ So does saving through `document()`: the hooks are registered with the
 `Document` itself, so `$flow->document()->save()` decorates the pages
 too rather than quietly producing a file with no footer on it.
 
+Because the page count is final by the time hooks run, automatic page
+breaks are suppressed for their duration. A footer sits below the bottom
+margin, so `cell()` inside a hook would otherwise ask to break on every
+page — and a hook that *adds* a page is refused, since the page it added
+would be undecorated and every `of $total` already drawn would be wrong.
+Both `cellAt()` and `cell()` are fine in a hook. Explicit `newPage()` is
+still the mistake it was, and still throws.
+
 ### Measuring and placing by hand
 
 ```php

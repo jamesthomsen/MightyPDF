@@ -602,6 +602,33 @@ final class FlowTest extends TestCase
         $flow->finish();
     }
 
+    /**
+     * A footer sits below the bottom margin by definition, so a hook
+     * that writes one with cell() rather than cellAt() asks to break on
+     * every page. Before automatic breaks were suppressed for the
+     * duration of the hooks, that added a page and the refusal above
+     * fired: a report whose disclaimer happened to be written in the
+     * flow-relative calls threw at save() and nowhere earlier, and the
+     * only obvious way out was turning breaks off for the whole
+     * document -- which costs it the page breaks it was built for.
+     */
+    public function testAHookMayDrawBelowTheBottomMarginWithTheFlowRelativeCalls(): void
+    {
+        $flow = $this->flow();
+        $flow->onEachPage(fn (Flow $flow, int $number, int $total) => $flow
+            ->moveTo(15.0, 286.0)
+            ->cell(180.0, 5.0, "Page $number of $total"));
+
+        $flow->cell(180.0, 8.0, 'Body')->newPage();
+        $flow->save();
+
+        self::assertSame(2, $flow->pageCount(), 'the footer did not add a page of its own');
+
+        foreach ($flow->document()->pages() as $index => $page) {
+            self::assertStringContainsString('Page ' . ($index + 1) . ' of 2', $this->contentOf($page));
+        }
+    }
+
     // -- Drawing --------------------------------------------------------
 
     /**

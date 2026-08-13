@@ -1358,10 +1358,22 @@ final class Flow
      * measured against its width, and continuing it on a narrower page
      * would overflow columns that were correct when they were sized.
      * newPage() with no argument is the deliberate way back.
+     *
+     * Does nothing while the per-page hooks run either. A footer sits
+     * below the bottom margin by definition, so cell() inside a hook
+     * asks to break every time -- and a hook that adds a page is refused
+     * by finish(), which turned a footer written in the flow-relative
+     * calls rather than the absolute ones into a document that threw at
+     * save(). Suppressed rather than refused for the same reason
+     * decideBreak() suppresses it: the answer is already known. Hooks
+     * run once the page count is final, which is what lets them print
+     * it, so there is no page for this to break onto. An explicit
+     * newPage() from a hook still adds one and finish() still refuses
+     * it -- that is the mistake the check downstairs is there to catch.
      */
     public function breakIfNeeded(float $height): static
     {
-        if (!$this->autoPageBreak || $this->willFit($height) || $this->y <= $this->margins->top) {
+        if (!$this->autoPageBreak || $this->finishing || $this->willFit($height) || $this->y <= $this->margins->top) {
             return $this;
         }
 
