@@ -62,19 +62,35 @@ echo
 echo "Checking ${#pdfs[@]} PDFs in $directory with: ${checkers[*]}"
 
 # Runs one checker, failing on a non-zero exit *or* any stderr output.
+#
+# Both conditions are needed and neither subsumes the other. Poppler
+# reports a form it cannot draw on stderr and exits 0, so exit codes
+# alone find nothing -- that is how the missing /ZaDb hid. Ghostscript is
+# the other way round: it writes even "Unable to open the initial device"
+# to *stdout*, and says so only in its exit code.
+#
+# Which is why both streams are kept and both are printed on a failure.
+# An earlier version captured stderr and discarded stdout, so a
+# ghostscript failure produced the word FAIL and not one word about why
+# -- diagnosing it from a CI log was impossible, which is the one thing
+# a gate has to be good at.
 run_check() {
     local label="$1" file="$2"
     shift 2
 
-    local output status
-    output=$("$@" 2>&1 >/dev/null)
+    local errors output status
+    errors=$(mktemp)
+    output=$("$@" 2>"$errors")
     status=$?
 
-    if [ $status -ne 0 ] || [ -n "$output" ]; then
-        echo "  FAIL  [$label] $(basename "$file")"
+    if [ $status -ne 0 ] || [ -s "$errors" ]; then
+        echo "  FAIL  [$label] $(basename "$file") (exit $status)"
+        [ -s "$errors" ] && sed 's/^/          /' "$errors"
         [ -n "$output" ] && echo "$output" | sed 's/^/          /'
         failures=$((failures + 1))
     fi
+
+    rm -f "$errors"
 }
 
 for pdf in "${pdfs[@]}"; do
@@ -89,7 +105,12 @@ for pdf in "${pdfs[@]}"; do
             ghostscript)
                 # Renders every page and says so when it cannot. Catches
                 # structural problems poppler tolerates in silence.
-                run_check gs "$pdf" gs -dNOPAUSE -dBATCH -dQUIET -sDEVICE=nullpage -o /dev/null "$pdf"
+                #
+                # No -o: the null device needs no output file, and asking
+                # for /dev/null drags in whatever that build's -dSAFER
+                # policy thinks of writing to a special file. One less
+                # thing to differ between a workstation and a runner.
+                run_check gs "$pdf" gs -dNOPAUSE -dBATCH -dQUIET -sDEVICE=nullpage "$pdf"
                 ;;
             poppler)
                 # A second opinion, and the one that reads forms and
