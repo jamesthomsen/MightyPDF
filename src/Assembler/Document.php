@@ -47,6 +47,9 @@ final class Document implements DocumentContext
     private ?int $encryptObjectId = null;
     private ?PdfArray $id = null;
 
+    /** See compressObjects(). */
+    private bool $compressObjects = false;
+
     /** @var list<Page> */
     private array $pages = [];
 
@@ -427,28 +430,99 @@ final class Document implements DocumentContext
         $this->beforeSave[] = $finalize;
     }
 
+    /**
+     * Packs this document's objects into object streams when it is saved,
+     * which is the difference between a 40 kB form and a 15 kB one.
+     *
+     * A PDF's dictionaries are the compressible part of it and the writer
+     * has never compressed them: individually they are too small for it to
+     * pay, and there was nowhere to compress them together. An object
+     * stream is that somewhere (see ObjectStream), and a document with many
+     * small objects -- a form, an outline, anything tagged -- is mostly
+     * dictionaries by count.
+     *
+     * Off by default, for two reasons worth knowing before turning it on.
+     * The file stops being greppable: "/Type /Page" is no longer findable
+     * with strings(1), which matters more than it sounds like it should
+     * when something goes wrong at three in the morning. And the
+     * cross-reference section becomes a stream rather than a table, so the
+     * file needs a PDF 1.5 reader -- which is everything current, and not
+     * everything embedded.
+     *
+     * Nothing about the document changes, only how it is written: the same
+     * calls produce the same pages either way.
+     */
+    public function compressObjects(bool $compress = true): void
+    {
+        $this->compressObjects = $compress;
+    }
+
     public function save(): string
     {
         foreach ($this->beforeSave as $finalize) {
             $finalize();
         }
 
-        $result = $this->registry->writeAll(self::HEADER, $this->encryptionPass());
-
-        $trailer = Trailer::forNewDocument(
-            size: $result->xref->highestObjectId() + 1,
-            rootObjectId: $this->catalog->objectId(),
-            infoObjectId: $this->info?->objectId(),
-            id: $this->id,
-            encryptObjectId: $this->encryptObjectId,
+        $result = $this->registry->writeAll(
+            self::HEADER,
+            $this->encryptionPass(),
+            $this->compressObjects,
+            // A reader has to read /Encrypt before it can decrypt
+            // anything, so it cannot be inside a stream it would have to
+            // decrypt first.
+            $this->encryptObjectId === null ? [] : [$this->encryptObjectId],
         );
 
+        return $result->xref->hasCompressedEntries()
+            ? $this->withCrossReferenceStream($result)
+            : $this->withCrossReferenceTable($result);
+    }
+
+    private function withCrossReferenceTable(SerializedDocumentBody $result): string
+    {
+        $trailer = $this->trailerFor($result->xref->highestObjectId() + 1);
         $startXref = strlen($result->bytes);
 
         return $result->bytes
             . $result->xref->build()
             . $trailer->build()
             . "startxref\n{$startXref}\n%%EOF";
+    }
+
+    /**
+     * The cross-reference section as a stream, which a document with
+     * object streams has no choice about: a classic table has no way to
+     * say "object 12 is the third thing inside object 40".
+     *
+     * The section is an object itself, so it needs a number and an entry
+     * in its own table -- a reader that has just found it via startxref
+     * still expects to be told where it is. The number comes from the ids
+     * already written rather than from the allocator, so that saving twice
+     * gives the same bytes twice.
+     */
+    private function withCrossReferenceStream(SerializedDocumentBody $result): string
+    {
+        $xrefStreamId = $result->xref->highestObjectId() + 1;
+        $startXref = strlen($result->bytes);
+
+        $result->xref->addEntry($xrefStreamId, $startXref);
+
+        $trailer = $this->trailerFor($xrefStreamId + 1);
+
+        return $result->bytes
+            . XrefStream::build($xrefStreamId, $result->xref, $trailer)->render(true)
+            . "startxref\n{$startXref}\n%%EOF";
+    }
+
+    private function trailerFor(int $size): Trailer
+    {
+        return Trailer::forNewDocument(
+            size: $size,
+            rootObjectId: $this->catalog->objectId(),
+            infoObjectId: $this->info?->objectId(),
+            id: $this->id,
+            encryptObjectId: $this->encryptObjectId,
+        );
     }
 
     public function saveToFile(string $path): void

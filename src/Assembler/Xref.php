@@ -42,10 +42,32 @@ final class Xref
      */
     private array $generations = [];
 
+    /**
+     * The objects that live inside an object stream rather than at a byte
+     * offset of their own -- a type-2 entry (§7.5.8.3), which names the
+     * stream holding the object and its position in it.
+     *
+     * Held apart from $entries because the two are different kinds of
+     * answer to "where is object N", and a single map of ints could not
+     * say which kind it was holding. Nothing may appear in both.
+     *
+     * @var array<int, array{int, int}> objectId => [container id, index]
+     */
+    private array $compressed = [];
+
     public function addEntry(int $objectId, int $byteOffset, int $generation = 0): void
     {
         $this->entries[$objectId] = $byteOffset;
         $this->generations[$objectId] = $generation;
+    }
+
+    /**
+     * Records that $objectId is the $index'th object inside the object
+     * stream numbered $containerObjectId.
+     */
+    public function addCompressedEntry(int $objectId, int $containerObjectId, int $index): void
+    {
+        $this->compressed[$objectId] = [$containerObjectId, $index];
     }
 
     /** @return array<int, int> objectId => byte offset */
@@ -54,15 +76,40 @@ final class Xref
         return $this->entries;
     }
 
+    /** @return array<int, array{int, int}> objectId => [container id, index] */
+    public function compressedEntries(): array
+    {
+        return $this->compressed;
+    }
+
+    /** Whether anything here lives inside an object stream. */
+    public function hasCompressedEntries(): bool
+    {
+        return $this->compressed !== [];
+    }
+
     /** The highest registered object id, or 0 if none are registered. */
     public function highestObjectId(): int
     {
-        return $this->entries === [] ? 0 : max(array_keys($this->entries));
+        $ids = [...array_keys($this->entries), ...array_keys($this->compressed)];
+
+        return $ids === [] ? 0 : max($ids);
     }
 
     public function offsetOf(int $objectId): int
     {
         return $this->entries[$objectId] ?? throw new \LogicException("No xref entry for object id $objectId.");
+    }
+
+    /**
+     * Where $objectId is packed, or null if it sits at a byte offset of
+     * its own.
+     *
+     * @return array{int, int}|null [container id, index]
+     */
+    public function compressedLocationOf(int $objectId): ?array
+    {
+        return $this->compressed[$objectId] ?? null;
     }
 
     public function generationOf(int $objectId): int
@@ -83,7 +130,7 @@ final class Xref
      */
     public function contiguousRuns(): array
     {
-        $ids = array_keys($this->entries);
+        $ids = [...array_keys($this->entries), ...array_keys($this->compressed)];
         sort($ids);
 
         $runs = [];
@@ -107,6 +154,14 @@ final class Xref
 
     public function build(): string
     {
+        if ($this->compressed !== []) {
+            throw new \LogicException(
+                'This xref has objects inside object streams, which a classic cross-reference table '
+                . 'has no entry type for -- it can only say "at byte offset N". Write a cross-reference '
+                . 'stream instead (see XrefStream).',
+            );
+        }
+
         $highest = $this->highestObjectId();
 
         $out = "xref\n";

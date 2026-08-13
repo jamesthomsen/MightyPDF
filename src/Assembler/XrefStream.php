@@ -21,11 +21,12 @@ use MightyPDF\Assembler\Types\PdfName;
  * rebuilt it by scanning. A file that opens only because readers rescue it
  * is a file that will eventually meet one that does not.
  *
- * Every row is written as type 1 (in use, at a byte offset). An update
- * never produces the other two kinds: type 0 is a free entry, and freeing
- * is what appending exists to avoid, while type 2 would mean packing the
- * new objects into an object stream, which buys compression at the cost of
- * being unable to say where anything is without decompressing first.
+ * Rows come in two of the three kinds §7.5.8.3 defines. Type 1 is an
+ * object at a byte offset, which is what an incremental update produces
+ * throughout. Type 2 is an object packed inside an object stream, which a
+ * document saved with Document::compressObjects() produces for most of its
+ * objects (see ObjectStream). Type 0 is a free entry, and nothing here ever
+ * writes one: this library appends and rewrites, and never frees.
  */
 final class XrefStream
 {
@@ -39,6 +40,13 @@ final class XrefStream
     private const int OFFSET_WIDTH = 4;
     private const int GENERATION_WIDTH = 2;
 
+    /**
+     * A type-2 row reuses the same two fields for a different pair of
+     * numbers: the object stream holding the object, and its index within
+     * it. Both fit comfortably -- an object number in four bytes, and an
+     * index in two, ObjectStream::CAPACITY being a few hundred.
+     */
+
     public static function build(int $objectId, Xref $xref, Trailer $trailer): Stream
     {
         $index = [];
@@ -49,9 +57,15 @@ final class XrefStream
             $index[] = new PdfInteger(count($run));
 
             foreach ($run as $id) {
-                $rows .= self::bigEndian(1, self::TYPE_WIDTH)
-                    . self::bigEndian($xref->offsetOf($id), self::OFFSET_WIDTH)
-                    . self::bigEndian($xref->generationOf($id), self::GENERATION_WIDTH);
+                $compressed = $xref->compressedLocationOf($id);
+
+                $rows .= $compressed === null
+                    ? self::bigEndian(1, self::TYPE_WIDTH)
+                        . self::bigEndian($xref->offsetOf($id), self::OFFSET_WIDTH)
+                        . self::bigEndian($xref->generationOf($id), self::GENERATION_WIDTH)
+                    : self::bigEndian(2, self::TYPE_WIDTH)
+                        . self::bigEndian($compressed[0], self::OFFSET_WIDTH)
+                        . self::bigEndian($compressed[1], self::GENERATION_WIDTH);
             }
         }
 

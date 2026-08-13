@@ -55,23 +55,110 @@ final class IndirectObjectRegistry implements ObjectHost
      *        are. It returns a replacement rather than mutating, so the
      *        document stays in the state the caller built and save() can
      *        be called twice.
+     * @param bool $compressObjects whether to pack what can be packed into
+     *        object streams (see ObjectStream). The resulting Xref carries
+     *        type-2 entries and so can only be written as a cross-reference
+     *        stream; Xref::build() refuses it, deliberately.
+     * @param list<int> $keepDirect object ids that must stay at a byte
+     *        offset of their own whatever $compressObjects says -- the
+     *        encryption dictionary, which a reader has to read before it
+     *        can decrypt the object stream that would otherwise hold it.
      */
-    public function writeAll(string $header, ?\Closure $prepare = null): SerializedDocumentBody
-    {
+    public function writeAll(
+        string $header,
+        ?\Closure $prepare = null,
+        bool $compressObjects = false,
+        array $keepDirect = [],
+    ): SerializedDocumentBody {
         $objects = $this->objects;
         ksort($objects);
 
         self::finalizeAll($objects);
 
         $xref = new Xref();
+
+        $packable = $compressObjects ? self::packable($objects, $keepDirect) : [];
+        $containers = $this->packInto($packable, $xref);
+
         $out = $header;
 
         foreach ($objects as $objectId => $object) {
+            if (isset($packable[$objectId])) {
+                // Written inside a container instead, and by that route
+                // deliberately unprepared: §7.5.7 encrypts an object
+                // stream as a whole rather than the strings inside it.
+                continue;
+            }
+
             $xref->addEntry($objectId, strlen($out));
             $out .= ($prepare === null ? $object : $prepare($object))->render(true);
         }
 
+        // After the rest, which keeps the file in ascending object-id
+        // order: container ids are allocated above everything registered.
+        foreach ($containers as $container) {
+            $xref->addEntry($container->objectId(), strlen($out));
+            $out .= ($prepare === null ? $container : $prepare($container))->render(true);
+        }
+
         return new SerializedDocumentBody($out, $xref);
+    }
+
+    /**
+     * The objects eligible to be packed, keyed by id.
+     *
+     * @param array<int, PdfObject> $objects
+     * @param list<int> $keepDirect
+     *
+     * @return array<int, PdfObject>
+     */
+    private static function packable(array $objects, array $keepDirect): array
+    {
+        $excluded = array_flip($keepDirect);
+
+        return array_filter(
+            $objects,
+            static fn (PdfObject $object, int $id): bool
+                => !isset($excluded[$id]) && ObjectStream::accepts($object),
+            ARRAY_FILTER_USE_BOTH,
+        );
+    }
+
+    /**
+     * Packs $packable into as many object streams as it takes, recording
+     * a type-2 entry for each object as it goes.
+     *
+     * Container object ids are derived from the highest id registered
+     * rather than taken from allocate(), so that writing the document does
+     * not consume ids: save() may be called twice (see Document::save()),
+     * and a registry whose id space grew every time would give the second
+     * file a different shape from the first for no reason.
+     *
+     * @param array<int, PdfObject> $packable
+     *
+     * @return list<Stream>
+     */
+    private function packInto(array $packable, Xref $xref): array
+    {
+        if ($packable === []) {
+            return [];
+        }
+
+        $nextContainerId = max(max(array_keys($this->objects)), $this->nextId) + 1;
+        $containers = [];
+
+        foreach (array_chunk($packable, ObjectStream::CAPACITY, true) as $chunk) {
+            $container = ObjectStream::pack($nextContainerId++, $chunk);
+            $containers[] = $container;
+
+            $index = 0;
+
+            foreach (array_keys($chunk) as $objectId) {
+                $xref->addCompressedEntry($objectId, $container->objectId(), $index++);
+            }
+        }
+
+        return $containers;
     }
 
     /**
