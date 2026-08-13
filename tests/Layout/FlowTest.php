@@ -23,6 +23,7 @@ use MightyPDF\Layout\MissingGlyphs;
 use MightyPDF\Layout\Style;
 use MightyPDF\Layout\Unit;
 use MightyPDF\Tests\Support\SyntheticTrueTypeFont;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 final class FlowTest extends TestCase
@@ -247,10 +248,14 @@ final class FlowTest extends TestCase
 
         $flow->newPage(PageSize::A5);
 
-        $bytes = $flow->save();
+        // Which page has which, rather than "both boxes are in the
+        // file somewhere" -- the old form passed with the two sizes the
+        // wrong way round, and getting them the wrong way round is the
+        // whole failure this guards against.
+        $saved = SavedDocument::of($document);
 
-        self::assertStringContainsString('/MediaBox [0 0 595.28 841.89]', $bytes);
-        self::assertStringContainsString('/MediaBox [0 0 419.53 595.28]', $bytes);
+        self::assertSame('[0 0 595.28 841.89]', $saved->pageEntry(0, 'MediaBox')?->format(), 'A4 first');
+        self::assertSame('[0 0 419.53 595.28]', $saved->pageEntry(1, 'MediaBox')?->format(), 'then A5');
     }
 
     /**

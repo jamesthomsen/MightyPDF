@@ -16,6 +16,7 @@ use MightyPDF\Editor\PdfEditor;
 use MightyPDF\Layout\Border;
 use MightyPDF\Layout\Flow;
 use MightyPDF\Layout\Style;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -34,7 +35,7 @@ final class FlowTaggingTest extends TestCase
         $flow->paragraph(100.0, 'Plain text');
         $flow->finish();
 
-        self::assertStringNotContainsString('/StructTreeRoot', $document->save());
+        self::assertNull(SavedDocument::of($document)->at('StructTreeRoot'));
         self::assertNull($flow->currentElement());
     }
 
@@ -55,7 +56,7 @@ final class FlowTaggingTest extends TestCase
         $document = new Document();
         (new Flow($document))->tagged('en-GB');
 
-        self::assertStringContainsString('/Lang (en-GB)', $document->save());
+        self::assertSame('en-GB', SavedDocument::of($document)->value('Lang'));
     }
 
     public function testTagNamesWhatTheLayoutCannotInfer(): void
@@ -343,7 +344,11 @@ final class FlowTaggingTest extends TestCase
 
         self::assertSame('/Figure', $editor->resolve($figure?->get('S'))?->format());
         self::assertNotNull($figure?->get('K'), 'the figure should own the marks the chart made');
-        self::assertStringContainsString('(A bar chart.)', $document->save());
+        $saved = SavedDocument::of($document);
+        $figure = $saved->dictionary('StructTreeRoot', 'K', 'K');
+
+        self::assertSame('Figure', $figure->get('S')?->value());
+        self::assertSame('A bar chart.', SavedDocument::scalar($figure->get('Alt')));
     }
 
     /**

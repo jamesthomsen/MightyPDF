@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MightyPDF\Tests\Content\Svg;
 
+use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\Document;
 use MightyPDF\Content\ContentStream;
 use MightyPDF\Content\Font\StandardFont;
@@ -12,6 +13,7 @@ use MightyPDF\Content\Svg\SvgDocument;
 use MightyPDF\Content\Svg\SvgStyle;
 use MightyPDF\Content\Svg\SvgTextFont;
 use MightyPDF\Tests\Support\FakeSvgResources;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -158,7 +160,29 @@ final class SvgTextTest extends TestCase
         );
 
         self::assertSame(['Brand Sans', true, false], $asked);
-        self::assertStringContainsString('/BaseFont /Times-Bold', $document->save());
+        // The font the resolver returned has to be the one the SVG's
+        // form XObject actually names, not merely one present in the
+        // file -- which is what makes this a test of the resolver.
+        $saved = SavedDocument::of($document);
+        $form = null;
+
+        foreach ($saved->resources('XObject') as $xobject) {
+            if ($xobject instanceof Dictionary && $xobject->get('Subtype')?->value() === 'Form') {
+                $form = $xobject;
+            }
+        }
+
+        self::assertNotNull($form, 'the SVG should be drawn into a form XObject');
+
+        $fonts = $saved->from($form, 'Resources', 'Font');
+        self::assertInstanceOf(Dictionary::class, $fonts);
+
+        $names = array_map(
+            fn ($value) => $saved->editor()->resolveDictionary($value)?->get('BaseFont')?->value(),
+            $fonts->entries(),
+        );
+
+        self::assertContains('Times-Bold', $names);
     }
 
     public function testFontSizeIsInheritedThroughGroupsAndTspans(): void

@@ -17,6 +17,7 @@ use MightyPDF\Editor\Form\FormFiller;
 use MightyPDF\Editor\PdfEditor;
 use MightyPDF\Layout\Flow;
 use MightyPDF\Reader\Text\TextExtractor;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 final class ObjectStreamTest extends TestCase
@@ -158,7 +159,14 @@ final class ObjectStreamTest extends TestCase
         $document->newPage(PageSize::A4);
         $document->encrypt(ownerPassword: 'owner');
 
-        self::assertStringContainsString('/Filter /Standard', $document->save());
+        // The encryption dictionary has to stay outside the object
+        // streams -- a reader cannot decrypt the container holding it
+        // without having read it first -- so it must resolve straight
+        // from the trailer.
+        $saved = SavedDocument::of($document);
+        $encrypt = $saved->editor()->resolveDictionary($saved->editor()->store()->trailer()->get('Encrypt'));
+
+        self::assertSame('Standard', $encrypt?->get('Filter')?->value());
     }
 
     public function testAPackedDocumentCanStillBeEdited(): void

@@ -17,6 +17,7 @@ use MightyPDF\Layout\Flow;
 use MightyPDF\Layout\Margins;
 use MightyPDF\Layout\Style;
 use MightyPDF\Layout\Unit;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -259,13 +260,20 @@ final class FlowWriteTest extends TestCase
 
         $flow->write(str_repeat('a linked phrase ', 30), $style, link: 'https://example.com/terms');
 
-        $bytes = $flow->save();
+        $saved = SavedDocument::fromBytes($flow->save());
+        $annotations = $saved->annotations();
 
-        self::assertGreaterThan(
-            1,
-            substr_count($bytes, '(https://example.com/terms)'),
-            'one rectangle per line',
-        );
+        self::assertGreaterThan(1, count($annotations), 'one rectangle per line');
+
+        // And every one of them is a link to that URL, which counting
+        // occurrences of the URL in the bytes never established.
+        foreach ($annotations as $annotation) {
+            self::assertSame('Link', $annotation->get('Subtype')?->value());
+            self::assertSame(
+                'https://example.com/terms',
+                SavedDocument::scalar($saved->from($annotation, 'A', 'URI')),
+            );
+        }
     }
 
     public function testARunCanPointIntoTheDocumentInstead(): void

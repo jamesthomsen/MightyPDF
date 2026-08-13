@@ -7,6 +7,7 @@ namespace MightyPDF\Tests\Layout;
 use MightyPDF\Assembler\Document;
 use MightyPDF\Assembler\Page;
 use MightyPDF\Assembler\PageSize;
+use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\Types\PdfNumberFormat;
 use MightyPDF\Content\CmykColor;
 use MightyPDF\Content\Color;
@@ -15,10 +16,12 @@ use MightyPDF\Content\PathSink;
 use MightyPDF\Content\SpotColor;
 use MightyPDF\Content\Stroke;
 use MightyPDF\Layout\Border;
+use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Layout\Flow;
 use MightyPDF\Layout\Margins;
 use MightyPDF\Layout\Style;
 use MightyPDF\Layout\Unit;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 final class FlowGraphicsTest extends TestCase
@@ -137,7 +140,9 @@ final class FlowGraphicsTest extends TestCase
         });
 
         self::assertStringContainsString('/GS1 gs', $this->contentOf($document->pages()[0]));
-        self::assertStringContainsString('/ca 0.15', $document->save());
+        $state = SavedDocument::of($document)->resources('ExtGState')['GS1'] ?? null;
+
+        self::assertSame(0.15, $state?->get('ca')?->value());
     }
 
     public function testClippedToBoxClipsInFlowCoordinates(): void
@@ -186,7 +191,11 @@ final class FlowGraphicsTest extends TestCase
 
         self::assertStringContainsString('/CS1 cs', $content);
         self::assertStringContainsString('1 scn', $content);
-        self::assertStringContainsString('/Separation /PANTONE#20300#20C', $document->save());
+        $space = SavedDocument::of($document)->resources('ColorSpace')['CS1'] ?? null;
+
+        self::assertInstanceOf(PdfArray::class, $space);
+        self::assertSame('Separation', SavedDocument::scalar($space->items()[0]));
+        self::assertSame('PANTONE 300 C', SavedDocument::scalar($space->items()[1]));
     }
 
     /**

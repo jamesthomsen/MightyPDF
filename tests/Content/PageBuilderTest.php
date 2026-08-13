@@ -38,9 +38,10 @@ final class PageBuilderTest extends TestCase
 
         $output = $document->save();
 
-        self::assertStringContainsString('/BaseFont /Helvetica', $output);
-        self::assertStringContainsString('/Encoding /WinAnsiEncoding', $output);
-        self::assertStringContainsString('/Font <<', $output);
+        $font = SavedDocument::fromBytes($output)->font();
+
+        self::assertSame('Helvetica', $font->get('BaseFont')?->value());
+        self::assertSame('WinAnsiEncoding', $font->get('Encoding')?->value());
         self::assertCount(1, $page->contentStreams(), 'all drawing should share one content stream');
 
         // Content streams are FlateDecode-compressed by default, so the
@@ -58,7 +59,7 @@ final class PageBuilderTest extends TestCase
         $builder->drawText(StandardFont::Symbol, 12.0, 0, 0, 'x');
 
         $output = $document->save();
-        self::assertStringNotContainsString('/Encoding /WinAnsiEncoding', $output);
+        self::assertNull(SavedDocument::fromBytes($output)->font()->get('Encoding'));
     }
 
     public function testDrawTextDefaultsToExplicitBlackFillColor(): void
@@ -383,10 +384,16 @@ final class PageBuilderTest extends TestCase
 
         $output = $document->save();
 
-        self::assertStringContainsString('/BaseFont /Helvetica', $output);
-        self::assertStringContainsString('/BaseFont /Times-Bold', $output);
-        self::assertStringContainsString('/F1', $output);
-        self::assertStringContainsString('/F2', $output);
+        // Both fonts, each under its own resource name -- which is the
+        // claim. "/F1 appears in the file" was true of any document with
+        // more than one of anything.
+        $fonts = SavedDocument::fromBytes($output)->fonts();
+
+        self::assertSame(
+            ['Helvetica', 'Times-Bold'],
+            array_values(array_map(static fn ($f) => $f->get('BaseFont')?->value(), $fonts)),
+        );
+        self::assertSame(['F1', 'F2'], array_keys($fonts));
     }
 
     public function testMultiplePagesEachGetTheirOwnContentStream(): void
@@ -542,8 +549,12 @@ final class PageBuilderTest extends TestCase
         $builder->drawJpeg(self::FIXTURES . '/sample.jpg', 10, 20, 100, 200);
 
         $output = $document->save();
-        self::assertStringContainsString('/Filter /DCTDecode', $output);
-        self::assertStringContainsString('/XObject <<', $output);
+
+        $image = SavedDocument::fromBytes($output)->resources('XObject')['Im1'] ?? null;
+
+        self::assertNotNull($image, 'the page should name the image in its /XObject resources');
+        self::assertSame('Image', $image->get('Subtype')?->value());
+        self::assertSame('DCTDecode', $image->get('Filter')?->value());
 
         $bytes = $this->decompressedContentStreamBytes($page);
         self::assertStringContainsString('q', $bytes);
@@ -718,10 +729,16 @@ final class PageBuilderTest extends TestCase
         $page = $document->newPage();
         (new PageBuilder($document, $page))->addTextField('Name', 0, 0, 100, 20);
 
-        $output = $document->save();
+        // The same object has to be in both places: on the page as an
+        // annotation and in the form as a field. Two arrays each merely
+        // being non-empty was the old claim, and it holds for a document
+        // where they point at different things.
+        $saved = SavedDocument::of($document);
 
-        self::assertStringContainsString('/Annots [', $output);
-        self::assertStringContainsString('/Fields [', $output);
+        self::assertSame(
+            $saved->annotations()[0]->objectId(),
+            $saved->field('Name')->objectId(),
+        );
     }
 
     public function testMultipleFieldsAcrossPagesShareOneAcroForm(): void
@@ -836,8 +853,13 @@ final class PageBuilderTest extends TestCase
         $output = $document->save();
 
         self::assertSame(2, substr_count($output, '/Type /Font'));
-        self::assertStringContainsString('/BaseFont /Helvetica ', $output);
-        self::assertStringContainsString('/BaseFont /Helvetica-Bold', $output);
+        self::assertSame(
+            ['Helvetica', 'Helvetica-Bold'],
+            array_values(array_map(
+                static fn ($f) => $f->get('BaseFont')?->value(),
+                SavedDocument::fromBytes($output)->fonts(),
+            )),
+        );
     }
 
     public function testAddCheckboxUncheckedByDefault(): void
@@ -1069,9 +1091,14 @@ final class PageBuilderTest extends TestCase
 
         $output = $document->save();
 
-        self::assertStringContainsString('/DA (/F1 ', $output);
-        self::assertStringContainsString('/Subtype /Type0', $output);
-        self::assertStringContainsString('/BaseFont /SyntheticTest', $output);
+        $saved = SavedDocument::fromBytes($output);
+
+        preg_match('#/(\S+) [\d.]+ Tf#', (string) SavedDocument::scalar($saved->field('name')->get('DA')), $named);
+        self::assertNotEmpty($named, 'the field should name a font in its /DA');
+
+        $font = $saved->dictionary('AcroForm', 'DR', 'Font', $named[1]);
+        self::assertSame('Type0', $font->get('Subtype')?->value());
+        self::assertSame('SyntheticTest', $font->get('BaseFont')?->value());
 
         // The /DR entry has to point at the font object itself, which is
         // the one thing a field's /DA cannot resolve without.
@@ -1122,8 +1149,10 @@ final class PageBuilderTest extends TestCase
 
         $output = $document->save();
 
-        self::assertStringContainsString('/FT /Sig', $output);
-        self::assertStringNotContainsString('/V ', $output);
+        $field = SavedDocument::fromBytes($output)->field('Signature');
+
+        self::assertSame('Sig', $field->get('FT')?->value());
+        self::assertNull($field->get('V'), 'an unsigned field has no value at all');
 
         preg_match('/\/Fields \[([^\]]*)\]/', $output, $fields);
         self::assertSame(1, substr_count($fields[1], ' 0 R'));
@@ -1364,9 +1393,16 @@ final class PageBuilderTest extends TestCase
 
         $output = $document->save();
 
-        self::assertStringContainsString('/Pattern << /P1', $output);
-        self::assertStringContainsString('/PatternType 2', $output);
-        self::assertStringContainsString('/ShadingType 2', $output);
+        // An SVG is drawn into a form XObject, so its resources hang off
+        // the form rather than the page -- which is the arrangement the
+        // old assertions could not tell apart from any other.
+        $saved = SavedDocument::fromBytes($output);
+        $form = self::svgForm($saved);
+
+        $pattern = $saved->from($form, 'Resources', 'Pattern', 'P1');
+        self::assertInstanceOf(Dictionary::class, $pattern, 'the form should name the gradient /P1');
+        self::assertSame(2, $pattern->get('PatternType')?->value(), 'a shading pattern');
+        self::assertSame(2, SavedDocument::scalar($saved->from($pattern, 'Shading', 'ShadingType')), 'axial');
         self::assertStringContainsString('/Pattern cs', $this->svgFormBytes($page, $output));
     }
 
@@ -1379,8 +1415,12 @@ final class PageBuilderTest extends TestCase
 
         $output = $document->save();
 
-        self::assertStringContainsString('/PatternType 1', $output);
-        self::assertStringContainsString('/XStep 20', $output);
+        $saved = SavedDocument::fromBytes($output);
+        $pattern = $saved->from(self::svgForm($saved), 'Resources', 'Pattern', 'P1');
+
+        self::assertInstanceOf(Dictionary::class, $pattern);
+        self::assertSame(1, $pattern->get('PatternType')?->value(), 'a tiling pattern');
+        self::assertSame(20, $pattern->get('XStep')?->value());
         self::assertStringContainsString('/Pattern cs', $this->svgFormBytes($page, $output));
     }
 
@@ -1522,8 +1562,16 @@ final class PageBuilderTest extends TestCase
 
             $output = $document->save();
 
-            self::assertStringContainsString('/SMask << /Type /Mask /S /Luminosity', $output);
-            self::assertStringContainsString('/CS /DeviceGray', $output);
+            $saved = SavedDocument::fromBytes($output);
+            $state = $saved->from(self::svgForm($saved), 'Resources', 'ExtGState', 'GS1');
+
+            self::assertInstanceOf(Dictionary::class, $state, 'the mask is set through an ExtGState');
+
+            $mask = $saved->from($state, 'SMask');
+            self::assertInstanceOf(Dictionary::class, $mask);
+            self::assertSame('Mask', $mask->get('Type')?->value());
+            self::assertSame('Luminosity', $mask->get('S')?->value());
+            self::assertSame('DeviceGray', SavedDocument::scalar($saved->from($mask, 'G', 'Group', 'CS')));
 
             // Set inside the shape's own graphics state, so the mask does
             // not survive into whatever is drawn next.
@@ -1550,11 +1598,30 @@ final class PageBuilderTest extends TestCase
             $page = $document->newPage();
             (new PageBuilder($document, $page))->drawSvg($path, 0, 0, 200, 200);
 
-            self::assertStringContainsString('/Subtype /Image', $document->save());
+            $saved = SavedDocument::of($document);
+            $image = $saved->from(self::svgForm($saved), 'Resources', 'XObject', 'Im1');
+
+            self::assertInstanceOf(Dictionary::class, $image);
+            self::assertSame('Image', $image->get('Subtype')?->value());
             self::assertStringContainsString('/Im1 Do', $this->decompressedContentStreamBytes($page));
         } finally {
             unlink($path);
         }
+    }
+
+    /**
+     * The form XObject an SVG was drawn into -- the only one a page
+     * carrying a single drawSvg() has.
+     */
+    private static function svgForm(SavedDocument $saved): Dictionary
+    {
+        foreach ($saved->resources('XObject') as $xobject) {
+            if ($xobject instanceof Dictionary && $xobject->get('Subtype')?->value() === 'Form') {
+                return $xobject;
+            }
+        }
+
+        self::fail('the page names no form XObject');
     }
 
     private static function embeddedFont(): EmbeddedFont

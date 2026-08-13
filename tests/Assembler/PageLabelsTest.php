@@ -10,6 +10,7 @@ use MightyPDF\Assembler\PageLabelStyle;
 use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Editor\PdfEditor;
 use PHPUnit\Framework\Attributes\DataProvider;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 final class PageLabelsTest extends TestCase
@@ -19,7 +20,7 @@ final class PageLabelsTest extends TestCase
         $document = new Document();
         $document->newPage();
 
-        self::assertStringNotContainsString('/PageLabels', $document->save());
+        self::assertNull(SavedDocument::of($document)->at('PageLabels'));
     }
 
     public function testWritesARunPerDeclaredStart(): void

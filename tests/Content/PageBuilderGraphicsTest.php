@@ -6,6 +6,7 @@ namespace MightyPDF\Tests\Content;
 
 use MightyPDF\Assembler\Dictionary;
 use MightyPDF\Assembler\Document;
+use MightyPDF\Assembler\Types\PdfArray;
 use MightyPDF\Assembler\Page;
 use MightyPDF\Content\CmykColor;
 use MightyPDF\Content\Color;
@@ -17,6 +18,7 @@ use MightyPDF\Content\PageBuilder;
 use MightyPDF\Content\PathSink;
 use MightyPDF\Content\SpotColor;
 use MightyPDF\Content\Stroke;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 final class PageBuilderGraphicsTest extends TestCase
@@ -249,10 +251,11 @@ final class PageBuilderGraphicsTest extends TestCase
             $content->drawRectangle(0, 0, 10, 10, fill: Color::black());
         }, strokeAlpha: 1.0);
 
-        $output = $document->save();
+        $state = SavedDocument::of($document)->resources('ExtGState')['GS1'] ?? null;
 
-        self::assertStringContainsString('/ca 0.5', $output);
-        self::assertStringContainsString('/CA 1', $output);
+        self::assertNotNull($state, 'the page should name the graphics state it sets');
+        self::assertSame(0.5, $state->get('ca')?->value(), 'fill alpha');
+        self::assertSame(1, $state->get('CA')?->value(), 'stroke alpha');
     }
 
     public function testAlphaOutsideZeroToOneIsRefused(): void
@@ -315,13 +318,25 @@ final class PageBuilderGraphicsTest extends TestCase
             CmykColor::fromPercentages(100, 44, 0, 0),
         ));
 
-        $output = $document->save();
+        $saved = SavedDocument::of($document);
+        $space = $saved->resources('ColorSpace')['CS1'] ?? null;
 
-        self::assertStringContainsString('/Separation /PANTONE#20300#20C /DeviceCMYK', $output);
-        self::assertStringContainsString('/FunctionType 2', $output);
-        self::assertStringContainsString('/C0 [0 0 0 0]', $output);
-        self::assertStringContainsString('/C1 [1 0.44 0 0]', $output);
-        self::assertStringContainsString('/N 1', $output);
+        // A /Separation is an array, not a dictionary: the family, the
+        // ink's name, the space it is measured in, and the tint
+        // transform. Reading it as one says which is which -- the old
+        // form could not tell /DeviceCMYK-the-alternate from
+        // /DeviceCMYK anywhere else in the file.
+        self::assertInstanceOf(PdfArray::class, $space);
+        self::assertSame('Separation', SavedDocument::scalar($space->items()[0]));
+        self::assertSame('PANTONE 300 C', SavedDocument::scalar($space->items()[1]));
+        self::assertSame('DeviceCMYK', SavedDocument::scalar($space->items()[2]));
+
+        $transform = $saved->editor()->resolve($space->items()[3]);
+        self::assertInstanceOf(Dictionary::class, $transform);
+        self::assertSame(2, $transform->get('FunctionType')?->value(), 'exponential');
+        self::assertSame('[0 0 0 0]', $transform->get('C0')?->format(), 'no ink');
+        self::assertSame('[1 0.44 0 0]', $transform->get('C1')?->format(), 'full ink');
+        self::assertSame(1, $transform->get('N')?->value(), 'linear');
     }
 
     public function testTextCanBeSetInASpotColor(): void

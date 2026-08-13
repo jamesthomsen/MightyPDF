@@ -218,6 +218,43 @@ final class SavedDocument
     }
 
     /**
+     * A page's resources of one category -- /XObject, /Pattern,
+     * /ExtGState, /ColorSpace -- keyed by the name the content stream
+     * uses.
+     *
+     * Values are whatever the category holds rather than dictionaries:
+     * a /ColorSpace entry is an *array* ([/Separation /name /DeviceCMYK
+     * <transform>]), which is the whole reason a separation has to be
+     * read positionally rather than by key.
+     *
+     * @return array<string, PdfValue>
+     */
+    public function resources(string $category, int $pageIndex = 0): array
+    {
+        $resources = $this->editor->resolveDictionary($this->pageEntry($pageIndex, 'Resources'));
+
+        Assert::assertInstanceOf(Dictionary::class, $resources, "page $pageIndex has no /Resources");
+
+        $entries = $this->editor->resolveDictionary($resources->get($category));
+
+        if ($entries === null) {
+            return [];
+        }
+
+        $resolved = [];
+
+        foreach ($entries->entries() as $name => $value) {
+            $entry = $this->editor->resolve($value);
+
+            Assert::assertNotNull($entry, "/$category /$name does not resolve");
+
+            $resolved[(string) $name] = $entry;
+        }
+
+        return $resolved;
+    }
+
+    /**
      * The font a page names, when there is only one worth naming --
      * which is the shape of most tests here.
      */

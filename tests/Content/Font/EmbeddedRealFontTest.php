@@ -10,6 +10,7 @@ use MightyPDF\Content\Font\TrueType\TrueTypeFile;
 use MightyPDF\Content\Font\TrueType\TrueTypeSubset;
 use MightyPDF\Content\PageBuilder;
 use MightyPDF\Content\Text\Utf8;
+use MightyPDF\Tests\Support\SavedDocument;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -92,8 +93,11 @@ final class EmbeddedRealFontTest extends TestCase
 
         $pdf = $document->save();
 
-        self::assertStringContainsString('/Subtype /CIDFontType2', $pdf);
-        self::assertStringContainsString('/FontFile2', $pdf);
+        $saved = SavedDocument::fromBytes($pdf);
+        $font = $saved->font();
+
+        self::assertSame('CIDFontType2', SavedDocument::scalar($saved->from($font, 'DescendantFonts', 0, 'Subtype')));
+        self::assertNotNull($saved->from($font, 'DescendantFonts', 0, 'FontDescriptor', 'FontFile2'));
 
         // Long enough to be a font program rather than an empty stream
         // the finalize pass never filled in.
