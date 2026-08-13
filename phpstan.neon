@@ -8,6 +8,17 @@ parameters:
         - tests
         - tools
 
+    # Analysed against every PHP this library claims to support, not
+    # against whichever one happens to be running it. Without this the
+    # results differ by runtime -- the first CI run passed on 8.5 and
+    # failed on 8.3 and 8.4 with a baseline generated on 8.5 -- because
+    # the inferred types of built-in functions are not the same across
+    # versions. A range says what composer.json says, so the answer is
+    # the same on a workstation and on all three runners.
+    phpVersion:
+        min: 80300
+        max: 80599
+
     # The library takes stream resources from callers (Document::writeTo(),
     # StreamSink) and PHP has no `resource` type to declare, so the
     # docblocks say `resource` and the signatures cannot. That is not a
