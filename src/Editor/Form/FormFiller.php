@@ -95,6 +95,21 @@ final class FormFiller
     }
 
     /**
+     * Every fillable field, keyed by full name, in document order.
+     *
+     * The whole index rather than one name at a time, for a caller that
+     * has to act on all of them -- FormFlattener, which needs each field's
+     * widgets and cannot ask for them one levenshtein-guessed name at a
+     * time.
+     *
+     * @return array<string, Field>
+     */
+    public function fields(): array
+    {
+        return $this->index();
+    }
+
+    /**
      * Every field's current value as text, for inspecting a form before
      * filling it (or for checking one afterwards).
      *
@@ -123,8 +138,97 @@ final class FormFiller
     public function fill(array $values): void
     {
         foreach ($values as $name => $value) {
-            $this->set($name, $value);
+            // Cast because PHP turns a numeric string key into an int on
+            // the way into an array, and a form whose fields are named
+            // "1", "2", "3" -- which is what a generated form looks like
+            // -- would otherwise be a TypeError rather than a fill.
+            $this->set((string) $name, $value);
         }
+    }
+
+    /**
+     * This form's values as XFDF (ISO 19444-1) -- the data on its own,
+     * without the document.
+     *
+     * What Acrobat's "Export Data" produces, and what its "Import Data"
+     * takes back. $sourceFile goes in as the <f href> the data claims to
+     * belong to, which is a hint rather than a binding: nothing checks it
+     * on the way back in.
+     *
+     * @see Xfdf for the format, and for what a field name nests into
+     */
+    public function toXfdf(?string $sourceFile = null): string
+    {
+        return Xfdf::export($this->values(), $sourceFile);
+    }
+
+    /** Fills this form from XFDF produced by toXfdf(), Acrobat or a browser. */
+    public function fillFromXfdf(string $xml): void
+    {
+        $this->fill(Xfdf::parse($xml));
+    }
+
+    /**
+     * This form's values as a JSON object of name => value, for the
+     * ordinary case where the far end is an application rather than a PDF
+     * reader.
+     *
+     * A field with no value is null rather than absent, so that the shape
+     * of the object is the shape of the form and a consumer can tell an
+     * empty field from one that is not on the form at all.
+     */
+    public function toJson(bool $pretty = true): string
+    {
+        return json_encode(
+            $this->values(),
+            JSON_THROW_ON_ERROR
+                | JSON_UNESCAPED_UNICODE
+                | JSON_UNESCAPED_SLASHES
+                // So a form with no fields is "{}" rather than "[]": an
+                // empty PHP array is ambiguous and the far end is parsing
+                // an object.
+                | JSON_FORCE_OBJECT
+                | ($pretty ? JSON_PRETTY_PRINT : 0),
+        );
+    }
+
+    /**
+     * Fills this form from a JSON object of name => value.
+     *
+     * Values must be scalars or null, which is what a form field holds.
+     * A nested object is refused rather than flattened into dotted names:
+     * a form's "address.city" is one field with a dot in its name, and
+     * guessing that a nested {"address":{"city":...}} meant that field
+     * would just as often be a caller who sent the wrong document's data.
+     */
+    public function fillFromJson(string $json): void
+    {
+        try {
+            $decoded = json_decode($json, associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException $error) {
+            throw new FormException('Form data is not valid JSON: ' . $error->getMessage(), previous: $error);
+        }
+
+        if (!is_array($decoded)) {
+            throw new FormException(
+                'Form data must be a JSON object of field name => value, and this is a '
+                . get_debug_type($decoded) . '.',
+            );
+        }
+
+        foreach ($decoded as $name => $value) {
+            if (is_array($value)) {
+                throw new FormException(sprintf(
+                    '"%s" is %s in this JSON, and a form field holds a single value. '
+                    . 'A field inside a group has a dotted full name ("address.city") rather than a nested object.',
+                    (string) $name,
+                    array_is_list($value) ? 'a list' : 'an object',
+                ));
+            }
+        }
+
+        /** @var array<string, string|bool|int|float|null> $decoded */
+        $this->fill($decoded);
     }
 
     public function set(string $name, string|bool|int|float|null $value): void
