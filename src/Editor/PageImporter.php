@@ -82,60 +82,11 @@ final class PageImporter
     /**
      * Every page in the source, in document order, keyed 0, 1, 2, ...
      *
-     * Deliberately re-keyed here rather than relying on walk()'s own
-     * `yield`s: nested `yield from` does not renumber an inner generator's
-     * keys, so two branches of a multi-level source page tree would
-     * otherwise both start counting from 0 and collide.
+     * @return list<Dictionary>
      */
     public function pages(): iterable
     {
-        $root = $this->source->resolveDictionary($this->source->catalog()->get('Pages'));
-
-        if ($root === null) {
-            return;
-        }
-
-        $index = 0;
-
-        foreach ($this->walk($root, [], 0) as $page) {
-            yield $index++ => $page;
-        }
-    }
-
-    /**
-     * @param array<int, true> $seen
-     * @return iterable<Dictionary>
-     */
-    private function walk(Dictionary $node, array $seen, int $depth): iterable
-    {
-        if ($depth >= self::MAX_TREE_DEPTH) {
-            return;
-        }
-
-        if ($node->hasObjectId()) {
-            if (isset($seen[$node->objectId()])) {
-                return;
-            }
-
-            $seen[$node->objectId()] = true;
-        }
-
-        $kids = $this->source->resolve($node->get('Kids'));
-
-        if (!$kids instanceof PdfArray) {
-            // No /Kids: this is a leaf page, not an intermediate tree node.
-            yield $node;
-
-            return;
-        }
-
-        foreach ($kids->items() as $kid) {
-            $child = $this->source->resolveDictionary($kid);
-
-            if ($child !== null) {
-                yield from $this->walk($child, $seen, $depth + 1);
-            }
-        }
+        return (new PageTree($this->source))->pages();
     }
 
     /**
