@@ -2371,6 +2371,14 @@ for a runnable version.
 
 ### From 2.1
 
+**2.2.1** fixes one thing. A signature field created with
+`addSignatureField()` now carries a blank appearance stream instead of
+none at all. An unsigned signature field has no value for a reader to
+lay out, so `/NeedAppearances` gives it nothing to work from, and
+Ghostscript reported the gap (`AcroForm field 'Sig' with no AP not
+implemented`) rather than drawing the field. Nothing in your code
+changes.
+
 **2.2.0** is additive. `Document::writeTo($handle)` and `Flow::writeTo()`
 stream a document to an open stream instead of building it in memory —
 see [large documents](#large-documents) — and `saveToFile()` now uses
