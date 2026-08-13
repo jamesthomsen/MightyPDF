@@ -21,11 +21,16 @@ use MightyPDF\Crypt\StandardSecurityHandler;
  * Top-level facade for assembling a PDF document from scratch -- the
  * modern-PHP successor to the old top-level MightyPDF class.
  *
- * Unlike the old class, save() never does any offset/count arithmetic
- * itself: it hands the header to IndirectObjectRegistry::writeAll() and
- * asks the resulting Xref for the trailer's /Size (see those classes'
- * doc comments for why centralizing that was the fix for the confirmed
- * 2012 /Size bug).
+ * Unlike the old class, saving never does any offset/count arithmetic
+ * itself: it hands the header to IndirectObjectRegistry::writeAllTo()
+ * and asks the resulting Xref for the trailer's /Size (see those
+ * classes' doc comments for why centralizing that was the fix for the
+ * confirmed 2012 /Size bug).
+ *
+ * There are three ways out -- save() for the bytes, writeTo() for a
+ * stream, saveToFile() for a path -- and they are one code path with
+ * three destinations (see ByteSink), rather than three chances to get
+ * the tail of a PDF subtly different.
  */
 final class Document implements DocumentContext
 {
@@ -569,12 +574,49 @@ final class Document implements DocumentContext
 
     public function save(): string
     {
+        $sink = new StringSink();
+
+        $this->writeToSink($sink);
+
+        return $sink->contents();
+    }
+
+    /**
+     * Writes the finished document to an open stream, which is the way
+     * to produce one larger than the memory available to hold it: a file
+     * handle, a socket, php://output.
+     *
+     * save() has to materialize the whole document as one string,
+     * because that is what it promises to return. Nothing else does --
+     * and the two documents this library is most often asked for, a long
+     * report and a scan-heavy merge, are exactly the ones where holding
+     * every page and every embedded image at once is the difference
+     * between working and exhausting memory_limit.
+     *
+     * The handle is written to from wherever it currently sits and is
+     * left open; see StreamSink. Peak memory is one object at a time,
+     * not one document -- see IndirectObjectRegistry::writeAllTo().
+     *
+     * @param resource $handle an open stream, opened for writing
+     */
+    public function writeTo($handle): void
+    {
+        $this->writeToSink(new StreamSink($handle));
+    }
+
+    /**
+     * Everything save() and writeTo() have in common, which is all of it
+     * bar where the bytes end up.
+     */
+    private function writeToSink(ByteSink $sink): void
+    {
         foreach ($this->beforeSave as $finalize) {
             $finalize();
         }
 
-        $result = $this->registry->writeAll(
+        $xref = $this->registry->writeAllTo(
             self::HEADER,
+            $sink,
             $this->encryptionPass(),
             $this->compressObjects,
             // A reader has to read /Encrypt before it can decrypt
@@ -583,20 +625,23 @@ final class Document implements DocumentContext
             $this->encryptObjectId === null ? [] : [$this->encryptObjectId],
         );
 
-        return $result->xref->hasCompressedEntries()
-            ? $this->withCrossReferenceStream($result)
-            : $this->withCrossReferenceTable($result);
+        if ($xref->hasCompressedEntries()) {
+            $this->writeCrossReferenceStream($sink, $xref);
+
+            return;
+        }
+
+        $this->writeCrossReferenceTable($sink, $xref);
     }
 
-    private function withCrossReferenceTable(SerializedDocumentBody $result): string
+    private function writeCrossReferenceTable(ByteSink $sink, Xref $xref): void
     {
-        $trailer = $this->trailerFor($result->xref->highestObjectId() + 1);
-        $startXref = strlen($result->bytes);
+        $trailer = $this->trailerFor($xref->highestObjectId() + 1);
+        $startXref = $sink->offset();
 
-        return $result->bytes
-            . $result->xref->build()
-            . $trailer->build()
-            . "startxref\n{$startXref}\n%%EOF";
+        $sink->write($xref->build());
+        $sink->write($trailer->build());
+        $sink->write("startxref\n{$startXref}\n%%EOF");
     }
 
     /**
@@ -610,18 +655,17 @@ final class Document implements DocumentContext
      * already written rather than from the allocator, so that saving twice
      * gives the same bytes twice.
      */
-    private function withCrossReferenceStream(SerializedDocumentBody $result): string
+    private function writeCrossReferenceStream(ByteSink $sink, Xref $xref): void
     {
-        $xrefStreamId = $result->xref->highestObjectId() + 1;
-        $startXref = strlen($result->bytes);
+        $xrefStreamId = $xref->highestObjectId() + 1;
+        $startXref = $sink->offset();
 
-        $result->xref->addEntry($xrefStreamId, $startXref);
+        $xref->addEntry($xrefStreamId, $startXref);
 
         $trailer = $this->trailerFor($xrefStreamId + 1);
 
-        return $result->bytes
-            . XrefStream::build($xrefStreamId, $result->xref, $trailer)->render(true)
-            . "startxref\n{$startXref}\n%%EOF";
+        $sink->write(XrefStream::build($xrefStreamId, $xref, $trailer)->render(true));
+        $sink->write("startxref\n{$startXref}\n%%EOF");
     }
 
     private function trailerFor(int $size): Trailer
@@ -635,10 +679,24 @@ final class Document implements DocumentContext
         );
     }
 
+    /**
+     * Streams the document straight to $path rather than building it in
+     * memory and handing the whole thing to file_put_contents(), which
+     * is what this used to do. Saving a 300-page report no longer needs
+     * the report to fit in memory twice.
+     */
     public function saveToFile(string $path): void
     {
-        if (file_put_contents($path, $this->save()) === false) {
+        $handle = @fopen($path, 'wb');
+
+        if ($handle === false) {
             throw new \RuntimeException("Failed to write PDF to $path");
+        }
+
+        try {
+            $this->writeTo($handle);
+        } finally {
+            fclose($handle);
         }
     }
 

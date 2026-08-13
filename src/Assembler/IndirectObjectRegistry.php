@@ -14,9 +14,10 @@ namespace MightyPDF\Assembler;
  * each doing its own strlen($out) math -- exactly the kind of duplication
  * that produces undercounting bugs like the confirmed /Size-off-by-one
  * (the trailer's Size was hand-copied from Xref::length(), which excluded
- * the free-list head object 0). Here, exactly one method (writeAll())
+ * the free-list head object 0). Here, exactly one method (writeAllTo())
  * ever walks registered objects and records offsets; nothing else in the
- * assembler touches an Xref or does offset math.
+ * assembler touches an Xref or does offset math. writeAll() is that same
+ * method collecting into memory.
  */
 final class IndirectObjectRegistry implements ObjectHost
 {
@@ -70,6 +71,34 @@ final class IndirectObjectRegistry implements ObjectHost
         bool $compressObjects = false,
         array $keepDirect = [],
     ): SerializedDocumentBody {
+        $sink = new StringSink();
+
+        $xref = $this->writeAllTo($header, $sink, $prepare, $compressObjects, $keepDirect);
+
+        return new SerializedDocumentBody($sink->contents(), $xref);
+    }
+
+    /**
+     * The same, writing into $sink as it goes and handing back only the
+     * Xref -- which is what makes a document larger than memory possible
+     * to write at all. See ByteSink, and Document::writeTo() for the
+     * caller this exists for.
+     *
+     * Each object is still built in full before it is written, so peak
+     * memory is bounded by the largest single object rather than by the
+     * document: a 40 MB scanned image is 40 MB here, not 40 MB plus
+     * every page that came before it.
+     *
+     * @param (\Closure(PdfObject): PdfObject)|null $prepare see writeAll()
+     * @param list<int> $keepDirect see writeAll()
+     */
+    public function writeAllTo(
+        string $header,
+        ByteSink $sink,
+        ?\Closure $prepare = null,
+        bool $compressObjects = false,
+        array $keepDirect = [],
+    ): Xref {
         $objects = $this->objects;
         ksort($objects);
 
@@ -80,7 +109,7 @@ final class IndirectObjectRegistry implements ObjectHost
         $packable = $compressObjects ? self::packable($objects, $keepDirect) : [];
         $containers = $this->packInto($packable, $xref);
 
-        $out = $header;
+        $sink->write($header);
 
         foreach ($objects as $objectId => $object) {
             if (isset($packable[$objectId])) {
@@ -90,18 +119,21 @@ final class IndirectObjectRegistry implements ObjectHost
                 continue;
             }
 
-            $xref->addEntry($objectId, strlen($out));
-            $out .= ($prepare === null ? $object : $prepare($object))->render(true);
+            // Recorded before the write, not after: an entry says where
+            // an object starts, and the sink's offset stops being that
+            // the moment the object goes through it.
+            $xref->addEntry($objectId, $sink->offset());
+            $sink->write(($prepare === null ? $object : $prepare($object))->render(true));
         }
 
         // After the rest, which keeps the file in ascending object-id
         // order: container ids are allocated above everything registered.
         foreach ($containers as $container) {
-            $xref->addEntry($container->objectId(), strlen($out));
-            $out .= ($prepare === null ? $container : $prepare($container))->render(true);
+            $xref->addEntry($container->objectId(), $sink->offset());
+            $sink->write(($prepare === null ? $container : $prepare($container))->render(true));
         }
 
-        return new SerializedDocumentBody($out, $xref);
+        return $xref;
     }
 
     /**

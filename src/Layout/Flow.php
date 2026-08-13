@@ -1835,6 +1835,19 @@ final class Flow
     }
 
     /**
+     * Runs the per-page hooks, then streams the document to an open
+     * stream. See Document::writeTo() -- the reason to reach for this
+     * over save() is a document too large to hold in memory, which is
+     * the kind this class is used to build.
+     *
+     * @param resource $handle an open stream, opened for writing
+     */
+    public function writeTo($handle): void
+    {
+        $this->finish()->writeTo($handle);
+    }
+
+    /**
      * A box width less the padding on both sides, floored at zero: a
      * cell narrower than its own padding would otherwise ask for text in
      * a negative-width box, which right-aligns to the left of where it

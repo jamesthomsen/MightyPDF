@@ -76,6 +76,8 @@ bytes.
   byte string.
 - `$document->saveToFile(string $path): void` — serialize and write to
   disk in one step.
+- `$document->writeTo($handle): void` — serialize straight to an open
+  stream. See [large documents](#large-documents).
 
 **`PageBuilder`** is where you actually draw. Each page gets its own
 builder:
@@ -1662,6 +1664,62 @@ embedded.
 Nothing about the document changes, only how it is written. The same
 calls produce the same pages either way, and saving twice still gives
 the same bytes twice.
+
+## Large documents
+
+`save()` returns the document as a string, which means the whole file
+has to exist in memory at once. For most documents that is fine — a
+1,500-page text report is under a megabyte of output. For the ones where
+it is not, usually because they carry scans or embedded originals, write
+to a stream instead:
+
+```php
+$handle = fopen('report.pdf', 'wb');
+$document->writeTo($handle);
+fclose($handle);
+```
+
+`saveToFile()` does exactly this internally, so it costs nothing extra
+to prefer it over `file_put_contents($path, $document->save())`.
+
+The same call sends a document to the browser without buffering it
+first:
+
+```php
+header('Content-Type: application/pdf');
+header('Content-Disposition: inline; filename="invoice.pdf"');
+
+$document->writeTo(fopen('php://output', 'wb'));
+```
+
+`PdfResponse` is still the better way to send a PDF over HTTP — it gets
+the filename escaping and the caching headers right — but it takes the
+bytes as a string, so it cannot be used with `writeTo()`. The header
+that stands in the way is `Content-Length`, which is not known until the
+last byte has been written. Streaming trades it (and the browser's
+progress bar) for the memory.
+
+What this changes is where the ceiling is. Building the document still
+costs what it costs — the objects are in memory either way — but writing
+it no longer adds a second copy of the whole file on top. Streaming, the
+write costs about three times the *largest single object*, whatever the
+document's total size:
+
+| 64 MB of embedded payloads | peak memory to write |
+| --- | --- |
+| `save()` | +76 MB |
+| `writeTo()`, largest object 16 MB | +48 MB |
+| `writeTo()`, largest object 4 MB | +12 MB |
+| `writeTo()`, largest object 1 MB | +6 MB |
+
+So the way to keep the ceiling low is to keep individual embedded files
+small, rather than to keep the document small. `Flow::writeTo()` is the
+same call one layer up, and runs the per-page hooks first exactly as
+`save()` does.
+
+`PdfEditor` — the incremental-update writer used for editing an existing
+PDF — still builds its output in memory. It holds the original file's
+bytes regardless, so the shape of the problem there is different.
 
 ## Encrypting a document you create
 
