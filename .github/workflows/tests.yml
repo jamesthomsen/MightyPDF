@@ -40,6 +40,12 @@ jobs:
       - name: Static analysis
         run: vendor/bin/phpstan analyse --no-progress
 
+      # Nothing in the suite reads the documentation, so a renamed
+      # method goes on being described by its old name indefinitely.
+      # This reads it.
+      - name: Documentation
+        run: php tools/check-docs.php
+
       # The examples are the documentation, and nothing in the suite
       # would notice one of them going stale. Each writes to
       # examples/output/ and is expected to exit 0.
