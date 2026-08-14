@@ -1,8 +1,23 @@
 # Upgrading
 
-## Upgrading
+## From 2.2
 
-### From 2.1
+**2.3.0** is additive: nothing you have written needs changing.
+
+Everything this library throws now implements
+`MightyPDF\Exception\PdfException`, so a caller can write one catch and
+mean "the PDF layer failed" — see [when things go
+wrong](output.md#when-things-go-wrong). Where the library used to throw
+PHP's `\InvalidArgumentException`, `\RuntimeException` and
+`\LogicException` directly, it now throws subclasses of them from
+`MightyPDF\Exception\` that add the marker and nothing else. **Every
+existing `catch (\InvalidArgumentException $e)` keeps working**, because
+the new types still are one.
+
+The documentation also moved. This file used to be a section of a
+2,600-line `README.md`; the reference now lives in
+[`docs/`](../README.md#documentation), a page per task. Only the prose
+moved — no method, class or signature changed with it.
 
 **2.2.1** fixes one thing. A signature field created with
 `addSignatureField()` now carries a blank appearance stream instead of
@@ -36,7 +51,7 @@ both toward what readers expect:
 
 Snapshot tests of PDF bytes covering forms or encryption will diff.
 
-### From 2.0
+## From 2.0
 
 **2.1.0** is additive: general shapes, scoped transforms and clipping,
 CMYK and spot colour, `Table`, Code 128 / EAN-13 / QR, attachments,
@@ -61,7 +76,7 @@ Three things to know:
    rather than one per rectangle, and the general primitives wrap
    themselves in `q`/`Q`. Snapshot tests of PDF bytes will diff.
 
-### From 1.x
+## From 1.x
 
 **2.0.0** adds the layout layer. Almost all of it is additive, but two
 changes are breaking, which is why it is a major version.

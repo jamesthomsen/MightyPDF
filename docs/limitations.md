@@ -1,7 +1,5 @@
 # Known limitations
 
-## Known limitations
-
 - **Fonts**: the standard 14, plus any TrueType (`.ttf`) file, embedded
   and subset, plus any OpenType/CFF (`.otf`) file embedded whole —
   subsetting PostScript outlines is not implemented, and a CID-keyed CFF

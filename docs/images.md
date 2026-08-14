@@ -1,7 +1,5 @@
 # Images
 
-## Images
-
 ```php
 $content->drawJpeg($path, x: 72,  y: 560, width: 100, height: 100);
 $content->drawPng ($path, x: 220, y: 560, width: 100, height: 100);

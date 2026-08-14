@@ -1,12 +1,10 @@
 # Text and fonts
 
-## Text and fonts
-
 Two kinds of font: PDF's 14 standard ones, which need nothing embedded,
 and any TrueType file you point at, which does. Both are drawn with the
 same calls.
 
-### Standard fonts
+## Standard fonts
 
 `Helvetica`, `Times` and `Courier` in their
 regular/bold/italic/bold-italic variants, plus `Symbol` and
@@ -48,7 +46,7 @@ characters this font cannot draw as themselves — but the consequence
 differs: a standard font approximates them, an embedded font refuses to
 draw at all (see below).
 
-### Embedding a TrueType font
+## Embedding a TrueType font
 
 ```php
 use MightyPDF\Content\Font\EmbeddedFont;
@@ -95,7 +93,7 @@ say which one was meant.
 See [`examples/14-embedding-a-font.php`](../examples/14-embedding-a-font.php)
 for a runnable version.
 
-### Wrapped text
+## Wrapped text
 
 `drawParagraph()` word-wraps into a box. `($x, $y)` is the box's
 **bottom-left** corner, matching `fillRectangle()` and images:
@@ -117,7 +115,7 @@ $lines  = TextWrapper::wrapUtf8($text, $font, 11.0, 200);
 $height = count($lines) * 14.0;
 ```
 
-### Text in a box
+## Text in a box
 
 `drawTextInBox()` places one line inside a rectangle — the single call
 that a fill, a width measurement and a piece of vertical arithmetic used
@@ -149,7 +147,7 @@ centimetre at 270pt.
 `drawParagraph()` takes the same two enums (and still takes its original
 `'L'`/`'C'`/`'R'`/`'J'` and `'T'`/`'M'`/`'B'` strings).
 
-#### Lining wrapped text up with single-line text
+### Lining wrapped text up with single-line text
 
 Both methods place text through `TextPlacement`, so **a single line in a
 box lands in exactly the same place whichever you use** — for every
@@ -170,7 +168,7 @@ font reports what its `hhea` table says — often nearer 0.95. A row
 mixing two kinds of font needs its baselines placed from one
 `ascentPt()` call rather than one per cell.
 
-### Measuring text
+## Measuring text
 
 Every font measures its own text, so layout math is the same for both
 kinds:

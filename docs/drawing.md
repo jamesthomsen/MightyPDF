@@ -1,7 +1,5 @@
 # Drawing
 
-## Drawing
-
 ```php
 // Filled rectangle (r, g, b each 0.0-1.0)
 $content->fillRectangle(x: 72, y: 600, width: 150, height: 80, r: 0.2, g: 0.4, b: 0.9);
@@ -16,7 +14,7 @@ $content->drawLine(x1: 72, y1: 560, x2: 410, y2: 560, lineWidthPt: 1.0, r: 0.0, 
 All three accept named arguments; color and line width default to black
 and `1.0`pt.
 
-### The general shapes
+## The general shapes
 
 Those three take float triples and draw one thing each. The rest take a
 `Paint` and a `Stroke`, and cover everything else:
@@ -57,7 +55,7 @@ fills a subpath drawn inside another one in the same direction, while
 even-odd leaves it as a hole. That is the whole difference between a
 washer and a disc.
 
-### Strokes
+## Strokes
 
 A `Stroke` gathers the five bits of graphics state an outline needs:
 
@@ -78,7 +76,7 @@ dotted line is zero-length "on" segments, which have no area under the
 default butt cap and draw *nothing at all* — `Stroke::dotted()` sets
 `LineCap::Round` with them, which is why it exists.
 
-### Transforms, clipping and transparency
+## Transforms, clipping and transparency
 
 Each of these draws whatever the closure draws under some change to the
 graphics state, and puts the state back afterwards:

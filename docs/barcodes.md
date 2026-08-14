@@ -1,7 +1,5 @@
 # Barcodes
 
-## Barcodes
-
 ```php
 use MightyPDF\Content\Barcode\Symbology;
 
@@ -30,7 +28,7 @@ wrong check digit is a barcode that scans as a different product.
 `Ean13::normalize()` gives back the full thirteen digits for the printed
 line, so it says what the symbol actually encodes.
 
-### QR codes
+## QR codes
 
 ```php
 use MightyPDF\Content\Barcode\QrEccLevel;
@@ -53,7 +51,7 @@ recoverable, `Medium` ≈ 15% (the default and the usual choice),
 will be printed small, on something that creases, or with a logo over
 the middle.
 
-### Data Matrix
+## Data Matrix
 
 The 2D symbology of small things — a component, a vial, a postal item, a
 form field that has to survive a fax. It packs more into a small area than
@@ -80,7 +78,7 @@ come out up to about a third larger than C40 would manage. The symbol
 sizes were checked module-for-module against libdmtx, and every one of
 them round-trips through it.
 
-### Quiet zones
+## Quiet zones
 
 A barcode printed hard against other content does not scan, and that is
 invisible on the page. `quietZone: true` reserves the clear space
